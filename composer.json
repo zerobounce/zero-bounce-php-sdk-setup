@@ -1,24 +1,34 @@
 {
-    "name": "zero-bounce/sdk",
-    "description": "Zero Bounce SDK",
-    "keywords": ["zero", "bounce", "sdh"],
-    "license": "DBAD",
-    "authors": [
-        {
-            "name": "Andrei Tatomir",
-            "email": "andrei.tatomir@mountsoftware.ro"
-        }
-    ],
-    "type": "project",
-    "require": {
-		"php": ">=7.1"
-    },
-    "require-dev": {
-		"phpunit/phpunit": "6.*"
-    },
-    "autoload": {
-        "psr-4": {
-            "ZeroBounce\\SDK\\": "src/"
-        }
+  "name": "zero-bounce/sdk",
+  "description": "Zero Bounce SDK",
+  "keywords": [
+    "zero",
+    "bounce",
+    "sdh"
+  ],
+  "license": "DBAD",
+  "scripts": {
+    "dumpautoload": "composer dumpautoload -o"
+  },
+  "authors": [
+    {
+      "name": "Andrei Tatomir",
+      "email": "andrei.tatomir@mountsoftware.ro"
     }
+  ],
+  "type": "project",
+  "require": {
+    "php": ">=7.1",
+    "ext-json": "*",
+    "ext-spltype": "*",
+    "ext-curl": "*",
+    "ext-http": "*"
+  },
+  "require-dev": {
+  },
+  "autoload": {
+    "psr-4": {
+      "ZeroBounce\\SDK\\": "src/"
+    }
+  }
 }
