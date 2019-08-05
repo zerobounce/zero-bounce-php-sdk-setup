@@ -1,14 +1,11 @@
 <?php
 
+require_once __DIR__ . '/../vendor/autoload.php';
 
-use ZeroBounce\SDK\ZBApiException;
 use ZeroBounce\SDK\ZBException;
 use ZeroBounce\SDK\ZBMissingApiKeyException;
 use ZeroBounce\SDK\ZBMissingParameterException;
 use ZeroBounce\SDK\ZeroBounce;
-
-require_once __DIR__ . '/../vendor/autoload.php';
-
 
 ZeroBounce::Instance()->initialize("<YOUR_API_KEY>");
 

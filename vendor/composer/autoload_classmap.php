@@ -6,20 +6,4 @@ $vendorDir = dirname(dirname(__FILE__));
 $baseDir = dirname($vendorDir);
 
 return array(
-    'ZeroBounce\\SDK\\BasicEnum' => $baseDir . '/src/BasicEnum.php',
-    'ZeroBounce\\SDK\\ZBApiException' => $baseDir . '/src/ZBException.php',
-    'ZeroBounce\\SDK\\ZBApiUsageResponse' => $baseDir . '/src/ZBApiUsageResponse.php',
-    'ZeroBounce\\SDK\\ZBDeleteFileResponse' => $baseDir . '/src/ZBDeleteFileResponse.php',
-    'ZeroBounce\\SDK\\ZBException' => $baseDir . '/src/ZBException.php',
-    'ZeroBounce\\SDK\\ZBFileStatusResponse' => $baseDir . '/src/ZBFileStatusResponse.php',
-    'ZeroBounce\\SDK\\ZBGetCreditsResponse' => $baseDir . '/src/ZBGetCreditsResponse.php',
-    'ZeroBounce\\SDK\\ZBGetFileResponse' => $baseDir . '/src/ZBGetFileResponse.php',
-    'ZeroBounce\\SDK\\ZBMissingApiKeyException' => $baseDir . '/src/ZBException.php',
-    'ZeroBounce\\SDK\\ZBMissingParameterException' => $baseDir . '/src/ZBException.php',
-    'ZeroBounce\\SDK\\ZBResponse' => $baseDir . '/src/ZBResponse.php',
-    'ZeroBounce\\SDK\\ZBSendFileResponse' => $baseDir . '/src/ZBSendFileResponse.php',
-    'ZeroBounce\\SDK\\ZBValidateResponse' => $baseDir . '/src/ZBValidateResponse.php',
-    'ZeroBounce\\SDK\\ZBValidateStatus' => $baseDir . '/src/ZBValidateStatus.php',
-    'ZeroBounce\\SDK\\ZBValidateSubStatus' => $baseDir . '/src/ZBValidateSubStatus.php',
-    'ZeroBounce\\SDK\\ZeroBounce' => $baseDir . '/src/ZeroBounce.php',
 );
