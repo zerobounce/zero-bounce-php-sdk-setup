@@ -2,7 +2,7 @@
 \.idea/
 vendor/
 vendor/composer/
-vendor/*
+/vendor/*
 /config/app.php
 
 /tmp/cache/models/*
