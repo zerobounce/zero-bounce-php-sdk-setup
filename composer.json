@@ -16,7 +16,6 @@
       "email": "integrations@zerobounce.net"
     }
   ],
-  "minimum-stability": "stable",
   "type": "library",
   "require": {
     "php": ">=7.1",
