@@ -6,7 +6,7 @@
     "bounce",
     "sdk"
   ],
-  "license": "DBAD",
+  "license": "MIT",
   "scripts": {
     "dumpautoload": "composer dumpautoload -o"
   },
