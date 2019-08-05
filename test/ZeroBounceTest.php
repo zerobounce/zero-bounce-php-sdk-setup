@@ -29,9 +29,9 @@ function sendFile() {
             "./test/email_file.csv", 1, null, 2,
             3, null, null, true);
         echo "response: ".$response;
-    } catch (ZBApiException $e) {
-        echo $e->getMessage();
     } catch (ZBMissingApiKeyException $e) {
+        echo $e->getMessage();
+    } catch (ZBException $e) {
         echo $e->getMessage();
     }
 }

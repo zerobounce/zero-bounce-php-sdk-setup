@@ -1,10 +1,10 @@
 {
   "name": "zero-bounce/sdk",
-  "description": "Zero Bounce SDK",
+  "description": "The ZeroBounce SDK for PHP programming language",
   "keywords": [
     "zero",
     "bounce",
-    "sdh"
+    "sdk"
   ],
   "license": "DBAD",
   "scripts": {
@@ -12,8 +12,8 @@
   },
   "authors": [
     {
-      "name": "Andrei Tatomir",
-      "email": "andrei.tatomir@mountsoftware.ro"
+      "name": "Zero Bounce",
+      "email": "integrations@zerobounce.net"
     }
   ],
   "type": "project",
