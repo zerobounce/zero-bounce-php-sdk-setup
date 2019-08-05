@@ -2,16 +2,12 @@
 
 namespace ZeroBounce\SDK;
 
+require_once __DIR__ . '/../vendor/autoload.php';
+
 use DateTime;
 use Exception;
 
 /**
- *  A sample class
- *
- *  Use this section to define what this class is doing, the PHPDocumentator will use this
- *  to automatically generate an API documentation using this information.
- *
- * @author yourname
  */
 class ZeroBounce
 {
@@ -272,6 +268,8 @@ class ZeroBounce
      */
     private function request($url, $response)
     {
+
+
         echo "sendRequest " . $url . "\n";
         try {
             $context = stream_context_create(array(

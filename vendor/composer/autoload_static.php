@@ -20,31 +20,11 @@ class ComposerStaticInit6847c19a84ea7acb61bed290a68af6b4
         ),
     );
 
-    public static $classMap = array (
-        'ZeroBounce\\SDK\\BasicEnum' => __DIR__ . '/../..' . '/src/BasicEnum.php',
-        'ZeroBounce\\SDK\\ZBApiException' => __DIR__ . '/../..' . '/src/ZBException.php',
-        'ZeroBounce\\SDK\\ZBApiUsageResponse' => __DIR__ . '/../..' . '/src/ZBApiUsageResponse.php',
-        'ZeroBounce\\SDK\\ZBDeleteFileResponse' => __DIR__ . '/../..' . '/src/ZBDeleteFileResponse.php',
-        'ZeroBounce\\SDK\\ZBException' => __DIR__ . '/../..' . '/src/ZBException.php',
-        'ZeroBounce\\SDK\\ZBFileStatusResponse' => __DIR__ . '/../..' . '/src/ZBFileStatusResponse.php',
-        'ZeroBounce\\SDK\\ZBGetCreditsResponse' => __DIR__ . '/../..' . '/src/ZBGetCreditsResponse.php',
-        'ZeroBounce\\SDK\\ZBGetFileResponse' => __DIR__ . '/../..' . '/src/ZBGetFileResponse.php',
-        'ZeroBounce\\SDK\\ZBMissingApiKeyException' => __DIR__ . '/../..' . '/src/ZBException.php',
-        'ZeroBounce\\SDK\\ZBMissingParameterException' => __DIR__ . '/../..' . '/src/ZBException.php',
-        'ZeroBounce\\SDK\\ZBResponse' => __DIR__ . '/../..' . '/src/ZBResponse.php',
-        'ZeroBounce\\SDK\\ZBSendFileResponse' => __DIR__ . '/../..' . '/src/ZBSendFileResponse.php',
-        'ZeroBounce\\SDK\\ZBValidateResponse' => __DIR__ . '/../..' . '/src/ZBValidateResponse.php',
-        'ZeroBounce\\SDK\\ZBValidateStatus' => __DIR__ . '/../..' . '/src/ZBValidateStatus.php',
-        'ZeroBounce\\SDK\\ZBValidateSubStatus' => __DIR__ . '/../..' . '/src/ZBValidateSubStatus.php',
-        'ZeroBounce\\SDK\\ZeroBounce' => __DIR__ . '/../..' . '/src/ZeroBounce.php',
-    );
-
     public static function getInitializer(ClassLoader $loader)
     {
         return \Closure::bind(function () use ($loader) {
             $loader->prefixLengthsPsr4 = ComposerStaticInit6847c19a84ea7acb61bed290a68af6b4::$prefixLengthsPsr4;
             $loader->prefixDirsPsr4 = ComposerStaticInit6847c19a84ea7acb61bed290a68af6b4::$prefixDirsPsr4;
-            $loader->classMap = ComposerStaticInit6847c19a84ea7acb61bed290a68af6b4::$classMap;
 
         }, null, ClassLoader::class);
     }

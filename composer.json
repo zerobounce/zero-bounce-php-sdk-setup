@@ -1,7 +1,6 @@
 {
   "name": "zero-bounce/sdk",
   "description": "The ZeroBounce SDK for PHP programming language",
-  "version": "0.0.1",
   "keywords": [
     "zero",
     "bounce",
@@ -14,16 +13,15 @@
   "authors": [
     {
       "name": "Zero Bounce",
-      "email": "integrations@zerobounce.net"
+      "email": "integrations@zerobounce.net",
+      "homepage": "https://www.zerobounce.net/"
     }
   ],
   "type": "library",
   "require": {
     "php": ">=7.1",
     "ext-json": "*",
-    "ext-spltype": "*",
-    "ext-curl": "*",
-    "ext-http": "*"
+    "ext-curl": "*"
   },
   "require-dev": {
   },

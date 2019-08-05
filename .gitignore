@@ -19,3 +19,5 @@ vendor/composer/
 /logs/*
 !/logs/empty
 test/downloads/
+
+composer\.lock
