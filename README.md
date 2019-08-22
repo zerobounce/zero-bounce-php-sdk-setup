@@ -1,7 +1,7 @@
 ## ZeroBounce PHP SDK
 
 This SDK contains methods for interacting easily with ZeroBounce API. 
-More information about ZeroBounce you can find in their [official documentation](https://www.zerobounce.net/docs/).
+More information about ZeroBounce you can find in the [official documentation](https://www.zerobounce.net/docs/).
 
 ## Installation
 To install the SDK you will need to use [composer](https://getcomposer.org/) in your project.
