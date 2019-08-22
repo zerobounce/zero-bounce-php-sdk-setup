@@ -12,7 +12,7 @@ curl -sS https://getcomposer.org/installer | php
 
 To install the SDK with composer, run:
 ```bash
-composer install zerobouncesdk
+composer install zero-bounce/sdk
 ```
 
 ## Usage
