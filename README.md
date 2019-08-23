@@ -16,22 +16,25 @@ composer install zero-bounce/sdk
 ```
 
 ## Usage
-You should always use Composer's autoloader in your application to automatically load your dependencies. 
-The examples below assume you've already included this in your file:
+- include the SDK in your file (you should always use Composer's autoloader in your application to automatically load your dependencies)
 ```php
 require 'vendor/autoload.php';
 use ZeroBounce\SDK\ZeroBounce;
 ```
 
-Here's an example about how to check your ZeroBounce API usage:
+- initialize the SDK with your API key
 ```php
-$zb = new ZeroBounce();
-$zb->initialize(<YOUR_API_KEY>);
+ZeroBounce::Instance()->initialize("<YOUR_API_KEY>");
+```
 
-$startDate = new DateTime("-7 Days");
-$endDate   = new DateTime();
+- how to verify an email address:
+```php
+/** @var $response ZeroBounse\SDK\ZBValidateResponse */
+$response = ZeroBounce::Instance()->validate(
+                "<EMAIL_ADDRESS>",              // The email address you want to validate
+                "<IP_ADDRESS>"                  // The IP Address the email signed up from (Can be blank)
+            );
 
-/** @var $apiUsage ZeroBounce\SDK\ZBResponse */
-$apiUsage = $zb->getApiUsage($startDate, $endDate);
-$total = $apiUsage->total;
+// can be: valid, invalid, catch-all, unknown, spamtrap, abuse, do_not_mail
+$status = $response->status;
 ```
