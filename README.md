@@ -62,16 +62,16 @@ $usage = $response->total;
 ```php
 /** @var $response ZeroBounse\SDK\ZBSendFileResponse */
 $response = ZeroBounce::Instance()->sendFile(
-    "<FILE_PATH>",
-    "<EMAIL_ADDRESS_COLUMN>",
-    "<RETURN_URL>",
-    "<FIRST_NAME_COLUMN>",
-    "<LAST_NAME_COLUMN>",   
-    "<GENDER_COLUMN>",
-    "<IP_ADDRESS_COLUMN>",
-    "<HAS_HEADER_ROW>"
+    "<FILE_PATH>",              // The csv or txt file
+    "<EMAIL_ADDRESS_COLUMN>",   // The column index of the email address in the file. Index starts at 1
+    "<RETURN_URL>",             // The URL will be used as a callback after the file is sent
+    "<FIRST_NAME_COLUMN>",      // The column index of the user's first name in the file
+    "<LAST_NAME_COLUMN>",       // The column index of the user's last name in the file
+    "<GENDER_COLUMN>",          // The column index of the user's gender in the file
+    "<IP_ADDRESS_COLUMN>",      // The column index of the IP address in the file
+    "<HAS_HEADER_ROW>"          // If the first row from the submitted file is a header row. True or False
 );
-$fileId = $response->fileId;
+$fileId = $response->fileId;    // e.g. "aaaaaaaa-zzzz-xxxx-yyyy-5003727fffff"
 ```
 
 - Check the status of a file uploaded via "sendFile" method
@@ -80,7 +80,7 @@ $fileId = "<FILE_ID>";   // The file ID received from "sendFile" response
  
 /** @var $response ZeroBounse\SDK\ZBFileStatusResponse */
 $response = ZeroBounce::Instance()->fileStatus($fileId);
-$status = $response->fileStatus;
+$status = $response->fileStatus;    // e.g. "Complete"
 ```
 
 - Get the validation results file for the file been submitted using sendfile API
@@ -91,4 +91,13 @@ $downloadPath = "<DOWNLOAD_PATH>";  // The path where the file will be downloade
 /** @var $response ZeroBounse\SDK\ZBGetFileResponse */
 $response = ZeroBounce::Instance()->getFile($fileId, $downloadPath);
 $localPath = $response->localFilePath;
+```
+
+- Deletes the file that was submitted using scoring sendfile API. ile can be deleted only when its status is _`Complete`_
+```php
+$fileId = "<FILE_ID>";              // The file ID received from "sendFile" response
+ 
+/** @var $response ZeroBounse\SDK\ZBDeleteFileResponse */
+$response = ZeroBounce::Instance()->deleteFile($fileId);
+$success = $response->success;      // True / False
 ```
