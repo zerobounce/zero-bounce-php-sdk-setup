@@ -93,7 +93,7 @@ $response = ZeroBounce::Instance()->getFile($fileId, $downloadPath);
 $localPath = $response->localFilePath;
 ```
 
-- Deletes the file that was submitted using scoring sendfile API. ile can be deleted only when its status is _`Complete`_
+- Deletes the file that was submitted using scoring sendfile API. File can be deleted only when its status is _`Complete`_
 ```php
 $fileId = "<FILE_ID>";              // The file ID received from "sendFile" response
  
