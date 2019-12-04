@@ -118,8 +118,51 @@ class ZeroBounce
         $filepath, $emailAddressColumn, $returnUrl = NULL, $firstNameColumn = NULL, $lastNameColumn = NULL,
         $genderColumn = NULL, $ipAddressColumn = NULL, $hasHeaderRow = NULL)
     {
+        return $this->_sendFile(self::BulkApiBaseUrl . "/sendFile", $filepath, $emailAddressColumn,
+            $returnUrl, $firstNameColumn, $lastNameColumn,
+            $genderColumn, $ipAddressColumn, $hasHeaderRow);
+    }
+
+    /**
+     * The sendfile API allows user to send a file for bulk email validation
+     * @param string $filepath
+     * @param int $emailAddressColumn
+     * @param string|null $returnUrl
+     * @param bool|null $hasHeaderRow
+     * @return ZBSendFileResponse
+     * @throws ZBMissingApiKeyException
+     * @throws ZBException
+     */
+    public function scoringSendFile(
+        $filepath, $emailAddressColumn, $returnUrl = NULL, $hasHeaderRow = NULL)
+    {
+        return $this->_sendFile(self::BulkApiBaseUrl . "/scoring/sendFile", $filepath, $emailAddressColumn,
+            $returnUrl, NULL, NULL,
+            NULL, NULL, $hasHeaderRow);
+    }
+
+    /**
+     * @param string $url
+     * @param string $filepath
+     * @param int $emailAddressColumn
+     * @param string|null $returnUrl
+     * @param int|null $firstNameColumn
+     * @param int|null $lastNameColumn
+     * @param int|null $genderColumn
+     * @param int|null $ipAddressColumn
+     * @param bool|null $hasHeaderRow
+     * @return ZBSendFileResponse
+     * @throws ZBMissingApiKeyException
+     * @throws ZBException
+     */
+    private function _sendFile(
+        $url,
+        $filepath, $emailAddressColumn, $returnUrl = NULL, $firstNameColumn = NULL, $lastNameColumn = NULL,
+        $genderColumn = NULL, $ipAddressColumn = NULL, $hasHeaderRow = NULL)
+    {
+
         $this->checkValidApiKey();
-// data fields for POST request
+        // data fields for POST request
 
         if (!$filepath) throw new ZBMissingParameterException("filePath is required");
         if (!$emailAddressColumn) throw new ZBMissingParameterException("emailAddressColumn is required");
@@ -138,7 +181,6 @@ class ZeroBounce
 
             $files = array();
             $files[$filepath] = file_get_contents($filepath);
-            $url = self::BulkApiBaseUrl . "/sendFile";
 
 // curl
             $curl = curl_init();
@@ -184,7 +226,7 @@ class ZeroBounce
             $rsp = new ZBSendFileResponse();
             $rsp->Deserialize($response);
             return $rsp;
-        } catch(Exception $e) {
+        } catch (Exception $e) {
             throw new ZBException($e->getMessage());
         }
     }
@@ -197,12 +239,39 @@ class ZeroBounce
      */
     public function fileStatus($fileId)
     {
+        return $this->_fileStatus(false, $fileId);
+    }
+
+    /**
+     * @param string $fileId The returned file ID when calling sendFile API
+     * @return ZBFileStatusResponse
+     * @throws ZBMissingApiKeyException
+     * @throws ZBException
+     */
+    public function scoringFileStatus($fileId)
+    {
+        return $this->_fileStatus(true, $fileId);
+    }
+
+    /**
+     * @param boolean $scoring Calls the scoring api
+     * @param string $fileId The returned file ID when calling sendFile API
+     * @return ZBFileStatusResponse
+     * @throws ZBMissingApiKeyException
+     * @throws ZBException
+     */
+    private function _fileStatus($scoring, $fileId)
+    {
         $this->checkValidApiKey();
 
         if (!$fileId) throw new ZBMissingParameterException("fileId is required");
 
         $response = new ZBFileStatusResponse();
-        $this->request(self::BulkApiBaseUrl . "/filestatus?api_key=" . $this->apiKey . "&file_id=" . $fileId, $response);
+        $this->request(self::BulkApiBaseUrl
+            . ($scoring ? "/scoring" : "")
+            . "/filestatus?api_key=" . $this->apiKey
+            . "&file_id=" . $fileId,
+            $response);
 
         return $response;
     }
@@ -217,6 +286,32 @@ class ZeroBounce
      */
     public function getFile($fileId, $downloadPath)
     {
+        return $this->_getFile(false, $fileId, $downloadPath);
+    }
+
+    /**
+     * The scoring getfile API allows users to get the validation results file for the file been submitted using sendfile API
+     * @param string $fileId
+     * @param string $downloadPath
+     * @return ZBGetFileResponse
+     * @throws ZBMissingApiKeyException
+     * @throws ZBException
+     */
+    public function scoringGetFile($fileId, $downloadPath)
+    {
+        return $this->_getFile(true, $fileId, $downloadPath);
+    }
+
+    /**
+     * @param bool $scoring
+     * @param string $fileId
+     * @param string $downloadPath
+     * @return ZBGetFileResponse
+     * @throws ZBMissingApiKeyException
+     * @throws ZBException
+     */
+    public function _getFile($scoring, $fileId, $downloadPath)
+    {
         $this->checkValidApiKey();
 
         if (!$fileId) throw new ZBMissingParameterException("fileId is required");
@@ -229,9 +324,12 @@ class ZeroBounce
             }
 
             $content = @file_put_contents($downloadPath,
-                fopen(self::BulkApiBaseUrl . "/getFile?api_key=" . $this->apiKey . "&file_id=" . $fileId, 'r'));
+                fopen(self::BulkApiBaseUrl
+                    . ($scoring ? "/scoring" : "")
+                    . "/getFile?api_key=" . $this->apiKey
+                    . "&file_id=" . $fileId, 'r'));
 
-            if($content === FALSE) {
+            if ($content === FALSE) {
                 throw new ZBException("Invalid request");
             }
 
@@ -243,19 +341,48 @@ class ZeroBounce
         }
     }
 
+
     /**
      * @param string $fileId The returned file ID when calling sendfile API.
      * @return ZBDeleteFileResponse
      * @throws ZBException
      * @throws ZBMissingApiKeyException
      */
-    public function deleteFile($fileId) {
+    public function scoringDeleteFile($fileId)
+    {
+        return $this->_deleteFile(true, $fileId);
+    }
+
+    /**
+     * @param string $fileId The returned file ID when calling sendfile API.
+     * @return ZBDeleteFileResponse
+     * @throws ZBException
+     * @throws ZBMissingApiKeyException
+     */
+    public function deleteFile($fileId)
+    {
+        return $this->_deleteFile(false, $fileId);
+    }
+
+    /**
+     * @param bool $scoring use the scoring API
+     * @param string $fileId The returned file ID when calling sendfile API.
+     * @return ZBDeleteFileResponse
+     * @throws ZBException
+     * @throws ZBMissingApiKeyException
+     */
+    public function _deleteFile($scoring, $fileId)
+    {
         $this->checkValidApiKey();
 
         if (!$fileId) throw new ZBMissingParameterException("fileId is required");
 
         $response = new ZBDeleteFileResponse();
-        $this->request(self::BulkApiBaseUrl ."/deletefile?api_key=".$this->apiKey. "&file_id=" . $fileId, $response);
+        $this->request(self::BulkApiBaseUrl
+            . ($scoring ? "/scoring" : "")
+            . "/deletefile?api_key=" . $this->apiKey
+            . "&file_id=" . $fileId,
+            $response);
 
         return $response;
     }
@@ -268,9 +395,7 @@ class ZeroBounce
      */
     private function request($url, $response)
     {
-
-
-        echo "sendRequest " . $url . "\n";
+        //echo "sendRequest " . $url . "\n";
         try {
             $context = stream_context_create(array(
                 'http' => array(
@@ -280,10 +405,10 @@ class ZeroBounce
 
             $json = @file_get_contents($url, false, $context);
             $code = $this->getHttpCode($http_response_header);
-            echo "response code: ".$code."\n";
+            //echo "response code: " . $code . "\n";
             var_dump($json);
 
-            if(!$json) {
+            if (!$json) {
                 throw new ZBException("No response");
             }
 
@@ -305,10 +430,9 @@ class ZeroBounce
 
     private function getHttpCode($http_response_header)
     {
-        if(is_array($http_response_header))
-        {
-            $parts=explode(' ',$http_response_header[0]);
-            if(count($parts)>1) //HTTP/1.0 <code> <text>
+        if (is_array($http_response_header)) {
+            $parts = explode(' ', $http_response_header[0]);
+            if (count($parts) > 1) //HTTP/1.0 <code> <text>
                 return intval($parts[1]); //Get code
         }
         return 0;

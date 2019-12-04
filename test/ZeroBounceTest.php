@@ -33,7 +33,31 @@ function sendFile() {
     }
 }
 
+function scoringSendFile() {
+    try {
+        $response = ZeroBounce::Instance()->scoringSendFile(
+            "./test/email_file.csv", 1, null, true);
+        echo "response: ".$response;
+    } catch (ZBMissingApiKeyException $e) {
+        echo $e->getMessage();
+    } catch (ZBException $e) {
+        echo $e->getMessage();
+    }
+}
+
+
 function getFile() {
+    try {
+        $response = ZeroBounce::Instance()->getFile("<YOUR_FILE_ID>", "./test/downloads/file.csv");
+        echo "response: ".$response;
+    } catch (ZBMissingApiKeyException $e) {
+        echo $e->getMessage();
+    } catch (ZBException $e) {
+        echo $e->getMessage();
+    }
+}
+
+function scoringGetFile() {
     try {
         $response = ZeroBounce::Instance()->getFile("<YOUR_FILE_ID>", "./test/downloads/file.csv");
         echo "response: ".$response;
@@ -74,6 +98,16 @@ function fileStatus() {
     }
 }
 
+function scoringFileStatus() {
+    try {
+        $response = ZeroBounce::Instance()->scoringFileStatus("<YOUR_FILE_ID>");
+        echo "response: ".$response;
+    } catch (ZBException $e) {
+        echo $e->getMessage();
+    }
+}
+
+
 function deleteFile() {
     try {
         $response = ZeroBounce::Instance()->deleteFile("<YOUR_FILE_ID>");
@@ -83,11 +117,24 @@ function deleteFile() {
     }
 }
 
-//validate();
+function scoringDeleteFile() {
+    try {
+        $response = ZeroBounce::Instance()->scoringDeleteFile("<YOUR_FILE_ID>");
+        echo "response: ".$response;
+    } catch (ZBException $e) {
+        echo $e->getMessage();
+    }
+}
+
+validate();
 
 //sendFile();
 
+//scoringSendFile();
+
 //getFile();
+
+//scoringGetFile();
 
 //getCredits();
 
@@ -95,7 +142,11 @@ function deleteFile() {
 
 //fileStatus();
 
-deleteFile();
+//scoringFileStatus();
+
+//deleteFile();
+
+//scoringDeleteFile();
 
 
 
