@@ -35,8 +35,9 @@ class ZeroBounce
 
     }
 
-    private const ApiBaseUrl = "https://api.zerobounce.net/v2";
-    private const BulkApiBaseUrl = "https://bulkapi.zerobounce.net/v2";
+    const ApiBaseUrl = "https://api.zerobounce.net/v2";
+    const BulkApiBaseUrl = "https://bulkapi.zerobounce.net/v2";
+    
     private $apiKey = null;
 
     /**
