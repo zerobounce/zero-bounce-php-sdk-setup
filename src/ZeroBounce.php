@@ -407,7 +407,7 @@ class ZeroBounce
             $json = @file_get_contents($url, false, $context);
             $code = $this->getHttpCode($http_response_header);
             //echo "response code: " . $code . "\n";
-            var_dump($json);
+            //var_dump($json);
 
             if (!$json) {
                 throw new ZBException("No response");
