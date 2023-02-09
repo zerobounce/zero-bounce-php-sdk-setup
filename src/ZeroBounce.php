@@ -456,7 +456,7 @@ class ZeroBounce
         foreach ($files as $path => $content) {
             $name = basename($path);
             $data .= "--" . $delimiter . $eol
-                . 'Content-Disposition: form-data; name="' . $path . '"; filename="' . $name . '"' . $eol
+                . 'Content-Disposition: form-data; name="file"; filename="' . $name . '"' . $eol
                 //. 'Content-Type: image/png'.$eol
                 . 'Content-Transfer-Encoding: binary' . $eol;
 
