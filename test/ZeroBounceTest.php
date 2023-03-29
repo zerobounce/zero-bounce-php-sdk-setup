@@ -65,4 +65,36 @@ class ZeroBounceTest extends TestCase
         $this->assertEquals($response->found, true);
         $this->assertEquals($response->activeInDays, 180);
     }
+
+    public function testSendFile()
+    {
+        ZeroBounce::Instance()->responseText = "{
+            \"success\": true,
+            \"message\": \"File Accepted\",
+            \"file_name\": \"email_list.txt\",
+            \"file_id\": \"fae8b155-da88-45fb-8058-0ccfad168812\"
+        }";
+        $response = ZeroBounce::Instance()->sendFile(
+            "./test/email_file.csv", 1, $hasHeaderRow = false);
+        $this->assertEquals($response->success, true);
+        $this->assertEquals($response->fileName, "email_list.txt");
+    }
+
+    public function testFileStatus()
+    {
+        ZeroBounce::Instance()->responseText = "{
+            \"success\": true,
+            \"file_id\": \"fae8b155-da88-45fb-8058-0ccfad168812\",
+            \"file_name\": \"email_list.txt\",
+            \"upload_date\": \"2023-03-24T14:18:31Z\",
+            \"file_status\": \"Complete\",
+            \"complete_percentage\": \"100% Complete.\",
+            \"return_url\": \"returnUrl\"
+        }";
+        $response = ZeroBounce::Instance()->fileStatus("fae8b155-da88-45fb-8058-0ccfad168812");
+        $this->assertEquals($response->success, true);
+        $this->assertEquals($response->fileName, "email_list.txt");
+    }
+
+    
 }

@@ -203,46 +203,7 @@ class ZeroBounce
             $files = array();
             $files[$filepath] = file_get_contents($filepath);
 
-// curl
-            $curl = curl_init();
-
-            //$url_data = http_build_query($fields);
-
-            $boundary = uniqid();
-            $delimiter = '-------------' . $boundary;
-
-            $post_data = $this->build_data_files($boundary, $fields, $files);
-            //echo "postData: ".$post_data;
-
-            curl_setopt_array($curl, array(
-                CURLOPT_URL => $url,
-                CURLOPT_RETURNTRANSFER => 1,
-                CURLOPT_MAXREDIRS => 10,
-                CURLOPT_TIMEOUT => 30,
-                //CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-                CURLOPT_CUSTOMREQUEST => "POST",
-                CURLOPT_POST => 1,
-                CURLOPT_POSTFIELDS => $post_data,
-                CURLOPT_HTTPHEADER => array(
-                    //"Authorization: Bearer $TOKEN",
-                    "Content-Type: multipart/form-data; boundary=" . $delimiter,
-                    "Content-Length: " . strlen($post_data)
-                ),
-            ));
-
-            $response = curl_exec($curl);
-            //$info = curl_getinfo($curl);
-            //var_dump($response);
-            $err = curl_error($curl);
-
-            //echo "error";
-            //var_dump($err);
-
-            curl_close($curl);
-
-            /*if ($err && count_chars($err) > 0) {
-                throw new ZBApiException($err);
-            }*/
+            $response = $this->curl($url, $fields, $files);
 
             $rsp = new ZBSendFileResponse();
             $rsp->Deserialize($response);
@@ -250,6 +211,53 @@ class ZeroBounce
         } catch (Exception $e) {
             throw new ZBException($e->getMessage());
         }
+    }
+
+    /**
+     * this function is separated like this for easy mocking in the tests
+     * @param string $url
+     * @param array $fields
+     * @param array $files
+     * @return string
+     */
+    protected function curl($url, $fields, $files)
+    {
+        $curl = curl_init();
+
+        $boundary = uniqid();
+        $delimiter = '-------------' . $boundary;
+
+        $post_data = $this->build_data_files($boundary, $fields, $files);
+
+        curl_setopt_array($curl, array(
+            CURLOPT_URL => $url,
+            CURLOPT_RETURNTRANSFER => 1,
+            CURLOPT_MAXREDIRS => 10,
+            CURLOPT_TIMEOUT => 30,
+            //CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+            CURLOPT_CUSTOMREQUEST => "POST",
+            CURLOPT_POST => 1,
+            CURLOPT_POSTFIELDS => $post_data,
+            CURLOPT_HTTPHEADER => array(
+                //"Authorization: Bearer $TOKEN",
+                "Content-Type: multipart/form-data; boundary=" . $delimiter,
+                "Content-Length: " . strlen($post_data)
+            ),
+        ));
+
+        $response = curl_exec($curl);
+        $err = curl_error($curl);
+
+        //echo "error";
+        //var_dump($err);
+
+        curl_close($curl);
+
+        /*if ($err && count_chars($err) > 0) {
+            throw new ZBApiException($err);
+        }*/
+
+        return $response;
     }
 
     /**

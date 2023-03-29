@@ -47,4 +47,15 @@ class MockZeroBounce extends ZeroBounce
             throw new ZBException($e->getMessage());
         }
     }
+
+    /**
+     * @param string $url
+     * @param array $fields
+     * @param array $files
+     * @return string
+     */
+    protected function curl($url, $fields, $files)
+    {
+        return $this->responseText;
+    }
 }
