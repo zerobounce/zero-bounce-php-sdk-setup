@@ -1,154 +1,68 @@
 <?php
 
-require_once __DIR__ . '/../vendor/autoload.php';
+namespace ZeroBounce\Tests;
 
-use ZeroBounce\SDK\ZBException;
+require_once __DIR__ . '/../vendor/autoload.php';
+require_once('MockZeroBounce.php');
+
 use ZeroBounce\SDK\ZBMissingApiKeyException;
 use ZeroBounce\SDK\ZBMissingParameterException;
-use ZeroBounce\SDK\ZeroBounce;
+use ZeroBounce\SDK\ZBValidateStatus;
+use ZeroBounce\Tests\MockZeroBounce as ZeroBounce;
+use PHPUnit\Framework\TestCase;
 
-ZeroBounce::Instance()->initialize("<YOUR_API_KEY>");
+ZeroBounce::Instance()->initialize("dummy_key");
 
-function validate() {
-    try {
-        $response = ZeroBounce::Instance()->validate("<EMAIL_TO_TEST>");
-        echo "response: ".$response;
-    } catch (ZBMissingApiKeyException $e) {
-        echo $e->getMessage();
-    } catch (ZBMissingParameterException $e) {
-        echo $e->getMessage();
+class ZeroBounceTest extends TestCase
+{
+
+    public function testValidate()
+    {
+        ZeroBounce::Instance()->responseText = "{
+            \"address\": \"valid@example.com\",
+            \"status\": \"valid\",
+            \"sub_status\": \"\",
+            \"domain_age_days\": \"9692\",
+            \"firstname\": \"zero\",
+            \"lastname\": \"bounce\",
+            \"gender\": \"male\"
+        }";
+        $response = ZeroBounce::Instance()->validate("valid@example.com");
+        $this->assertEquals($response->address, "valid@example.com");
+        $this->assertEquals($response->status, ZBValidateStatus::Valid);
     }
-}
 
-function sendFile() {
-    try {
-        $response = ZeroBounce::Instance()->sendFile(
-            "./test/email_file.csv", 1, null, 2,
-            3, null, null, true);
-        echo "response: ".$response;
-    } catch (ZBMissingApiKeyException $e) {
-        echo $e->getMessage();
-    } catch (ZBException $e) {
-        echo $e->getMessage();
-    }
-}
-
-function scoringSendFile() {
-    try {
-        $response = ZeroBounce::Instance()->scoringSendFile(
-            "./test/email_file.csv", 1, null, true);
-        echo "response: ".$response;
-    } catch (ZBMissingApiKeyException $e) {
-        echo $e->getMessage();
-    } catch (ZBException $e) {
-        echo $e->getMessage();
-    }
-}
-
-
-function getFile() {
-    try {
-        $response = ZeroBounce::Instance()->getFile("<YOUR_FILE_ID>", "./test/downloads/file.csv");
-        echo "response: ".$response;
-    } catch (ZBMissingApiKeyException $e) {
-        echo $e->getMessage();
-    } catch (ZBException $e) {
-        echo $e->getMessage();
-    }
-}
-
-function scoringGetFile() {
-    try {
-        $response = ZeroBounce::Instance()->getFile("<YOUR_FILE_ID>", "./test/downloads/file.csv");
-        echo "response: ".$response;
-    } catch (ZBMissingApiKeyException $e) {
-        echo $e->getMessage();
-    } catch (ZBException $e) {
-        echo $e->getMessage();
-    }
-}
-
-function getCredits() {
-    try {
+    public function testGetCredits()
+    {
+        ZeroBounce::Instance()->responseText = "{
+            \"Credits\": \"50\"
+        }";
         $response = ZeroBounce::Instance()->getCredits();
-        echo "response: ".$response;
-    } catch (ZBException $e) {
-        echo $e->getMessage();
+        $this->assertEquals($response->credits, "50");
+    }
+
+    public function testGetApiUsage()
+    {
+        ZeroBounce::Instance()->responseText = "{
+            \"total\": 10,
+            \"start_date\": \"3/15/2023\",
+            \"end_date\": \"3/23/2023\"
+        }";
+        $start_date = new \DateTime('7 days ago');
+        $end_date = new \DateTime();
+        $response = ZeroBounce::Instance()->getApiUsage($start_date, $end_date);
+        $this->assertEquals($response->total, 10);
+        $this->assertEquals($response->startDate, "3/15/2023");
+    }
+
+    public function testGetActivity()
+    {
+        ZeroBounce::Instance()->responseText = "{
+            \"found\": true,
+            \"active_in_days\": \"180\"
+        }";
+        $response = ZeroBounce::Instance()->getActivity("valid@example.com");
+        $this->assertEquals($response->found, true);
+        $this->assertEquals($response->activeInDays, 180);
     }
 }
-
-function getApiUsage() {
-    $startDate = new DateTime();
-    $startDate->modify('-5 day');
-    $endDate = new DateTime();
-    try {
-        $response = ZeroBounce::Instance()->getApiUsage($startDate, $endDate);
-        echo "response: ".$response;
-    } catch (ZBException $e) {
-        echo $e->getMessage();
-    }
-}
-
-function fileStatus() {
-    try {
-        $response = ZeroBounce::Instance()->fileStatus("<YOUR_FILE_ID>");
-        echo "response: ".$response;
-    } catch (ZBException $e) {
-        echo $e->getMessage();
-    }
-}
-
-function scoringFileStatus() {
-    try {
-        $response = ZeroBounce::Instance()->scoringFileStatus("<YOUR_FILE_ID>");
-        echo "response: ".$response;
-    } catch (ZBException $e) {
-        echo $e->getMessage();
-    }
-}
-
-
-function deleteFile() {
-    try {
-        $response = ZeroBounce::Instance()->deleteFile("<YOUR_FILE_ID>");
-        echo "response: ".$response;
-    } catch (ZBException $e) {
-        echo $e->getMessage();
-    }
-}
-
-function scoringDeleteFile() {
-    try {
-        $response = ZeroBounce::Instance()->scoringDeleteFile("<YOUR_FILE_ID>");
-        echo "response: ".$response;
-    } catch (ZBException $e) {
-        echo $e->getMessage();
-    }
-}
-
-validate();
-
-//sendFile();
-
-//scoringSendFile();
-
-//getFile();
-
-//scoringGetFile();
-
-//getCredits();
-
-//getApiUsage();
-
-//fileStatus();
-
-//scoringFileStatus();
-
-//deleteFile();
-
-//scoringDeleteFile();
-
-
-
-
-

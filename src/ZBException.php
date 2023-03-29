@@ -1,4 +1,6 @@
-<?php namespace ZeroBounce\SDK;
+<?php
+
+namespace ZeroBounce\SDK;
 
 use Exception;
 

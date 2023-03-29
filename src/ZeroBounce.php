@@ -30,7 +30,7 @@ class ZeroBounce
      * Private constructor so nobody else can instantiate it
      *
      */
-    private function __construct()
+    protected function __construct()
     {
 
     }
@@ -61,7 +61,7 @@ class ZeroBounce
         $this->checkValidApiKey();
         if (!$email) throw new ZBMissingParameterException("email is required");
         $response = new ZBValidateResponse();
-        $this->request(self::ApiBaseUrl . "/validate?api_key=" . $this->apiKey . "&email=" . $email . "&ip_address=" . ($ipAddress ? $ipAddress : ""), $response);
+        $this->request(self::ApiBaseUrl . "/validate?api_key=" . $this->apiKey . "&email=" . urlencode($email) . "&ip_address=" . ($ipAddress ? $ipAddress : ""), $response);
         return $response;
     }
 
@@ -97,6 +97,26 @@ class ZeroBounce
         $this->request(self::ApiBaseUrl . "/getapiusage?api_key=" . $this->apiKey
             . "&start_date=" . $startDate->format($format)
             . "&end_date=" . $endDate->format($format),
+            $response);
+        return $response;
+    }
+
+    /**
+     * @param string $email The email address to check
+     * @return ZBActivityResponse
+     * @throws ZBMissingApiKeyException
+     * @throws ZBException
+     */
+    public function getActivity($email)
+    {
+        $this->checkValidApiKey();
+
+        if (!$email) throw new ZBMissingParameterException("email is required");
+
+        $response = new ZBActivityResponse();
+        $format = "Y-m-d";
+        $this->request(self::ApiBaseUrl . "/activity?api_key=" . $this->apiKey
+            . "&email=" . urlencode($email),
             $response);
         return $response;
     }
@@ -394,7 +414,7 @@ class ZeroBounce
      * @return int http statusCode
      * @throws ZBException
      */
-    private function request($url, $response)
+    protected function request($url, $response)
     {
         //echo "sendRequest " . $url . "\n";
         try {
@@ -426,7 +446,7 @@ class ZeroBounce
      */
     private function checkValidApiKey()
     {
-        if (!$this->apiKey) throw new ZBMissingApiKeyException("ZeroBounce SDK is not initialized. Please call ZeroBounceSDK.initialize(context, apiKey) first");
+        if (!$this->apiKey) throw new ZBMissingApiKeyException("ZeroBounce SDK is not initialized. Please call ZeroBounce::Instance()->initialize(\"API_KEY\") first");
     }
 
     private function getHttpCode($http_response_header)
