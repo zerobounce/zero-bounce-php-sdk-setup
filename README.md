@@ -1,7 +1,7 @@
 ## ZeroBounce PHP SDK
  
 This SDK contains methods for interacting easily with ZeroBounce API. 
-More information about ZeroBounce you can find in the [official documentation](https://www.zerobounce.net/docs/).
+More information about ZeroBounce can be find in the [official documentation](https://www.zerobounce.net/docs/).
 
 ## Installation
 To install the SDK you will need to use [composer](https://getcomposer.org/) in your project.
@@ -56,6 +56,13 @@ $endDate = new DateTime();             // The end date of when you want to view 
 /** @var $response ZeroBounse\SDK\ZBApiUsageResponse */
 $response = ZeroBounce::Instance()->getApiUsage($startDate, $endDate);
 $usage = $response->total;
+```
+
+- Check the activity of a subscriber given their email account
+```php
+/** @var $response ZeroBounse\SDK\ZBActivityResponse */
+$response = ZeroBounce::Instance()->getActivity("<EMAIL_ADDRESS>");
+$active_in_days = $response->activeInDays;
 ```
 
 - Send a file for bulk email validation

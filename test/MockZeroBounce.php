@@ -9,10 +9,10 @@ use ZeroBounce\SDK\ZBException;
  */
 class MockZeroBounce extends ZeroBounce
 {
-    /** \PHPUnit\Framework\TestCase */
+    /** Class used for mocking the requests within the ZeroBounce class, such that tests don't call the API */
 
     /**
-     * Mock response text
+     * Mock response text. Set this to whatever you want to simulate receiving from the ZeroBounce API.
      * @var string
      */
     public $responseText;
@@ -32,6 +32,7 @@ class MockZeroBounce extends ZeroBounce
     }
 
     /**
+     * Overwrites the HTTP request made within the ZeroBounce class
      * @param string $url
      * @param ZBResponse $response
      * @return int http statusCode
@@ -49,12 +50,23 @@ class MockZeroBounce extends ZeroBounce
     }
 
     /**
+     * Overwrites the curl request made within the ZeroBounce class
      * @param string $url
      * @param array $fields
      * @param array $files
      * @return string
      */
     protected function curl($url, $fields, $files)
+    {
+        return $this->responseText;
+    }
+
+    /**
+     * Overwrites the file download request made within the ZeroBounce class
+     * @param string $url
+     * @return string
+     */
+    protected function downloadFile($url)
     {
         return $this->responseText;
     }

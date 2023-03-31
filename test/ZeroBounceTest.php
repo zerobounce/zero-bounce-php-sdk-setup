@@ -96,5 +96,83 @@ class ZeroBounceTest extends TestCase
         $this->assertEquals($response->fileName, "email_list.txt");
     }
 
+    public function testGetFile()
+    {
+        ZeroBounce::Instance()->responseText = 
+            "\"Email Address\",\"ZB Status\",\"ZB Sub Status\",\"ZB Account\",\"ZB Domain\",\"ZB First Name\",\"ZB Last Name\",\"ZB Gender\",\"ZB Free Email\",\"ZB MX Found\",\"ZB MX Record\",\"ZB SMTP Provider\",\"ZB Did You Mean\"\n" .
+            "\"disposable@example.com\",\"do_not_mail\",\"disposable\",\"\",\"\",\"zero\",\"bounce\",\"male\",\"False\",\"true\",\"mx.example.com\",\"example\",\"\"\n" .
+            "\"invalid@example.com\",\"invalid\",\"mailbox_not_found\",\"\",\"\",\"zero\",\"bounce\",\"male\",\"False\",\"true\",\"mx.example.com\",\"example\",\"\"\n" .
+            "\"valid@example.com\",\"valid\",\"\",\"\",\"\",\"zero\",\"bounce\",\"male\",\"False\",\"true\",\"mx.example.com\",\"example\",\"\"";
+        $response = ZeroBounce::Instance()->getFile("fae8b155-da88-45fb-8058-0ccfad168812", "email_list.txt");
+        $this->assertEquals($response->localFilePath, "email_list.txt");
+        unlink("email_list.txt");
+    }
+
+    public function testDeleteFile()
+    {
+        ZeroBounce::Instance()->responseText = "{
+            \"success\": true,
+            \"message\": \"File Deleted\",
+            \"file_name\": \"email_list.txt\",
+            \"file_id\": \"fae8b155-da88-45fb-8058-0ccfad168812\"
+        }";
+        $response = ZeroBounce::Instance()->deleteFile("fae8b155-da88-45fb-8058-0ccfad168812");
+        $this->assertEquals($response->success, true);
+        $this->assertEquals($response->fileName, "email_list.txt");
+    }
+
+    public function testScoringSendFile()
+    {
+        ZeroBounce::Instance()->responseText = "{
+            \"success\": true,
+            \"message\": \"File Accepted\",
+            \"file_name\": \"email_list.txt\",
+            \"file_id\": \"fae8b155-da88-45fb-8058-0ccfad168812\"
+        }";
+        $response = ZeroBounce::Instance()->scoringSendFile(
+            "./test/email_file.csv", 1, $hasHeaderRow = false);
+        $this->assertEquals($response->success, true);
+        $this->assertEquals($response->fileName, "email_list.txt");
+    }
+
+    public function testScoringFileStatus()
+    {
+        ZeroBounce::Instance()->responseText = "{
+            \"success\": true,
+            \"file_id\": \"fae8b155-da88-45fb-8058-0ccfad168812\",
+            \"file_name\": \"email_list.txt\",
+            \"upload_date\": \"2023-03-24T14:18:31Z\",
+            \"file_status\": \"Complete\",
+            \"complete_percentage\": \"100% Complete.\",
+            \"return_url\": \"returnUrl\"
+        }";
+        $response = ZeroBounce::Instance()->scoringFileStatus("fae8b155-da88-45fb-8058-0ccfad168812");
+        $this->assertEquals($response->success, true);
+        $this->assertEquals($response->fileName, "email_list.txt");
+    }
     
+    public function testScoringGetFile()
+    {
+        ZeroBounce::Instance()->responseText = 
+            "\"Email Address\",\"ZeroBounceQualityScore\"\n" .
+            "\"disposable@example.com\",\"0\"\n" .
+            "\"invalid@example.com\",\"10\"\n" .
+            "\"valid@example.com\",\"10\"";
+        $response = ZeroBounce::Instance()->scoringGetFile("fae8b155-da88-45fb-8058-0ccfad168812", "email_list.txt");
+        $this->assertEquals($response->localFilePath, "email_list.txt");
+        unlink("email_list.txt");
+    }
+
+    public function testScoringDeleteFile()
+    {
+        ZeroBounce::Instance()->responseText = "{
+            \"success\": true,
+            \"message\": \"File Deleted\",
+            \"file_name\": \"email_list.txt\",
+            \"file_id\": \"fae8b155-da88-45fb-8058-0ccfad168812\"
+        }";
+        $response = ZeroBounce::Instance()->scoringDeleteFile("fae8b155-da88-45fb-8058-0ccfad168812");
+        $this->assertEquals($response->success, true);
+        $this->assertEquals($response->fileName, "email_list.txt");
+    }
 }

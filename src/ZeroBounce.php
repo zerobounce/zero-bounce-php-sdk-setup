@@ -339,7 +339,7 @@ class ZeroBounce
      * @throws ZBMissingApiKeyException
      * @throws ZBException
      */
-    public function _getFile($scoring, $fileId, $downloadPath)
+    private function _getFile($scoring, $fileId, $downloadPath)
     {
         $this->checkValidApiKey();
 
@@ -353,10 +353,10 @@ class ZeroBounce
             }
 
             $content = @file_put_contents($downloadPath,
-                fopen(self::BulkApiBaseUrl
+                $this->downloadFile(self::BulkApiBaseUrl
                     . ($scoring ? "/scoring" : "")
                     . "/getFile?api_key=" . $this->apiKey
-                    . "&file_id=" . $fileId, 'r'));
+                    . "&file_id=" . $fileId));
 
             if ($content === FALSE) {
                 throw new ZBException("Invalid request");
@@ -368,6 +368,16 @@ class ZeroBounce
         } catch (Exception $e) {
             throw new ZBException($e->getMessage());
         }
+    }
+
+    /**
+     * this function is separated like this for easy mocking in the tests
+     * @param string $url
+     * @return string
+     */
+    protected function downloadFile($url)
+    {
+        return fopen($url, 'r');
     }
 
 
