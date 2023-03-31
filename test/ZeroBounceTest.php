@@ -5,8 +5,6 @@ namespace ZeroBounce\Tests;
 require_once __DIR__ . '/../vendor/autoload.php';
 require_once('MockZeroBounce.php');
 
-use ZeroBounce\SDK\ZBMissingApiKeyException;
-use ZeroBounce\SDK\ZBMissingParameterException;
 use ZeroBounce\SDK\ZBValidateStatus;
 use ZeroBounce\Tests\MockZeroBounce as ZeroBounce;
 use PHPUnit\Framework\TestCase;

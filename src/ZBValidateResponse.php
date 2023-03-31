@@ -2,8 +2,6 @@
 
 namespace ZeroBounce\SDK;
 
-use function Sodium\add;
-
 class ZBValidateResponse extends ZBResponse
 {
     /**

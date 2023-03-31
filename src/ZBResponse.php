@@ -2,7 +2,6 @@
 
 namespace ZeroBounce\SDK;
 
-
 class ZBResponse
 {
     /**

@@ -1,8 +1,6 @@
 <?php
 
-
 namespace ZeroBounce\SDK;
-
 
 class ZBActivityResponse extends ZBResponse
 {
@@ -22,6 +20,4 @@ class ZBActivityResponse extends ZBResponse
             "found=" . $this->found . ", " .
             "activeInDays=" . $this->activeInDays . "}";
     }
-
-
 }
