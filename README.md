@@ -1,13 +1,16 @@
-## ZeroBounce PHP SDK
+
+# ZeroBounce PHP SDK
  
 This SDK contains methods for interacting easily with ZeroBounce API. 
-More information about ZeroBounce you can find in the [official documentation](https://www.zerobounce.net/docs/).
+More information about ZeroBounce can be find in the [official documentation](https://www.zerobounce.net/docs/).
 
 ## Installation
 To install the SDK you will need to use [composer](https://getcomposer.org/) in your project.
 If you're not using composer, you can install it like so:
 ```bash
 curl -sS https://getcomposer.org/installer | php
+# or
+sudo apt install -y composer
 ```
 
 To install the SDK with composer, run:
@@ -56,6 +59,13 @@ $endDate = new DateTime();             // The end date of when you want to view 
 /** @var $response ZeroBounse\SDK\ZBApiUsageResponse */
 $response = ZeroBounce::Instance()->getApiUsage($startDate, $endDate);
 $usage = $response->total;
+```
+
+- Check the activity of a subscriber given their email account
+```php
+/** @var $response ZeroBounse\SDK\ZBActivityResponse */
+$response = ZeroBounce::Instance()->getActivity("<EMAIL_ADDRESS>");
+$active_in_days = $response->activeInDays;
 ```
 
 - Send a file for bulk email validation
@@ -141,4 +151,21 @@ $fileId = "<FILE_ID>";              // The file ID received from "sendFile" resp
 /** @var $response ZeroBounse\SDK\ZBDeleteFileResponse */
 $response = ZeroBounce::Instance()->scoringDeleteFile($fileId);
 $success = $response->success;      // True / False
+```
+
+## Development
+
+Install required PHP modules
+```bash
+sudo apt install -y php-curl php-dom php-xml php-xmlwriter
+```
+
+Install development dependencies
+```bash
+composer install --dev
+```
+
+Run tests 
+```bash
+./vendor/bin/phpunit test
 ```

@@ -1,8 +1,6 @@
 <?php
 
-
 namespace ZeroBounce\SDK;
-
 
 class ZBDeleteFileResponse extends ZBResponse
 {

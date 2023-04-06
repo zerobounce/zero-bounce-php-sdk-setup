@@ -30,7 +30,7 @@ class ZeroBounce
      * Private constructor so nobody else can instantiate it
      *
      */
-    private function __construct()
+    protected function __construct()
     {
 
     }
@@ -61,7 +61,7 @@ class ZeroBounce
         $this->checkValidApiKey();
         if (!$email) throw new ZBMissingParameterException("email is required");
         $response = new ZBValidateResponse();
-        $this->request(self::ApiBaseUrl . "/validate?api_key=" . $this->apiKey . "&email=" . $email . "&ip_address=" . ($ipAddress ? $ipAddress : ""), $response);
+        $this->request(self::ApiBaseUrl . "/validate?api_key=" . $this->apiKey . "&email=" . urlencode($email) . "&ip_address=" . ($ipAddress ? $ipAddress : ""), $response);
         return $response;
     }
 
@@ -97,6 +97,26 @@ class ZeroBounce
         $this->request(self::ApiBaseUrl . "/getapiusage?api_key=" . $this->apiKey
             . "&start_date=" . $startDate->format($format)
             . "&end_date=" . $endDate->format($format),
+            $response);
+        return $response;
+    }
+
+    /**
+     * @param string $email The email address to check
+     * @return ZBActivityResponse
+     * @throws ZBMissingApiKeyException
+     * @throws ZBException
+     */
+    public function getActivity($email)
+    {
+        $this->checkValidApiKey();
+
+        if (!$email) throw new ZBMissingParameterException("email is required");
+
+        $response = new ZBActivityResponse();
+        $format = "Y-m-d";
+        $this->request(self::ApiBaseUrl . "/activity?api_key=" . $this->apiKey
+            . "&email=" . urlencode($email),
             $response);
         return $response;
     }
@@ -183,46 +203,7 @@ class ZeroBounce
             $files = array();
             $files[$filepath] = file_get_contents($filepath);
 
-// curl
-            $curl = curl_init();
-
-            //$url_data = http_build_query($fields);
-
-            $boundary = uniqid();
-            $delimiter = '-------------' . $boundary;
-
-            $post_data = $this->build_data_files($boundary, $fields, $files);
-            //echo "postData: ".$post_data;
-
-            curl_setopt_array($curl, array(
-                CURLOPT_URL => $url,
-                CURLOPT_RETURNTRANSFER => 1,
-                CURLOPT_MAXREDIRS => 10,
-                CURLOPT_TIMEOUT => 30,
-                //CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-                CURLOPT_CUSTOMREQUEST => "POST",
-                CURLOPT_POST => 1,
-                CURLOPT_POSTFIELDS => $post_data,
-                CURLOPT_HTTPHEADER => array(
-                    //"Authorization: Bearer $TOKEN",
-                    "Content-Type: multipart/form-data; boundary=" . $delimiter,
-                    "Content-Length: " . strlen($post_data)
-                ),
-            ));
-
-            $response = curl_exec($curl);
-            //$info = curl_getinfo($curl);
-            //var_dump($response);
-            $err = curl_error($curl);
-
-            //echo "error";
-            //var_dump($err);
-
-            curl_close($curl);
-
-            /*if ($err && count_chars($err) > 0) {
-                throw new ZBApiException($err);
-            }*/
+            $response = $this->curl($url, $fields, $files);
 
             $rsp = new ZBSendFileResponse();
             $rsp->Deserialize($response);
@@ -230,6 +211,53 @@ class ZeroBounce
         } catch (Exception $e) {
             throw new ZBException($e->getMessage());
         }
+    }
+
+    /**
+     * this function is separated like this for easy mocking in the tests
+     * @param string $url
+     * @param array $fields
+     * @param array $files
+     * @return string
+     */
+    protected function curl($url, $fields, $files)
+    {
+        $curl = curl_init();
+
+        $boundary = uniqid();
+        $delimiter = '-------------' . $boundary;
+
+        $post_data = $this->build_data_files($boundary, $fields, $files);
+
+        curl_setopt_array($curl, array(
+            CURLOPT_URL => $url,
+            CURLOPT_RETURNTRANSFER => 1,
+            CURLOPT_MAXREDIRS => 10,
+            CURLOPT_TIMEOUT => 30,
+            //CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+            CURLOPT_CUSTOMREQUEST => "POST",
+            CURLOPT_POST => 1,
+            CURLOPT_POSTFIELDS => $post_data,
+            CURLOPT_HTTPHEADER => array(
+                //"Authorization: Bearer $TOKEN",
+                "Content-Type: multipart/form-data; boundary=" . $delimiter,
+                "Content-Length: " . strlen($post_data)
+            ),
+        ));
+
+        $response = curl_exec($curl);
+        $err = curl_error($curl);
+
+        //echo "error";
+        //var_dump($err);
+
+        curl_close($curl);
+
+        /*if ($err && count_chars($err) > 0) {
+            throw new ZBApiException($err);
+        }*/
+
+        return $response;
     }
 
     /**
@@ -311,7 +339,7 @@ class ZeroBounce
      * @throws ZBMissingApiKeyException
      * @throws ZBException
      */
-    public function _getFile($scoring, $fileId, $downloadPath)
+    private function _getFile($scoring, $fileId, $downloadPath)
     {
         $this->checkValidApiKey();
 
@@ -325,10 +353,10 @@ class ZeroBounce
             }
 
             $content = @file_put_contents($downloadPath,
-                fopen(self::BulkApiBaseUrl
+                $this->downloadFile(self::BulkApiBaseUrl
                     . ($scoring ? "/scoring" : "")
                     . "/getFile?api_key=" . $this->apiKey
-                    . "&file_id=" . $fileId, 'r'));
+                    . "&file_id=" . $fileId));
 
             if ($content === FALSE) {
                 throw new ZBException("Invalid request");
@@ -340,6 +368,16 @@ class ZeroBounce
         } catch (Exception $e) {
             throw new ZBException($e->getMessage());
         }
+    }
+
+    /**
+     * this function is separated like this for easy mocking in the tests
+     * @param string $url
+     * @return string
+     */
+    protected function downloadFile($url)
+    {
+        return fopen($url, 'r');
     }
 
 
@@ -394,7 +432,7 @@ class ZeroBounce
      * @return int http statusCode
      * @throws ZBException
      */
-    private function request($url, $response)
+    protected function request($url, $response)
     {
         //echo "sendRequest " . $url . "\n";
         try {
@@ -426,7 +464,7 @@ class ZeroBounce
      */
     private function checkValidApiKey()
     {
-        if (!$this->apiKey) throw new ZBMissingApiKeyException("ZeroBounce SDK is not initialized. Please call ZeroBounceSDK.initialize(context, apiKey) first");
+        if (!$this->apiKey) throw new ZBMissingApiKeyException("ZeroBounce SDK is not initialized. Please call ZeroBounce::Instance()->initialize(\"API_KEY\") first");
     }
 
     private function getHttpCode($http_response_header)

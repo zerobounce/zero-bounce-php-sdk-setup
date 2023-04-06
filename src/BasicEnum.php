@@ -1,6 +1,5 @@
 <?php
 
-
 namespace ZeroBounce\SDK;
 
 use ReflectionClass;
