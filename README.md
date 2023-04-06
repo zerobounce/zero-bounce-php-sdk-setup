@@ -1,4 +1,5 @@
-## ZeroBounce PHP SDK
+
+# ZeroBounce PHP SDK
  
 This SDK contains methods for interacting easily with ZeroBounce API. 
 More information about ZeroBounce can be find in the [official documentation](https://www.zerobounce.net/docs/).
@@ -8,6 +9,8 @@ To install the SDK you will need to use [composer](https://getcomposer.org/) in 
 If you're not using composer, you can install it like so:
 ```bash
 curl -sS https://getcomposer.org/installer | php
+# or
+sudo apt install -y composer
 ```
 
 To install the SDK with composer, run:
@@ -148,4 +151,21 @@ $fileId = "<FILE_ID>";              // The file ID received from "sendFile" resp
 /** @var $response ZeroBounse\SDK\ZBDeleteFileResponse */
 $response = ZeroBounce::Instance()->scoringDeleteFile($fileId);
 $success = $response->success;      // True / False
+```
+
+## Development
+
+Install required PHP modules
+```bash
+sudo apt install -y php-curl php-dom php-xml php-xmlwriter
+```
+
+Install development dependencies
+```bash
+composer install --dev
+```
+
+Run tests 
+```bash
+./vendor/bin/phpunit test
 ```
