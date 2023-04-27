@@ -2,8 +2,6 @@
 
 namespace ZeroBounce\SDK;
 
-require_once __DIR__ . '/../vendor/autoload.php';
-
 use DateTime;
 use Exception;
 
