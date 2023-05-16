@@ -500,7 +500,6 @@ class ZeroBounce
      */
     protected function request($url, $response)
     {
-        //echo "sendRequest " . $url . "\n";
         try {
             $context = stream_context_create(array(
                 'http' => array(
@@ -509,14 +508,13 @@ class ZeroBounce
             ));
 
             $json = @file_get_contents($url, false, $context);
-            $code = $this->getHttpCode($http_response_header);
-     
+          
             if (!$json) {
                 throw new ZBException("No response");
             }
 
+            $code = $this->getHttpCode($http_response_header);
             $response->Deserialize($json);
-            //print "response: ";
             return $code;
         } catch (Exception $e) {
             throw new ZBException($e->getMessage());
