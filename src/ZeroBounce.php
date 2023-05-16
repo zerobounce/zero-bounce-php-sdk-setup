@@ -75,21 +75,27 @@ class ZeroBounce
         $this->checkValidApiKey();
         if (!$emails or !count($emails)) throw new ZBMissingParameterException("emails parameter is required");
 
+        $params = [];
+        if (gettype($emails[0])=='string')
+            $params = array_map(
+                fn($email) => ['email_address' => $email], 
+                $emails
+            );
+        else if (gettype($emails[0])=='array')
+            $params = array_map(
+                fn($email) => [
+                    'email_address' => $email[0],
+                    'ip_address' => $email[1]
+                ],
+                $emails
+            );
+        else
+            throw ZBException('Unknown Parameter Type');
+        $params = ['email_batch' => $params];
+
         $response = new ZBBatchValidateResponse();
         $code = $this->json(
-            self::BulkApiBaseUrl . "/validatebatch",
-            [
-                "email_batch" => [
-                    ["email_address" => "disposable@example.com"],
-                    ["email_address" => "invalid@example.com"],
-                    ["email_address" => "valid@example.com"],
-                    ["email_address" => "toxic@example.com"],
-                    ["email_address" => "donotmail@example.com"],
-                    ["email_address" => "spamtrap@example.com"]
-                ]
-            ],
-            $response
-        );
+            self::BulkApiBaseUrl . "/validatebatch", $params, $response);
         return $response;
     }
 
