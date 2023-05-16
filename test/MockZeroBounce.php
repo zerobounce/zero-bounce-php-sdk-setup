@@ -32,6 +32,23 @@ class MockZeroBounce extends ZeroBounce
     }
 
     /**
+     * Overwrites the HTTP JSON POST request made within the ZeroBounce class
+     * @param string $url
+     * @param array $data
+     * @return ZBResponse
+     */
+    protected function json($url, $data, $response)
+    {
+        try {
+            $code = 200;
+            $response->Deserialize($this->responseText);
+            return $code;
+        } catch (Exception $e) {
+            throw new ZBException($e->getMessage());
+        }
+    }
+
+    /**
      * Overwrites the HTTP request made within the ZeroBounce class
      * @param string $url
      * @param ZBResponse $response
