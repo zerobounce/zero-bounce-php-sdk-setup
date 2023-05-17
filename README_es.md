@@ -1,191 +1,181 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2709
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx566\tx1133\tx1700\tx2267\tx2834\tx3401\tx3968\tx4535\tx5102\tx5669\tx6236\tx6803\pardirnatural\partightenfactor0
 
-# ZeroBounce PHP SDK
- 
-This SDK contains methods for interacting easily with ZeroBounce API. 
-More information about ZeroBounce can be find in the [official documentation](https://www.zerobounce.net/docs/).
-
-## Installation
-To install the SDK you will need to use [composer](https://getcomposer.org/) in your project.
-If you're not using composer, you can install it like so:
-```bash
-curl -sS https://getcomposer.org/installer | php
-# or
-sudo apt install -y composer
-```
-
-To install the SDK with composer, run:
-```bash
-composer install zero-bounce/sdk
-```
-
-## Usage
-- _include the SDK in your file (you should always use Composer's autoloader in your application to automatically load your dependencies)_
-```php
-require 'vendor/autoload.php';
-use ZeroBounce\SDK\ZeroBounce;
-```
-
-- _initialize the SDK with your API key_
-```php
-ZeroBounce::Instance()->initialize("<YOUR_API_KEY>");
-```
-
-### _Method documentation_
-
-- Verify an email address:
-```php
-/** @var $response ZeroBounce\SDK\ZBValidateResponse */
-$response = ZeroBounce::Instance()->validate(
-                "<EMAIL_ADDRESS>",              // The email address you want to validate
-                "<IP_ADDRESS>"                  // The IP Address the email signed up from (Can be blank)
-            );
-
-// can be: valid, invalid, catch-all, unknown, spamtrap, abuse, do_not_mail
-$status = $response->status;
-```
-
-- Verify a batch of email addresses:
-```php
-/** @var response ZeroBounce\SDK\ZBBatchValidateResponse */
-$response = ZeroBounce::Instance()->validateBatch([
-		"EMAIL_ADDRESS_1", 		// Email address that needs to be validated
-		"EMAIL_ADDRESS_2", 
-		"EMAIL_ADDRESS_3",
-	...
-	]);
-// or
-$response = ZeroBounce::Instance()->validateBatch([
-		["EMAIL_ADDRESS_1", "IP_ADDRESS_1"],	// Email and IP address that need to be validated
-		["EMAIL_ADDRESS_2", "IP_ADDRESS_2"],
-		["EMAIL_ADDRESS_3", "IP_ADDRESS_3"],
-		...
-	]);
-// => 
-$response->emailBatch 	// array of ZBValidateReponse type objects
-```
-
-- Check how many credits you have left on your account
-```php
-/** @var $response ZeroBounce\SDK\ZBGetCreditsResponse */
-$response = ZeroBounce::Instance()->getCredits();
-$credits = $response->credits;
-```
-
-- Check your API usage for a given period of time
-```php
-$startDate = new DateTime("-1 month"); // The start date of when you want to view API usage
-$endDate = new DateTime();             // The end date of when you want to view API usage
-
-/** @var $response ZeroBounce\SDK\ZBApiUsageResponse */
-$response = ZeroBounce::Instance()->getApiUsage($startDate, $endDate);
-$usage = $response->total;
-```
-
-- Check the activity of a subscriber given their email account
-```php
-/** @var $response ZeroBounce\SDK\ZBActivityResponse */
-$response = ZeroBounce::Instance()->getActivity("<EMAIL_ADDRESS>");
-$active_in_days = $response->activeInDays;
-```
-
-- Send a file for bulk email validation
-```php
-/** @var $response ZeroBounce\SDK\ZBSendFileResponse */
-$response = ZeroBounce::Instance()->sendFile(
-    "<FILE_PATH>",              // The csv or txt file
-    "<EMAIL_ADDRESS_COLUMN>",   // The column index of the email address in the file. Index starts at 1
-    "<RETURN_URL>",             // The URL will be used as a callback after the file is sent
-    "<FIRST_NAME_COLUMN>",      // The column index of the user's first name in the file
-    "<LAST_NAME_COLUMN>",       // The column index of the user's last name in the file
-    "<GENDER_COLUMN>",          // The column index of the user's gender in the file
-    "<IP_ADDRESS_COLUMN>",      // The column index of the IP address in the file
-    "<HAS_HEADER_ROW>"          // If the first row from the submitted file is a header row. True or False
-);
-$fileId = $response->fileId;    // e.g. "aaaaaaaa-zzzz-xxxx-yyyy-5003727fffff"
-```
-
-- Check the status of a file uploaded via "sendFile" method
-```php
-$fileId = "<FILE_ID>";   // The file ID received from "sendFile" response
- 
-/** @var $response ZeroBounce\SDK\ZBFileStatusResponse */
-$response = ZeroBounce::Instance()->fileStatus($fileId);
-$status = $response->fileStatus;    // e.g. "Complete"
-```
-
-- Get the validation results file for the file been submitted using sendfile API
-```php
-$fileId = "<FILE_ID>";              // The file ID received from "sendFile" response
-$downloadPath = "<DOWNLOAD_PATH>";  // The path where the file will be downloaded
- 
-/** @var $response ZeroBounce\SDK\ZBGetFileResponse */
-$response = ZeroBounce::Instance()->getFile($fileId, $downloadPath);
-$localPath = $response->localFilePath;
-```
-
-- Deletes the file that was submitted using scoring sendfile API. File can be deleted only when its status is _`Complete`_
-```php
-$fileId = "<FILE_ID>";              // The file ID received from "sendFile" response
- 
-/** @var $response ZeroBounce\SDK\ZBDeleteFileResponse */
-$response = ZeroBounce::Instance()->deleteFile($fileId);
-$success = $response->success;      // True / False
-```
-
-#### AI Scoring API
-- The scoring sendfile API allows a user to send a file for bulk email scoring
-```php
-/** @var $response ZeroBounce\SDK\ZBSendFileResponse */
-$response = ZeroBounce::Instance()->scoringSendFile(
-    "<FILE_PATH>",              // The csv or txt file
-    "<EMAIL_ADDRESS_COLUMN>",   // The column index of the email address in the file. Index starts at 1
-    "<RETURN_URL>",             // The URL will be used as a callback after the file is sent
-    "<HAS_HEADER_ROW>"          // If the first row from the submitted file is a header row. True or False
-);
-$fileId = $response->fileId;    // e.g. "aaaaaaaa-zzzz-xxxx-yyyy-5003727fffff"
-```
-
-- Check the status of a file uploaded via "scoringSendFile" method
-```php
-$fileId = "<FILE_ID>";   // The file ID received from "sendFile" response
- 
-/** @var $response ZeroBounce\SDK\ZBFileStatusResponse */
-$response = ZeroBounce::Instance()->scoringFileStatus($fileId);
-$status = $response->fileStatus;    // e.g. "Complete"
-```
-
-- Get the validation results file for the file been submitted using scoringSendfile API
-```php
-$fileId = "<FILE_ID>";              // The file ID received from "sendFile" response
-$downloadPath = "<DOWNLOAD_PATH>";  // The path where the file will be downloaded
- 
-/** @var $response ZeroBounce\SDK\ZBGetFileResponse */
-$response = ZeroBounce::Instance()->scoringGetFile($fileId, $downloadPath);
-$localPath = $response->localFilePath;
-```
-
-- Deletes the file that was submitted using scoringSendfile API. File can be deleted only when its status is _`Complete`_
-```php
-$fileId = "<FILE_ID>";              // The file ID received from "sendFile" response
- 
-/** @var $response ZeroBounce\SDK\ZBDeleteFileResponse */
-$response = ZeroBounce::Instance()->scoringDeleteFile($fileId);
-$success = $response->success;      // True / False
-```
-
-## Development
-
-Install required PHP modules
-```bash
-sudo apt install -y php-curl php-dom php-xml php-xmlwriter
-```
-
-Install development dependencies
-```bash
-composer install --dev
-```
-
-Run tests 
-```bash
-./vendor/bin/phpunit test
-```
+\f0\fs24 \cf0 # ZeroBounce PHP SDK\
+\
+Este SDK contiene m\'e9todos para interactuar f\'e1cilmente con la API de ZeroBounce.\
+Puede encontrar m\'e1s informaci\'f3n sobre ZeroBounce en la [documentaci\'f3n oficial](https://www.zerobounce.net/docs/).\
+\
+## Instalaci\'f3n\
+Para instalar el SDK, necesitar\'e1 utilizar [Composer](https://getcomposer.org/) en su proyecto.\
+Si no est\'e1 utilizando Composer, puede instalarlo de la siguiente manera:\
+```bash\
+curl -sS https://getcomposer.org/installer | php\
+# o\
+sudo apt install -y composer\
+```\
+\
+Para instalar el SDK con Composer, ejecute:\
+```bash\
+composer install zero-bounce/sdk\
+```\
+\
+## Uso\
+- _incluya el SDK en su archivo (siempre debe usar el autoloader de Composer en su aplicaci\'f3n para cargar autom\'e1ticamente las dependencias)_\
+```php\
+require 'vendor/autoload.php';\
+use ZeroBounce\\SDK\\ZeroBounce;\
+```\
+\
+- _inicialice el SDK con su clave de API_\
+```php\
+ZeroBounce::Instance()->initialize("<SU_CLAVE_DE_API>");\
+```\
+\
+### _Documentaci\'f3n de m\'e9todos_\
+\
+- Verificar una direcci\'f3n de correo electr\'f3nico:\
+```php\
+/** @var $response ZeroBounce\\SDK\\ZBValidateResponse */\
+$response = ZeroBounce::Instance()->validate(\
+                "<DIRECCI\'d3N_DE_CORREO_ELECTR\'d3NICO>",  // La direcci\'f3n de correo electr\'f3nico que desea validar\
+                "<DIRECCI\'d3N_IP>"                       // La direcci\'f3n IP desde la cual se registr\'f3 el correo electr\'f3nico (puede estar en blanco)\
+            );\
+\
+// puede ser: v\'e1lido, inv\'e1lido, catch-all, desconocido, spamtrap, abuso, no_enviar_correo\
+$status = $response->status;\
+```\
+\
+- Verificar cu\'e1ntos cr\'e9ditos le quedan en su cuenta\
+```php\
+/** @var $response ZeroBounce\\SDK\\ZBGetCreditsResponse */\
+$response = ZeroBounce::Instance()->getCredits();\
+$credits = $response->credits;\
+```\
+\
+- Verificar el uso de su API durante un per\'edodo de tiempo espec\'edfico\
+```php\
+$startDate = new DateTime("-1 mes");  // La fecha de inicio de cuando desea ver el uso de la API\
+$endDate = new DateTime();            // La fecha de finalizaci\'f3n de cuando desea ver el uso de la API\
+\
+/** @var $response ZeroBounce\\SDK\\ZBApiUsageResponse */\
+$response = ZeroBounce::Instance()->getApiUsage($startDate, $endDate);\
+$usage = $response->total;\
+```\
+\
+- Verificar la actividad de un suscriptor dado su correo electr\'f3nico\
+```php\
+/** @var $response ZeroBounce\\SDK\\ZBActivityResponse */\
+$response = ZeroBounce::Instance()->getActivity("<DIRECCI\'d3N_DE_CORREO_ELECTR\'d3NICO>");\
+$active_in_days = $response->activeInDays;\
+```\
+\
+- Enviar un archivo para validaci\'f3n masiva de correo electr\'f3nico\
+```php\
+/** @var $response ZeroBounce\\SDK\\ZBSendFileResponse */\
+$response = ZeroBounce::Instance()->sendFile(\
+    "<RUTA_DEL_ARCHIVO>",               // El archivo CSV o TXT\
+    "<COLUMNA_DIRECCI\'d3N_DE_CORREO>",     // El \'edndice de columna de la direcci\'f3n de correo electr\'f3nico en el archivo. El \'edndice comienza en 1\
+    "<URL_DE_RETORNO>",                  // La URL que se utilizar\'e1 como devoluci\'f3n de llamada despu\'e9s de que se env\'ede el archivo\
+    "<COLUMNA_NOMBRE_PRIMERO>",          // El \'ed\
+\
+ndice de columna del primer nombre del usuario en el archivo\
+    "<COLUMNA_APELLIDO>",                // El \'edndice de columna del apellido del usuario en el archivo\
+    "<COLUMNA_G\'c9NERO>",                  // El \'edndice de columna del g\'e9nero del usuario en el archivo\
+    "<COLUMNA_DIRECCI\'d3N_IP>",            // El \'edndice de columna de la direcci\'f3n IP en el archivo\
+    "<TIENE_FILA_DE_ENCABEZADO>"         // Si la primera fila del archivo enviado es una fila de encabezado. Verdadero o Falso\
+);\
+$fileId = $response->fileId;            // por ejemplo, "aaaaaaaa-zzzz-xxxx-yyyy-5003727fffff"\
+```\
+\
+- Verificar el estado de un archivo cargado mediante el m\'e9todo "sendFile"\
+```php\
+$fileId = "<ID_DE_ARCHIVO>";   // El ID de archivo recibido de la respuesta "sendFile"\
+ \
+/** @var $response ZeroBounce\\SDK\\ZBFileStatusResponse */\
+$response = ZeroBounce::Instance()->fileStatus($fileId);\
+$status = $response->fileStatus;    // por ejemplo, "Completado"\
+```\
+\
+- Obtener el archivo de resultados de validaci\'f3n para el archivo que se envi\'f3 utilizando el m\'e9todo sendFile\
+```php\
+$fileId = "<ID_DE_ARCHIVO>";              // El ID de archivo recibido de la respuesta "sendFile"\
+$downloadPath = "<RUTA_DE_DESCARGA>";     // La ruta donde se descargar\'e1 el archivo\
+ \
+/** @var $response ZeroBounce\\SDK\\ZBGetFileResponse */\
+$response = ZeroBounce::Instance()->getFile($fileId, $downloadPath);\
+$localPath = $response->localFilePath;\
+```\
+\
+- Elimina el archivo que se envi\'f3 utilizando el m\'e9todo sendFile. El archivo solo se puede eliminar cuando su estado es _`Completado`_\
+```php\
+$fileId = "<ID_DE_ARCHIVO>";              // El ID de archivo recibido de la respuesta "sendFile"\
+ \
+/** @var $response ZeroBounce\\SDK\\ZBDeleteFileResponse */\
+$response = ZeroBounce::Instance()->deleteFile($fileId);\
+$success = $response->success;      // Verdadero / Falso\
+```\
+\
+#### API de puntuaci\'f3n de inteligencia artificial\
+- El API de puntuaci\'f3n de env\'edo de archivo permite al usuario enviar un archivo para puntuaci\'f3n masiva de correo electr\'f3nico\
+```php\
+/** @var $response ZeroBounce\\SDK\\ZBSendFileResponse */\
+$response = ZeroBounce::Instance()->scoringSendFile(\
+    "<RUTA_DEL_ARCHIVO>",               // El archivo CSV o TXT\
+    "<COLUMNA_DIRECCI\'d3N_DE_CORREO>",     // El \'edndice de columna de la direcci\'f3n de correo electr\'f3nico en el archivo. El \'edndice comienza en 1\
+    "<URL_DE_RETORNO>",                  // La URL que se utilizar\'e1 como devoluci\'f3n de llamada despu\'e9s de que se env\'ede el archivo\
+    "<TIENE_FILA_DE_ENCABEZADO>"         // Si la primera fila del archivo enviado es una fila de encabezado. Verdadero o Falso\
+);\
+$fileId = $response->fileId;            // por ejemplo, "aaaaaaaa-zzzz-xxxx-yyyy-5003727fffff"\
+```\
+\
+- Verificar el estado de un archivo cargado mediante el m\'e9todo "scoringSendFile"\
+```php\
+$fileId = "<ID_DE_ARCHIVO>";   // El ID de archivo recibido de la respuesta "sendFile"\
+ \
+/** @var $response Zero\
+\
+Bounce\\SDK\\ZBFileStatusResponse */\
+$response = ZeroBounce::Instance()->scoringFileStatus($fileId);\
+$status = $response->fileStatus;    // por ejemplo, "Completado"\
+```\
+\
+- Obtener el archivo de resultados de validaci\'f3n para el archivo que se envi\'f3 utilizando el m\'e9todo scoringSendfile\
+```php\
+$fileId = "<ID_DE_ARCHIVO>";              // El ID de archivo recibido de la respuesta "sendFile"\
+$downloadPath = "<RUTA_DE_DESCARGA>";     // La ruta donde se descargar\'e1 el archivo\
+ \
+/** @var $response ZeroBounce\\SDK\\ZBGetFileResponse */\
+$response = ZeroBounce::Instance()->scoringGetFile($fileId, $downloadPath);\
+$localPath = $response->localFilePath;\
+```\
+\
+- Elimina el archivo que se envi\'f3 utilizando el m\'e9todo scoringSendfile. El archivo solo se puede eliminar cuando su estado es _`Completado`_\
+```php\
+$fileId = "<ID_DE_ARCHIVO>";              // El ID de archivo recibido de la respuesta "sendFile"\
+ \
+/** @var $response ZeroBounce\\SDK\\ZBDeleteFileResponse */\
+$response = ZeroBounce::Instance()->scoringDeleteFile($fileId);\
+$success = $response->success;      // Verdadero / Falso\
+```\
+\
+## Desarrollo\
+\
+Instale los m\'f3dulos de PHP requeridos\
+```bash\
+sudo apt install -y php-curl php-dom php-xml php-xmlwriter\
+```\
+\
+Instale las dependencias de desarrollo\
+```bash\
+composer install --dev\
+```\
+\
+Ejecute las pruebas\
+```bash\
+./vendor/bin/phpunit test\
+```}
