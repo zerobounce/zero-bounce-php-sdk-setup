@@ -34,7 +34,7 @@ ZeroBounce::Instance()->initialize("<YOUR_API_KEY>");
 
 - Verify an email address:
 ```php
-/** @var $response ZeroBounse\SDK\ZBValidateResponse */
+/** @var $response ZeroBounce\SDK\ZBValidateResponse */
 $response = ZeroBounce::Instance()->validate(
                 "<EMAIL_ADDRESS>",              // The email address you want to validate
                 "<IP_ADDRESS>"                  // The IP Address the email signed up from (Can be blank)
@@ -44,9 +44,29 @@ $response = ZeroBounce::Instance()->validate(
 $status = $response->status;
 ```
 
+- Verify a batch of email addresses:
+```php
+/** @var response ZeroBounce\SDK\ZBBatchValidateResponse */
+$response = ZeroBounce::Instance()->validateBatch([
+		"EMAIL_ADDRESS_1", 		// Email address that needs to be validated
+		"EMAIL_ADDRESS_2", 
+		"EMAIL_ADDRESS_3",
+	...
+	]);
+// or
+$response = ZeroBounce::Instance()->validateBatch([
+		["EMAIL_ADDRESS_1", "IP_ADDRESS_1"],	// Email and IP address that need to be validated
+		["EMAIL_ADDRESS_2", "IP_ADDRESS_2"],
+		["EMAIL_ADDRESS_3", "IP_ADDRESS_3"],
+		...
+	]);
+// => 
+$response->emailBatch 	// array of ZBValidateReponse type objects
+```
+
 - Check how many credits you have left on your account
 ```php
-/** @var $response ZeroBounse\SDK\ZBGetCreditsResponse */
+/** @var $response ZeroBounce\SDK\ZBGetCreditsResponse */
 $response = ZeroBounce::Instance()->getCredits();
 $credits = $response->credits;
 ```
@@ -56,21 +76,21 @@ $credits = $response->credits;
 $startDate = new DateTime("-1 month"); // The start date of when you want to view API usage
 $endDate = new DateTime();             // The end date of when you want to view API usage
 
-/** @var $response ZeroBounse\SDK\ZBApiUsageResponse */
+/** @var $response ZeroBounce\SDK\ZBApiUsageResponse */
 $response = ZeroBounce::Instance()->getApiUsage($startDate, $endDate);
 $usage = $response->total;
 ```
 
 - Check the activity of a subscriber given their email account
 ```php
-/** @var $response ZeroBounse\SDK\ZBActivityResponse */
+/** @var $response ZeroBounce\SDK\ZBActivityResponse */
 $response = ZeroBounce::Instance()->getActivity("<EMAIL_ADDRESS>");
 $active_in_days = $response->activeInDays;
 ```
 
 - Send a file for bulk email validation
 ```php
-/** @var $response ZeroBounse\SDK\ZBSendFileResponse */
+/** @var $response ZeroBounce\SDK\ZBSendFileResponse */
 $response = ZeroBounce::Instance()->sendFile(
     "<FILE_PATH>",              // The csv or txt file
     "<EMAIL_ADDRESS_COLUMN>",   // The column index of the email address in the file. Index starts at 1
@@ -88,7 +108,7 @@ $fileId = $response->fileId;    // e.g. "aaaaaaaa-zzzz-xxxx-yyyy-5003727fffff"
 ```php
 $fileId = "<FILE_ID>";   // The file ID received from "sendFile" response
  
-/** @var $response ZeroBounse\SDK\ZBFileStatusResponse */
+/** @var $response ZeroBounce\SDK\ZBFileStatusResponse */
 $response = ZeroBounce::Instance()->fileStatus($fileId);
 $status = $response->fileStatus;    // e.g. "Complete"
 ```
@@ -98,7 +118,7 @@ $status = $response->fileStatus;    // e.g. "Complete"
 $fileId = "<FILE_ID>";              // The file ID received from "sendFile" response
 $downloadPath = "<DOWNLOAD_PATH>";  // The path where the file will be downloaded
  
-/** @var $response ZeroBounse\SDK\ZBGetFileResponse */
+/** @var $response ZeroBounce\SDK\ZBGetFileResponse */
 $response = ZeroBounce::Instance()->getFile($fileId, $downloadPath);
 $localPath = $response->localFilePath;
 ```
@@ -107,7 +127,7 @@ $localPath = $response->localFilePath;
 ```php
 $fileId = "<FILE_ID>";              // The file ID received from "sendFile" response
  
-/** @var $response ZeroBounse\SDK\ZBDeleteFileResponse */
+/** @var $response ZeroBounce\SDK\ZBDeleteFileResponse */
 $response = ZeroBounce::Instance()->deleteFile($fileId);
 $success = $response->success;      // True / False
 ```
@@ -115,7 +135,7 @@ $success = $response->success;      // True / False
 #### AI Scoring API
 - The scoring sendfile API allows a user to send a file for bulk email scoring
 ```php
-/** @var $response ZeroBounse\SDK\ZBSendFileResponse */
+/** @var $response ZeroBounce\SDK\ZBSendFileResponse */
 $response = ZeroBounce::Instance()->scoringSendFile(
     "<FILE_PATH>",              // The csv or txt file
     "<EMAIL_ADDRESS_COLUMN>",   // The column index of the email address in the file. Index starts at 1
@@ -129,7 +149,7 @@ $fileId = $response->fileId;    // e.g. "aaaaaaaa-zzzz-xxxx-yyyy-5003727fffff"
 ```php
 $fileId = "<FILE_ID>";   // The file ID received from "sendFile" response
  
-/** @var $response ZeroBounse\SDK\ZBFileStatusResponse */
+/** @var $response ZeroBounce\SDK\ZBFileStatusResponse */
 $response = ZeroBounce::Instance()->scoringFileStatus($fileId);
 $status = $response->fileStatus;    // e.g. "Complete"
 ```
@@ -139,7 +159,7 @@ $status = $response->fileStatus;    // e.g. "Complete"
 $fileId = "<FILE_ID>";              // The file ID received from "sendFile" response
 $downloadPath = "<DOWNLOAD_PATH>";  // The path where the file will be downloaded
  
-/** @var $response ZeroBounse\SDK\ZBGetFileResponse */
+/** @var $response ZeroBounce\SDK\ZBGetFileResponse */
 $response = ZeroBounce::Instance()->scoringGetFile($fileId, $downloadPath);
 $localPath = $response->localFilePath;
 ```
@@ -148,7 +168,7 @@ $localPath = $response->localFilePath;
 ```php
 $fileId = "<FILE_ID>";              // The file ID received from "sendFile" response
  
-/** @var $response ZeroBounse\SDK\ZBDeleteFileResponse */
+/** @var $response ZeroBounce\SDK\ZBDeleteFileResponse */
 $response = ZeroBounce::Instance()->scoringDeleteFile($fileId);
 $success = $response->success;      // True / False
 ```

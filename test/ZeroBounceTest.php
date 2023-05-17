@@ -14,6 +14,184 @@ ZeroBounce::Instance()->initialize("dummy_key");
 class ZeroBounceTest extends TestCase
 {
 
+    public function testValidateBatch()
+    {
+        ZeroBounce::Instance()->responseText = "{
+            \"email_batch\": [
+                {
+                    \"address\": \"disposable@example.com\",
+                    \"status\": \"do_not_mail\",
+                    \"sub_status\": \"disposable\",
+                    \"free_email\": false,
+                    \"did_you_mean\": null,
+                    \"account\": null,
+                    \"domain\": null,
+                    \"domain_age_days\": \"9692\",
+                    \"smtp_provider\": \"example\",
+                    \"mx_found\": \"true\",
+                    \"mx_record\": \"mx.example.com\",
+                    \"firstname\": \"zero\",
+                    \"lastname\": \"bounce\",
+                    \"gender\": \"male\",
+                    \"country\": null,
+                    \"region\": null,
+                    \"city\": null,
+                    \"zipcode\": null,
+                    \"processed_at\": \"2023-05-16 16:33:51.059\"
+                },
+                {
+                    \"address\": \"invalid@example.com\",
+                    \"status\": \"invalid\",
+                    \"sub_status\": \"mailbox_not_found\",
+                    \"free_email\": false,
+                    \"did_you_mean\": null,
+                    \"account\": null,
+                    \"domain\": null,
+                    \"domain_age_days\": \"9692\",
+                    \"smtp_provider\": \"example\",
+                    \"mx_found\": \"true\",
+                    \"mx_record\": \"mx.example.com\",
+                    \"firstname\": \"zero\",
+                    \"lastname\": \"bounce\",
+                    \"gender\": \"male\",
+                    \"country\": null,
+                    \"region\": null,
+                    \"city\": null,
+                    \"zipcode\": null,
+                    \"processed_at\": \"2023-05-16 16:33:51.059\"
+                },
+                {
+                    \"address\": \"valid@example.com\",
+                    \"status\": \"valid\",
+                    \"sub_status\": \"\",
+                    \"free_email\": false,
+                    \"did_you_mean\": null,
+                    \"account\": null,
+                    \"domain\": null,
+                    \"domain_age_days\": \"9692\",
+                    \"smtp_provider\": \"example\",
+                    \"mx_found\": \"true\",
+                    \"mx_record\": \"mx.example.com\",
+                    \"firstname\": \"zero\",
+                    \"lastname\": \"bounce\",
+                    \"gender\": \"male\",
+                    \"country\": null,
+                    \"region\": null,
+                    \"city\": null,
+                    \"zipcode\": null,
+                    \"processed_at\": \"2023-05-16 16:33:51.059\"
+                },
+                {
+                    \"address\": \"toxic@example.com\",
+                    \"status\": \"do_not_mail\",
+                    \"sub_status\": \"toxic\",
+                    \"free_email\": false,
+                    \"did_you_mean\": null,
+                    \"account\": null,
+                    \"domain\": null,
+                    \"domain_age_days\": \"9692\",
+                    \"smtp_provider\": \"example\",
+                    \"mx_found\": \"true\",
+                    \"mx_record\": \"mx.example.com\",
+                    \"firstname\": \"zero\",
+                    \"lastname\": \"bounce\",
+                    \"gender\": \"male\",
+                    \"country\": null,
+                    \"region\": null,
+                    \"city\": null,
+                    \"zipcode\": null,
+                    \"processed_at\": \"2023-05-16 16:33:51.059\"
+                },
+                {
+                    \"address\": \"donotmail@example.com\",
+                    \"status\": \"do_not_mail\",
+                    \"sub_status\": \"role_based\",
+                    \"free_email\": false,
+                    \"did_you_mean\": null,
+                    \"account\": null,
+                    \"domain\": null,
+                    \"domain_age_days\": \"9692\",
+                    \"smtp_provider\": \"example\",
+                    \"mx_found\": \"true\",
+                    \"mx_record\": \"mx.example.com\",
+                    \"firstname\": \"zero\",
+                    \"lastname\": \"bounce\",
+                    \"gender\": \"male\",
+                    \"country\": null,
+                    \"region\": null,
+                    \"city\": null,
+                    \"zipcode\": null,
+                    \"processed_at\": \"2023-05-16 16:33:51.059\"
+                },
+                {
+                    \"address\": \"spamtrap@example.com\",
+                    \"status\": \"spamtrap\",
+                    \"sub_status\": \"\",
+                    \"free_email\": false,
+                    \"did_you_mean\": null,
+                    \"account\": null,
+                    \"domain\": null,
+                    \"domain_age_days\": \"9692\",
+                    \"smtp_provider\": \"example\",
+                    \"mx_found\": \"true\",
+                    \"mx_record\": \"mx.example.com\",
+                    \"firstname\": \"zero\",
+                    \"lastname\": \"bounce\",
+                    \"gender\": \"male\",
+                    \"country\": null,
+                    \"region\": null,
+                    \"city\": null,
+                    \"zipcode\": null,
+                    \"processed_at\": \"2023-05-16 16:33:51.059\"
+                }
+            ],
+            \"errors\": []
+        }";
+
+        $emails = [
+            "disposable@example.com", 
+            "invalid@example.com", 
+            "valid@example.com", 
+            "toxic@example.com", 
+            "donotmail@example.com", 
+            "spamtrap@example.com"
+        ];
+
+        $response = ZeroBounce::Instance()->validateBatch($emails);
+
+        $this->assertEquals($response->emailBatch[0]->address, 
+            'disposable@example.com');
+        
+        $this->assertEquals($response->emailBatch[1]->status,
+            'invalid');
+        $this->assertEquals($response->emailBatch[3]->sub_status,
+            'toxic');
+        $this->assertEquals($response->emailBatch[3]->smtp_provider,
+            'example');
+
+
+        $emailsAndIPs = [
+            ["disposable@example.com", "168.10.11.1"],
+            ["invalid@example.com", "168.10.11.2"],
+            ["valid@example.com", "168.10.11.3"],
+            ["toxic@example.com", "168.10.11.4"],
+            ["donotmail@example.com", "168.10.11.5"],
+            ["spamtrap@example.com", "168.10.11.6"]
+        ];
+
+        $response = ZeroBounce::Instance()->validateBatch($emailsAndIPs);
+
+        $this->assertEquals($response->emailBatch[0]->address, 
+            'disposable@example.com');
+        
+        $this->assertEquals($response->emailBatch[1]->status,
+            'invalid');
+        $this->assertEquals($response->emailBatch[3]->sub_status,
+            'toxic');
+        $this->assertEquals($response->emailBatch[3]->smtp_provider,
+            'example');
+    }
+
     public function testValidate()
     {
         ZeroBounce::Instance()->responseText = "{

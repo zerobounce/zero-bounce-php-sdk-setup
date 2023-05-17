@@ -63,6 +63,42 @@ class ZeroBounce
         return $response;
     }
 
+     /**
+     * @param array $emails List of email addresses or list of (email_address, ip_address) tuples to be validated.
+     * @return ZBBatchValidateResponse
+     * @throws ZBMissingApiKeyException
+     * @throws ZBMissingParameterException
+     * @throws ZBException
+     */
+    public function validateBatch($emails)
+    {
+        $this->checkValidApiKey();
+        if (!$emails or !count($emails)) throw new ZBMissingParameterException("emails parameter is required");
+
+        $params = [];
+        if (gettype($emails[0])=='string')
+            $params = array_map(
+                fn($email) => ['email_address' => $email], 
+                $emails
+            );
+        else if (gettype($emails[0])=='array')
+            $params = array_map(
+                fn($email) => [
+                    'email_address' => $email[0],
+                    'ip_address' => $email[1]
+                ],
+                $emails
+            );
+        else
+            throw ZBException('Unknown Parameter Type');
+        $params = ['email_batch' => $params];
+
+        $response = new ZBBatchValidateResponse();
+        $code = $this->json(
+            self::BulkApiBaseUrl . "/validatebatch", $params, $response);
+        return $response;
+    }
+
     /**
      * This API will tell you how many credits you have left on your account. It's simple, fast and easy to use.
      * @throws ZBMissingApiKeyException
@@ -212,6 +248,41 @@ class ZeroBounce
     }
 
     /**
+     * make a JSON post
+     * @param string $url
+     * @param array $data
+     * @return ZBResponse
+     */
+    protected function json($url, $data, $response)
+    {
+        $data['api_key'] = $this->apiKey;
+        $content = json_encode($data);
+
+        $curl = curl_init($url);
+        curl_setopt_array($curl, array(
+            CURLOPT_URL => $url,
+            CURLOPT_HEADER => false, 
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+            CURLOPT_POSTFIELDS => $content
+        ));
+
+        $json = curl_exec($curl);
+        $err = curl_error($curl);
+
+        $code = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+
+        curl_close($curl);
+
+        if (!$json) {
+            throw new ZBException("No response");
+        }
+
+        $response->Deserialize($json);
+        return $code;
+    }
+
+    /**
      * this function is separated like this for easy mocking in the tests
      * @param string $url
      * @param array $fields
@@ -245,9 +316,6 @@ class ZeroBounce
 
         $response = curl_exec($curl);
         $err = curl_error($curl);
-
-        //echo "error";
-        //var_dump($err);
 
         curl_close($curl);
 
@@ -440,6 +508,7 @@ class ZeroBounce
             ));
 
             $json = @file_get_contents($url, false, $context);
+          
             if (!$json) {
                 throw new ZBException("No response");
             }
