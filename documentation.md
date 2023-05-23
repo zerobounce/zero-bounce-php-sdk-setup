@@ -1,15 +1,9 @@
-
-# ZeroBounce PHP SDK
- 
-This SDK contains methods for interacting easily with ZeroBounce API. 
-More information about ZeroBounce can be find in the [official documentation](https://www.zerobounce.net/docs/).
-
-## Installation
+#### Installation
 To install the SDK you will need to use [composer](https://getcomposer.org/) in your project.
 If you're not using composer, you can install it like so:
 ```bash
 curl -sS https://getcomposer.org/installer | php
-# or
+### or
 sudo apt install -y composer
 ```
 
@@ -18,7 +12,7 @@ To install the SDK with composer, run:
 composer install zero-bounce/sdk
 ```
 
-## Usage
+#### Usage
 - _include the SDK in your file (you should always use Composer's autoloader in your application to automatically load your dependencies)_
 ```php
 require 'vendor/autoload.php';
@@ -30,7 +24,7 @@ use ZeroBounce\SDK\ZeroBounce;
 ZeroBounce::Instance()->initialize("<YOUR_API_KEY>");
 ```
 
-### _Method documentation_
+##### _Method documentation_
 
 - Verify an email address:
 ```php
@@ -132,7 +126,7 @@ $response = ZeroBounce::Instance()->deleteFile($fileId);
 $success = $response->success;      // True / False
 ```
 
-#### AI Scoring API
+###### AI Scoring API
 - The scoring sendfile API allows a user to send a file for bulk email scoring
 ```php
 /** @var $response ZeroBounce\SDK\ZBSendFileResponse */
@@ -173,7 +167,7 @@ $response = ZeroBounce::Instance()->scoringDeleteFile($fileId);
 $success = $response->success;      // True / False
 ```
 
-## Development
+#### Development
 
 Install required PHP modules
 ```bash

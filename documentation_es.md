@@ -1,14 +1,9 @@
-# ZeroBounce PHP SDK
-
-Este SDK contiene métodos para interactuar fácilmente con la API de ZeroBounce.
-Puede encontrar más información sobre ZeroBounce en la [documentación oficial](https://www.zerobounce.net/docs/).
-
-## Instalación
+#### Instalación
 Para instalar el SDK, necesitará utilizar [Composer](https://getcomposer.org/) en su proyecto.
 Si no está utilizando Composer, puede instalarlo de la siguiente manera:
 ```bash
 curl -sS https://getcomposer.org/installer | php
-# o
+### o
 sudo apt install -y composer
 ```
 
@@ -17,7 +12,7 @@ Para instalar el SDK con Composer, ejecute:
 composer install zero-bounce/sdk
 ```
 
-## Uso
+#### Uso
 - _incluya el SDK en su archivo (siempre debe usar el autoloader de Composer en su aplicación para cargar automáticamente las dependencias)_
 ```php
 require 'vendor/autoload.php';
@@ -29,7 +24,7 @@ use ZeroBounce\SDK\ZeroBounce;
 ZeroBounce::Instance()->initialize("<SU_CLAVE_DE_API>");
 ```
 
-### _Documentación de métodos_
+##### _Documentación de métodos_
 
 - Verificar una dirección de correo electrónico:
 ```php
@@ -113,7 +108,7 @@ $response = ZeroBounce::Instance()->deleteFile($fileId);
 $success = $response->success;      // Verdadero / Falso
 ```
 
-#### API de puntuación de inteligencia artificial
+###### API de puntuación de inteligencia artificial
 - El API de puntuación de envío de archivo permite al usuario enviar un archivo para puntuación masiva de correo electrónico
 ```php
 /** @var $response ZeroBounce\SDK\ZBSendFileResponse */
@@ -156,7 +151,7 @@ $response = ZeroBounce::Instance()->scoringDeleteFile($fileId);
 $success = $response->success;      // Verdadero / Falso
 ```
 
-## Desarrollo
+#### Desarrollo
 
 Instale los módulos de PHP requeridos
 ```bash
