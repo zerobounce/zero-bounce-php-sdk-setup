@@ -16,7 +16,62 @@ sudo apt install -y composer
 To install the SDK with composer, run:
 ```bash
 composer install zero-bounce/sdk
+#or
+composer require zerobounce/sdk
 ```
+
+### Laravel
+This package is Laravel compatible as is:
+```bash
+composer create-project laravel/laravel laravel-zero-bounce-test
+laravel-zero-bounce-test
+composer require zero-bounce/sdk
+php artisan make:command ZeroBounceTest
+```
+
+```php
+namespace App\Console\Commands;
+
+use Illuminate\Console\Command;
+use ZeroBounce\SDK\ZeroBounce;
+
+class ZeroBounceTest extends Command
+{
+    /**
+     * The name and signature of the console command.
+     *
+     * @var string
+     */
+    protected $signature = 'app:zero-bounce-test';
+
+    /**
+     * The console command description.
+     *
+     * @var string
+     */
+    protected $description = 'Command description';
+
+    /**
+     * Execute the console command.
+     */
+    public function handle()
+    {
+        ZeroBounce::Instance()->initialize("<YOUR_API_KEY>");
+        $response = ZeroBounce::Instance()->getCredits();
+        print_r($response);
+    }
+}
+```
+
+```bash
+$ php artisan app:zero-bounce-test
+ZeroBounce\SDK\ZBGetCreditsResponse Object
+(
+    [credits] => -1
+)
+```
+
+However, this pakage is framework agnostic, so if you need it implemented in a service provider class, you'll need to [implement it](https://laravel.com/docs/10.x/providers).
 
 ## Usage
 - _include the SDK in your file (you should always use Composer's autoloader in your application to automatically load your dependencies)_
