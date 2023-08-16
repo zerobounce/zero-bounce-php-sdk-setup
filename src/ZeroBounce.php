@@ -173,7 +173,7 @@ class ZeroBounce
         $filepath, $emailAddressColumn, $returnUrl = NULL, $firstNameColumn = NULL, $lastNameColumn = NULL,
         $genderColumn = NULL, $ipAddressColumn = NULL, $hasHeaderRow = NULL)
     {
-        return $this->_sendFile(self::BulkApiBaseUrl . "/sendFile", $filepath, $emailAddressColumn,
+        return $this->_sendFile(self::BulkApiBaseUrl . "/sendfile", $filepath, $emailAddressColumn,
             $returnUrl, $firstNameColumn, $lastNameColumn,
             $genderColumn, $ipAddressColumn, $hasHeaderRow);
     }
