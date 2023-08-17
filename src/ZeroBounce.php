@@ -191,7 +191,7 @@ class ZeroBounce
     public function scoringSendFile(
         $filepath, $emailAddressColumn, $returnUrl = NULL, $hasHeaderRow = NULL)
     {
-        return $this->_sendFile(self::BulkApiBaseUrl . "/scoring/sendFile", $filepath, $emailAddressColumn,
+        return $this->_sendFile(self::BulkApiBaseUrl . "/scoring/sendfile", $filepath, $emailAddressColumn,
             $returnUrl, NULL, NULL,
             NULL, NULL, $hasHeaderRow);
     }
