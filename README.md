@@ -17,7 +17,7 @@ To install the SDK with composer, run:
 ```bash
 composer install zero-bounce/sdk
 #or
-composer require zerobounce/sdk
+composer require zero-bounce/sdk
 ```
 
 ### Laravel
