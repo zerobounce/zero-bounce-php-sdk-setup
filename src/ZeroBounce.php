@@ -421,7 +421,7 @@ class ZeroBounce
             $content = @file_put_contents($downloadPath,
                 $this->downloadFile(self::BulkApiBaseUrl
                     . ($scoring ? "/scoring" : "")
-                    . "/getFile?api_key=" . $this->apiKey
+                    . "/getfile?api_key=" . $this->apiKey
                     . "&file_id=" . $fileId));
 
             if ($content === FALSE) {
