@@ -568,4 +568,32 @@ class ZeroBounce
 
         return $data;
     }
+
+    /**
+     * @param string $email The email address to check
+     * @return ZBActivityResponse
+     * @throws ZBMissingApiKeyException
+     * @throws ZBException
+     */
+    public function guessFormat($domain, $firstName, $middleName, $lastName)
+    {
+        $this->checkValidApiKey();
+
+        if (!$domain) throw new ZBMissingParameterException("domain is required");
+
+        $response = new ZBGuessFormatResponse();
+        $args = [
+            "api_key" => $this->apiKey,
+            "domain" => $domain
+        ];
+        if ($firstName) $args['first_name'] = $firstName;
+        if ($middleName) $args['middle_name'] = $middleName;
+        if ($lastName) $args['last_name'] = $lastName;
+
+        $query = http_build_query($args);
+
+        $this->request(self::ApiBaseUrl . "/guessformat?$query", $response);
+        return $response;
+    }
 }
+

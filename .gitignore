@@ -21,3 +21,5 @@ vendor/composer/
 test/downloads/
 
 composer\.lock
+
+.env
