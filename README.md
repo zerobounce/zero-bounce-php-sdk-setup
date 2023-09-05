@@ -71,7 +71,7 @@ ZeroBounce\SDK\ZBGetCreditsResponse Object
 )
 ```
 
-However, this pakage is framework agnostic, so if you need it implemented in a service provider class, you'll need to [implement it](https://laravel.com/docs/10.x/providers).
+However, this package is framework agnostic, so if you need it implemented in a service provider class, you'll need to [implement it](https://laravel.com/docs/10.x/providers).
 
 ## Usage
 - _include the SDK in your file (you should always use Composer's autoloader in your application to automatically load your dependencies)_
@@ -226,6 +226,14 @@ $fileId = "<FILE_ID>";              // The file ID received from "sendFile" resp
 /** @var $response ZeroBounce\SDK\ZBDeleteFileResponse */
 $response = ZeroBounce::Instance()->scoringDeleteFile($fileId);
 $success = $response->success;      // True / False
+```
+
+#### Email Finder API
+- Guess the format of email addresses for a domain
+```php
+$response = ZeroBounce::Instance()->guessFormat(
+        $domain, $firstname, $middlename, $lastname);
+$email = $response->email;
 ```
 
 ## Development

@@ -151,6 +151,15 @@ $response = ZeroBounce::Instance()->scoringDeleteFile($fileId);
 $success = $response->success;      // Verdadero / Falso
 ```
 
+###### Email Finder API
+- Guess the format of email addresses for a domain
+```php
+$response = ZeroBounce::Instance()->guessFormat(
+        $domain, $firstname, $middlename, $lastname);
+$email = $response->email;
+```
+
+
 #### Desarrollo
 
 Instale los módulos de PHP requeridos
