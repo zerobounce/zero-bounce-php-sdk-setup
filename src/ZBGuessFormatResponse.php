@@ -6,49 +6,51 @@ class ZBGuessFormatResponse extends ZBResponse
 {
     /**
      * The email address beign guessed.
-     * @var string
+     * @var string|null
      */
     public $email;
 
     /**
      * Domain guess is being performed for.
-     * @var string
+     * @var string|null
      */
     public $domain;
 
     /**
      * Most likely email format.
-     * @var string
+     * @var string|null
      */
     public $format;
 
     /**
      * Guess status.
-     * @var ZBValidateStatus
+     * @var string|null
+     * @see ZBValidateStatus
      */
     public $status;
 
     /**
      * Guess substatus.
-     * @var ZBValidateSubStatus
+     * @var string|null
+     * @see ZBValidateSubStatus
      */
     public $subStatus;
 
     /**
      * Confidence in guess.
-     * @var string
+     * @var string|null
      */
     public $confidence;
 
     /**
      * Suggestion for guess.
-     * @var string
+     * @var string|null
      */
     public $didYouMean;
 
     /**
      * Reason for error.
-     * @var string
+     * @var string|null
      */
     public $failureReason;
 
@@ -56,7 +58,7 @@ class ZBGuessFormatResponse extends ZBResponse
      * Other possible guess formats.
      * @var array
      */
-    public $otherDomainFormats;
+    public $otherDomainFormats = [];
 
     public function getValue($classKey, $value)
     {
@@ -68,14 +70,14 @@ class ZBGuessFormatResponse extends ZBResponse
     public function __toString()
     {
         return "ZBValidateResponse{" .
-            "email=" . $this->email . ", " . 
-            "status=" . $this->domain . ", " . 
+            "email=" . $this->email . ", " .
+            "status=" . $this->domain . ", " .
             "format=" . $this->format . ", " .
-            "status=" . $this->status . ", " . 
-            "subStatus=" . $this->subStatus . ", " . 
-            "confidence=" . $this->confidence . ", " . 
-            "didYouMean=" . $this->didYouMean . ", " . 
-            "failureReason=" . $this->failureReason . ", " . 
+            "status=" . $this->status . ", " .
+            "subStatus=" . $this->subStatus . ", " .
+            "confidence=" . $this->confidence . ", " .
+            "didYouMean=" . $this->didYouMean . ", " .
+            "failureReason=" . $this->failureReason . ", " .
             "}";
     }
 }

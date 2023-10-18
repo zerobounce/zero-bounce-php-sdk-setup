@@ -8,12 +8,12 @@ class ZBBatchValidateResponse extends ZBResponse
      * The batch of email addresses you are validating.
      * @var array
      */
-    public $emailBatch;
+    public $emailBatch = [];
 
     /**
      * @var array
      */
-    public $errors;
+    public $errors = [];
 
     public function __toString()
     {
