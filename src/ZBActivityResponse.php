@@ -5,12 +5,12 @@ namespace ZeroBounce\SDK;
 class ZBActivityResponse extends ZBResponse
 {
     /**
-     * @var bool
+     * @var bool|null
      */
     public $found;
 
     /**
-     * @var int
+     * @var int|null
      */
     public $activeInDays;
 

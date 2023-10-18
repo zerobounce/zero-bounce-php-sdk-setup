@@ -5,42 +5,42 @@ namespace ZeroBounce\SDK;
 class ZBFileStatusResponse extends ZBResponse
 {
     /**
-     * @var bool
+     * @var bool|null
      */
     public $success;
 
     /**
-     * @var string
+     * @var string|null
      */
     public $message;
 
     /**
-     * @var string
+     * @var string|null
      */
     public $fileStatus;
 
     /**
-     * @var string
+     * @var string|null
      */
     public $fileId;
 
     /**
-     * @var string
+     * @var string|null
      */
     public $fileName;
 
     /**
-     * @var string
+     * @var string|null
      */
     public $uploadDate;
 
     /**
-     * @var string
+     * @var string|null
      */
     public $completePercentage;
 
     /**
-     * @var string
+     * @var string|null
      */
     public $returnUrl;
 

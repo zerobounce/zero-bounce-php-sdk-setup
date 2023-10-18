@@ -5,7 +5,7 @@ namespace ZeroBounce\SDK;
 class ZBGetCreditsResponse extends ZBResponse
 {
     /**
-     * @var string
+     * @var string|null
      */
     public $credits;
 

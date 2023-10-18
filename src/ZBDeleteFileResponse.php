@@ -5,22 +5,22 @@ namespace ZeroBounce\SDK;
 class ZBDeleteFileResponse extends ZBResponse
 {
     /**
-     * @var bool
+     * @var bool|null
      */
     public $success;
 
     /**
      * @var array
      */
-    public $message;
+    public $message = [];
 
     /**
-     * @var string
+     * @var string|null
      */
     public $fileName;
 
     /**
-     * @var string
+     * @var string|null
      */
     public $fileId;
 

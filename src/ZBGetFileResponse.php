@@ -5,7 +5,7 @@ namespace ZeroBounce\SDK;
 class ZBGetFileResponse extends ZBResponse
 {
     /**
-     * @var string
+     * @var string|null
      */
     public $localFilePath;
 
