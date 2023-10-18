@@ -20,6 +20,6 @@ vendor/composer/
 !/logs/empty
 test/downloads/
 
-composer\.lock
+composer.lock
 
 .env
