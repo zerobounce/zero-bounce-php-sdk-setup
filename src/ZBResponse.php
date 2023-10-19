@@ -6,11 +6,17 @@ class ZBResponse
 {
     /**
      * @param string|array $json
+     * @throws ZBException
      */
     public function Deserialize($json)
     {
-        if (is_string($json))
-            $json = json_decode($json);
+        if (is_string($json)) {
+            $decodedJson = json_decode($json, true);
+            if (!\is_array($decodedJson)) {
+                throw new ZBException(sprintf('Invalid response "%s".', $json));
+            }
+            $json = $decodedJson;
+        }
 
         foreach ($json as $key => $value) {
             $classKey = $this->getClassKey($key);
