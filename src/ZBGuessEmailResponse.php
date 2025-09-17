@@ -2,8 +2,14 @@
 
 namespace ZeroBounce\SDK;
 
-class ZBGuessFormatResponse extends ZBResponse
+class ZBGuessEmailResponse extends ZBResponse
 {
+    /**
+     * The email address being guessed.
+     * @var string|null
+     */
+    public $email;
+
     /**
      * Domain guess is being performed for.
      * @var string|null
@@ -17,16 +23,10 @@ class ZBGuessFormatResponse extends ZBResponse
     public $companyName;
 
     /**
-     * Most likely email format.
-     * @var string|null
-     */
-    public $format;
-
-    /**
      * Confidence in guess.
      * @var string|null
      */
-    public $confidence;
+    public $emailConfidence;
 
     /**
      * Suggestion for guess.
@@ -40,25 +40,19 @@ class ZBGuessFormatResponse extends ZBResponse
      */
     public $failureReason;
 
-    /**
-     * Other possible guess formats.
-     * @var array
-     */
-    public $otherDomainFormats = [];
-
     public function getValue($classKey, $value)
     {
-        if ($classKey == "confidence") return ZBValidateConfidence::getByValue($value) ?? ZBValidateConfidence::__default;
+        if ($classKey == "emailConfidence") return ZBValidateConfidence::getByValue($value) ?? ZBValidateConfidence::__default;
         return parent::getValue($classKey, $value);
     }
 
     public function __toString()
     {
-        return "ZBGuessFormatResponse{" .
+        return "ZBGuessEmailResponse{" .
+            "email=" . $this->email . ", " .
             "domain=" . $this->domain . ", " .
             "companyName=" . $this->companyName . ", " .
-            "format=" . $this->format . ", " .
-            "confidence=" . $this->confidence . ", " .
+            "emailConfidence=" . $this->emailConfidence . ", " .
             "didYouMean=" . $this->didYouMean . ", " .
             "failureReason=" . $this->failureReason . ", " .
             "}";

@@ -168,11 +168,18 @@ $success = $response->success;      // True / False
 ```
 
 ###### Email Finder API
-- Guess the format of email addresses for a domain
+- Guess the format of email addresses for a domain or company name. Either the "domain" or the "companyName" must be entered.
 ```php
-$response = ZeroBounce::Instance()->guessFormat(
-        $domain, $firstname, $middlename, $lastname);
+$response = ZeroBounce::Instance()->guessEmail(
+        $domain, $firstname, $companyName, $middlename, $lastname);
 $email = $response->email;
+```
+
+###### Format Finder API
+- Guess the format of email addresses for a domain or company name. Either the "domain" or the "companyName" must be entered.
+```php
+$response = ZeroBounce::Instance()->guessFormat($domain, $companyName);
+$format = $response->format;
 ```
 
 #### Development
