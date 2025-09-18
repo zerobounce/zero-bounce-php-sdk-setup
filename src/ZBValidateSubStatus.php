@@ -30,4 +30,5 @@ class ZBValidateSubStatus extends BasicEnum
     const RoleBasedCatchAll = "role_based_catch_all";
     const Disposable = "disposable";
     const Toxic = "toxic";
+    const AcceptAll = "accept_all";
 }
