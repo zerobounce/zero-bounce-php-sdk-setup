@@ -570,8 +570,8 @@ class ZeroBounce
     }
 
     /**
-     * @param string $email The email address to check
-     * @return ZBActivityResponse
+     * @param string $domain The domain to check
+     * @return ZBGuessFormatResponse
      * @throws ZBMissingApiKeyException
      * @throws ZBException
      */
