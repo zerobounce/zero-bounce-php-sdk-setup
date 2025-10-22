@@ -570,6 +570,7 @@ class ZeroBounce
     }
 
     /**
+     * @deprecated 
      * @param string $domain The domain to check
      * @return ZBGuessFormatResponse
      * @throws ZBMissingApiKeyException
@@ -577,6 +578,8 @@ class ZeroBounce
      */
     public function guessFormat($domain, $firstName, $middleName, $lastName)
     {
+        error_log('Deprecated: Method ' . __METHOD__ . ' is deprecated. Use findEmail or findEmailFormat instead.');
+        
         $this->checkValidApiKey();
 
         if (!$domain) throw new ZBMissingParameterException("domain is required");
