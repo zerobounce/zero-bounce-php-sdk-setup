@@ -352,30 +352,14 @@ class ZeroBounceTest extends TestCase
         $this->assertEquals($response->fileName, "email_list.txt");
     }
 
-    public function testGuessEmail()
-    {
-        ZeroBounce::Instance()->responseText = "{
-            \"email\": \"first.last@zerobounce.net\",
-            \"domain\": \"zerobounce.net\",
-            \"company_name\": \"Zero Bounce\",
-            \"email_confidence\": \"high\",
-            \"did_you_mean\": \"\",
-            \"failure_reason\": \"\"
-        }";
-        $domain = "zerobounce.net";
-        $response = ZeroBounce::Instance()->guessEmail($domain, "First");
-        $this->assertEquals($response->email, "first.last@zerobounce.net");
-        $this->assertEquals($response->domain, $domain);
-        $this->assertEquals($response->companyName, 'Zero Bounce');
-        $this->assertEquals($response->emailConfidence, "high");
-    }
-
     public function testGuessFormat()
     {
         ZeroBounce::Instance()->responseText = "{
+            \"email\": \"\",
             \"domain\": \"zerobounce.net\",
-            \"company_name\": \"Zero Bounce\",
             \"format\": \"first.last\",
+            \"status\": \"valid\",
+            \"sub_status\": \"\",
             \"confidence\": \"high\",
             \"did_you_mean\": \"\",
             \"failure_reason\": \"\",
@@ -487,9 +471,9 @@ class ZeroBounceTest extends TestCase
             ]
         }";
         $domain = "zerobounce.net";
-    	$response = ZeroBounce::Instance()->guessFormat($domain);
+    	$response = ZeroBounce::Instance()->guessFormat(
+                $domain, "firstname", "middlename", "lastname");
     	$this->assertEquals($response->domain, $domain);
-    	$this->assertEquals($response->companyName, 'Zero Bounce');
         $this->assertEquals($response->format, "first.last");
         $this->assertEquals($response->confidence, "high");
         $this->assertEquals(count($response->otherDomainFormats), 26);

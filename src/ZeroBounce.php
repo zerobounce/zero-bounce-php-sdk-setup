@@ -570,37 +570,23 @@ class ZeroBounce
     }
 
     /**
-     * @param $domain
-     * @param $firstName
-     * @param $companyName
-     * @param $middleName
-     * @param $lastName
-     * @return ZBGuessEmailResponse
-     * @throws ZBException
+     * @param string $email The email address to check
+     * @return ZBActivityResponse
      * @throws ZBMissingApiKeyException
-     * @throws ZBMissingParameterException
+     * @throws ZBException
      */
-    public function guessEmail($domain, $firstName, $companyName = null, $middleName = null, $lastName = null)
+    public function guessFormat($domain, $firstName, $middleName, $lastName)
     {
         $this->checkValidApiKey();
 
-        if (!$domain && !$companyName) {
-            throw new ZBMissingParameterException('domain or companyName is required');
-        }
+        if (!$domain) throw new ZBMissingParameterException("domain is required");
 
-        $response = new ZBGuessEmailResponse();
+        $response = new ZBGuessFormatResponse();
         $args = [
-            'api_key' => $this->apiKey,
-            'first_name' => $firstName,
+            "api_key" => $this->apiKey,
+            "domain" => $domain
         ];
-
-        // The API doesn't accept both
-        if ($domain) {
-            $args['domain'] = $domain;
-        } else {
-            $args['company_name'] = $companyName;
-        }
-
+        if ($firstName) $args['first_name'] = $firstName;
         if ($middleName) $args['middle_name'] = $middleName;
         if ($lastName) $args['last_name'] = $lastName;
 
@@ -609,38 +595,5 @@ class ZeroBounce
         $this->request(self::ApiBaseUrl . "/guessformat?$query", $response);
         return $response;
     }
-
-    /**
-     * @param $domain
-     * @param $companyName
-     * @return ZBGuessFormatResponse
-     * @throws ZBException
-     * @throws ZBMissingApiKeyException
-     * @throws ZBMissingParameterException
-     */
-    public function guessFormat($domain, $companyName = null)
-    {
-        $this->checkValidApiKey();
-
-        if (!$domain && !$companyName) {
-            throw new ZBMissingParameterException('domain or companyName is required');
-        }
-
-        $response = new ZBGuessFormatResponse();
-        $args = [
-            'api_key' => $this->apiKey,
-        ];
-
-        // The API doesn't accept both
-        if ($domain) {
-            $args['domain'] = $domain;
-        } else {
-            $args['company_name'] = $companyName;
-        }
-
-        $query = http_build_query($args);
-
-        $this->request(self::ApiBaseUrl . "/guessformat?$query", $response);
-        return $response;
-    }
 }
+
