@@ -595,5 +595,87 @@ class ZeroBounce
         $this->request(self::ApiBaseUrl . "/guessformat?$query", $response);
         return $response;
     }
-}
 
+    /**
+     * Search for new business email addresses
+     * 
+     * @param string|null $domain
+     * @param string $firstName
+     * @param string|null $companyName
+     * @param string|null $middleName
+     * @param string|null $lastName
+     * @return ZBFindEmailResponse
+     * @throws ZBException
+     * @throws ZBMissingApiKeyException
+     * @throws ZBMissingParameterException
+     */
+    public function findEmail($domain, $firstName, $companyName = null, $middleName = null, $lastName = null)
+    {
+        $this->checkValidApiKey();
+
+        if (!$domain && !$companyName) {
+            throw new ZBMissingParameterException('domain or companyName is required');
+        }
+
+        if (!$firstName) {
+            throw new ZBMissingParameterException('firstName is required');
+        }
+
+        $response = new ZBFindEmailResponse();
+        $args = [
+            'api_key' => $this->apiKey,
+            'first_name' => $firstName,
+        ];
+
+        // The API doesn't accept both
+        if ($domain) {
+            $args['domain'] = $domain;
+        } else {
+            $args['company_name'] = $companyName;
+        }
+
+        if ($middleName) $args['middle_name'] = $middleName;
+        if ($lastName) $args['last_name'] = $lastName;
+
+        $query = http_build_query($args);
+
+        $this->request(self::ApiBaseUrl . "/guessformat?$query", $response);
+        return $response;
+    }
+
+    /**
+     * Detect possible email patterns a specific company uses
+     * 
+     * @param string $domain
+     * @param string|null $companyName
+     * @return ZBFindEmailFormatResponse
+     * @throws ZBException
+     * @throws ZBMissingApiKeyException
+     * @throws ZBMissingParameterException
+     */
+    public function findEmailFormat($domain, $companyName = null)
+    {
+        $this->checkValidApiKey();
+
+        if (!$domain && !$companyName) {
+            throw new ZBMissingParameterException('domain or companyName is required');
+        }
+
+        $response = new ZBFindEmailFormatResponse();
+        $args = [
+            'api_key' => $this->apiKey,
+        ];
+
+        // The API doesn't accept both
+        if ($domain) {
+            $args['domain'] = $domain;
+        } else {
+            $args['company_name'] = $companyName;
+        }
+
+        $query = http_build_query($args);
+
+        $this->request(self::ApiBaseUrl . "/guessformat?$query", $response);
+        return $response;
+    }
+}

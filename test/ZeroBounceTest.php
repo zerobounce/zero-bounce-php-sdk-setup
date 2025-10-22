@@ -478,4 +478,147 @@ class ZeroBounceTest extends TestCase
         $this->assertEquals($response->confidence, "high");
         $this->assertEquals(count($response->otherDomainFormats), 26);
     }
+
+    public function testFindEmail()
+    {
+        ZeroBounce::Instance()->responseText = "{
+            \"email\": \"first.last@zerobounce.net\",
+            \"domain\": \"zerobounce.net\",
+            \"company_name\": \"Zero Bounce\",
+            \"email_confidence\": \"high\",
+            \"did_you_mean\": \"\",
+            \"failure_reason\": \"\"
+        }";
+        $domain = "zerobounce.net";
+        $response = ZeroBounce::Instance()->findEmail($domain, "First");
+        $this->assertEquals($response->email, "first.last@zerobounce.net");
+        $this->assertEquals($response->domain, $domain);
+        $this->assertEquals($response->companyName, 'Zero Bounce');
+        $this->assertEquals($response->emailConfidence, "high");
+    }
+
+    public function testFindEmailFormat()
+    {
+        ZeroBounce::Instance()->responseText = "{
+            \"domain\": \"zerobounce.net\",
+            \"company_name\": \"ZeroBounce\",
+            \"format\": \"first.last\",
+            \"confidence\": \"high\",
+            \"did_you_mean\": \"\",
+            \"failure_reason\": \"\",
+            \"other_domain_formats\": [
+                {
+                    \"format\": \"first\",
+                    \"confidence\": \"high\"
+                },
+                {
+                    \"format\": \"last.first\",
+                    \"confidence\": \"high\"
+                },
+                {
+                    \"format\": \"lfirst\",
+                    \"confidence\": \"high\"
+                },
+                {
+                    \"format\": \"lastfirst\",
+                    \"confidence\": \"high\"
+                },
+                {
+                    \"format\": \"firstl\",
+                    \"confidence\": \"high\"
+                },
+                {
+                    \"format\": \"last\",
+                    \"confidence\": \"medium\"
+                },
+                {
+                    \"format\": \"first.middle.last\",
+                    \"confidence\": \"medium\"
+                },
+                {
+                    \"format\": \"first-last\",
+                    \"confidence\": \"medium\"
+                },
+                {
+                    \"format\": \"l.first\",
+                    \"confidence\": \"medium\"
+                },
+                {
+                    \"format\": \"f.last\",
+                    \"confidence\": \"medium\"
+                },
+                {
+                    \"format\": \"f-last\",
+                    \"confidence\": \"medium\"
+                },
+                {
+                    \"format\": \"first.l\",
+                    \"confidence\": \"medium\"
+                },
+                {
+                    \"format\": \"first-l\",
+                    \"confidence\": \"medium\"
+                },
+                {
+                    \"format\": \"firstlast\",
+                    \"confidence\": \"medium\"
+                },
+                {
+                    \"format\": \"first_l\",
+                    \"confidence\": \"medium\"
+                },
+                {
+                    \"format\": \"f_last\",
+                    \"confidence\": \"medium\"
+                },
+                {
+                    \"format\": \"last.f\",
+                    \"confidence\": \"medium\"
+                },
+                {
+                    \"format\": \"last-f\",
+                    \"confidence\": \"medium\"
+                },
+                {
+                    \"format\": \"last-first\",
+                    \"confidence\": \"medium\"
+                },
+                {
+                    \"format\": \"first_last\",
+                    \"confidence\": \"medium\"
+                },
+                {
+                    \"format\": \"last_f\",
+                    \"confidence\": \"medium\"
+                },
+                {
+                    \"format\": \"last_first\",
+                    \"confidence\": \"medium\"
+                },
+                {
+                    \"format\": \"flast\",
+                    \"confidence\": \"medium\"
+                },
+                {
+                    \"format\": \"lastf\",
+                    \"confidence\": \"medium\"
+                },
+                {
+                    \"format\": \"l-first\",
+                    \"confidence\": \"low\"
+                },
+                {
+                    \"format\": \"l_first\",
+                    \"confidence\": \"low\"
+                }
+            ]
+        }";
+        $domain = "zerobounce.net";
+        $response = ZeroBounce::Instance()->findEmailFormat($domain);
+        $this->assertEquals($response->domain, $domain);
+        $this->assertEquals($response->companyName, 'ZeroBounce');
+        $this->assertEquals($response->format, "first.last");
+        $this->assertEquals($response->confidence, "high");
+        $this->assertEquals(count($response->otherDomainFormats), 26);
+    }
 }
