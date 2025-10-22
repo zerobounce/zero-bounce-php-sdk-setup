@@ -24,6 +24,13 @@ use ZeroBounce\SDK\ZeroBounce;
 ZeroBounce::Instance()->initialize("<YOUR_API_KEY>");
 ```
 
+- _Optional: customize the base URL. Accepted values are `API_DEFAULT_URL`(default), `API_USA_URL` and `API_EU_URL`. Invalid values will fall back to the default one._
+```php
+use ZeroBounce\SDK\ZBBaseUrl;
+...
+ZeroBounce::Instance()->initialize("<YOUR_API_KEY>", ZBBaseUrl::API_EU_URL);
+```
+
 ##### _Method documentation_
 
 - Verify an email address:

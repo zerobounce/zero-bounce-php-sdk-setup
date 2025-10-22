@@ -33,7 +33,7 @@ class ZeroBounce
 
     }
 
-    const ApiBaseUrl = "https://api.zerobounce.net/v2";
+    protected static $ApiBaseUrl;
     const BulkApiBaseUrl = "https://bulkapi.zerobounce.net/v2";
     
     private $apiKey = null;
@@ -41,9 +41,10 @@ class ZeroBounce
     /**
      * @param string $apiKey
      */
-    public function initialize($apiKey)
+    public function initialize($apiKey, $baseUrl = null)
     {
         $this->apiKey = $apiKey;
+        self::$ApiBaseUrl = ZBBaseUrl::getByValue($baseUrl);
     }
 
     /**
@@ -59,7 +60,7 @@ class ZeroBounce
         $this->checkValidApiKey();
         if (!$email) throw new ZBMissingParameterException("email is required");
         $response = new ZBValidateResponse();
-        $this->request(self::ApiBaseUrl . "/validate?api_key=" . $this->apiKey . "&email=" . urlencode($email) . "&ip_address=" . ($ipAddress ? $ipAddress : ""), $response);
+        $this->request(self::$ApiBaseUrl . "/validate?api_key=" . $this->apiKey . "&email=" . urlencode($email) . "&ip_address=" . ($ipAddress ? $ipAddress : ""), $response);
         return $response;
     }
 
@@ -108,7 +109,7 @@ class ZeroBounce
     {
         $this->checkValidApiKey();
         $response = new ZBGetCreditsResponse();
-        $this->request(self::ApiBaseUrl . "/getcredits?api_key=" . $this->apiKey, $response);
+        $this->request(self::$ApiBaseUrl . "/getcredits?api_key=" . $this->apiKey, $response);
         return $response;
     }
 
@@ -128,7 +129,7 @@ class ZeroBounce
 
         $response = new ZBApiUsageResponse();
         $format = "Y-m-d";
-        $this->request(self::ApiBaseUrl . "/getapiusage?api_key=" . $this->apiKey
+        $this->request(self::$ApiBaseUrl . "/getapiusage?api_key=" . $this->apiKey
             . "&start_date=" . $startDate->format($format)
             . "&end_date=" . $endDate->format($format),
             $response);
@@ -149,7 +150,7 @@ class ZeroBounce
 
         $response = new ZBActivityResponse();
         $format = "Y-m-d";
-        $this->request(self::ApiBaseUrl . "/activity?api_key=" . $this->apiKey
+        $this->request(self::$ApiBaseUrl . "/activity?api_key=" . $this->apiKey
             . "&email=" . urlencode($email),
             $response);
         return $response;
@@ -595,7 +596,7 @@ class ZeroBounce
 
         $query = http_build_query($args);
 
-        $this->request(self::ApiBaseUrl . "/guessformat?$query", $response);
+        $this->request(self::$ApiBaseUrl . "/guessformat?$query", $response);
         return $response;
     }
 
@@ -642,7 +643,7 @@ class ZeroBounce
 
         $query = http_build_query($args);
 
-        $this->request(self::ApiBaseUrl . "/guessformat?$query", $response);
+        $this->request(self::$ApiBaseUrl . "/guessformat?$query", $response);
         return $response;
     }
 
@@ -678,7 +679,7 @@ class ZeroBounce
 
         $query = http_build_query($args);
 
-        $this->request(self::ApiBaseUrl . "/guessformat?$query", $response);
+        $this->request(self::$ApiBaseUrl . "/guessformat?$query", $response);
         return $response;
     }
 }
