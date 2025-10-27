@@ -19,6 +19,21 @@ require 'vendor/autoload.php';
 use ZeroBounce\SDK\ZeroBounce;
 ```
 
+- _Opcional: personaliza la URL base. Los valores aceptados son `API_DEFAULT_URL`(por defecto), `API_USA_URL` y `API_EU_URL`. Los valores no válidos volverán al valor predeterminado._
+```php
+// puedes usar las constantes proporcionadas
+use ZeroBounce\SDK\ZBBaseUrl;
+// ...
+ZeroBounce::Instance()->initialize("<SU_CLAVE_DE_API>", ZBBaseUrl::API_USA_URL);
+// o
+ZeroBounce::Instance()->initialize("<SU_CLAVE_DE_API>", ZBBaseUrl::API_EU_URL);
+
+// también puedes codificar la URL manualmente
+ZeroBounce::Instance()->initialize("<SU_CLAVE_DE_API>", "https://api-us.zerobounce.net/v2");
+// o
+ZeroBounce::Instance()->initialize("<SU_CLAVE_DE_API>", "https://api-eu.zerobounce.net/v2");
+```
+
 - _inicialice el SDK con su clave de API_
 ```php
 ZeroBounce::Instance()->initialize("<SU_CLAVE_DE_API>");
