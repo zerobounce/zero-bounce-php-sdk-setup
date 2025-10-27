@@ -26,9 +26,17 @@ ZeroBounce::Instance()->initialize("<YOUR_API_KEY>");
 
 - _Optional: customize the base URL. Accepted values are `API_DEFAULT_URL`(default), `API_USA_URL` and `API_EU_URL`. Invalid values will fall back to the default one._
 ```php
+// you can use the provided constants
 use ZeroBounce\SDK\ZBBaseUrl;
-...
+// ...
+ZeroBounce::Instance()->initialize("<YOUR_API_KEY>", ZBBaseUrl::API_USA_URL);
+// or
 ZeroBounce::Instance()->initialize("<YOUR_API_KEY>", ZBBaseUrl::API_EU_URL);
+
+// you can also hardcode the URL
+ZeroBounce::Instance()->initialize("<YOUR_API_KEY>", "https://api-us.zerobounce.net/v2");
+// or
+ZeroBounce::Instance()->initialize("<YOUR_API_KEY>", "https://api-eu.zerobounce.net/v2");
 ```
 
 ##### _Method documentation_
