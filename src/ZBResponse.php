@@ -18,6 +18,10 @@ class ZBResponse
             $json = $decodedJson;
         }
 
+        if (!\is_array($json)) {
+            throw new ZBException('Deserialize expects a JSON string or array, null or invalid type given.');
+        }
+
         foreach ($json as $key => $value) {
             $classKey = $this->getClassKey($key);
             //echo "Deserialize json key=" . $key . ", class key=" . $classKey . "\n";
