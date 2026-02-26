@@ -471,9 +471,8 @@ class ZeroBounceTest extends TestCase
             ]
         }";
         $domain = "zerobounce.net";
-    	$response = ZeroBounce::Instance()->guessFormat(
-                $domain, "firstname", "middlename", "lastname");
-    	$this->assertEquals($response->domain, $domain);
+        $response = ZeroBounce::Instance()->findEmailFormat($domain);
+        $this->assertEquals($response->domain, $domain);
         $this->assertEquals($response->format, "first.last");
         $this->assertEquals($response->confidence, "high");
         $this->assertEquals(count($response->otherDomainFormats), 26);

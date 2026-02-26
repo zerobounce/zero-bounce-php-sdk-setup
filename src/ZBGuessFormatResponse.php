@@ -69,15 +69,14 @@ class ZBGuessFormatResponse extends ZBResponse
 
     public function __toString()
     {
-        return "ZBValidateResponse{" .
-            "email=" . $this->email . ", " .
-            "status=" . $this->domain . ", " .
-            "format=" . $this->format . ", " .
-            "status=" . $this->status . ", " .
-            "subStatus=" . $this->subStatus . ", " .
-            "confidence=" . $this->confidence . ", " .
-            "didYouMean=" . $this->didYouMean . ", " .
-            "failureReason=" . $this->failureReason . ", " .
-            "}";
+        return "ZBGuessFormatResponse{" .
+            "email=" . $this->stringField($this->email) . ", " .
+            "domain=" . $this->stringField($this->domain) . ", " .
+            "format=" . $this->stringField($this->format) . ", " .
+            "status=" . $this->stringField($this->status) . ", " .
+            "subStatus=" . $this->stringField($this->subStatus) . ", " .
+            "confidence=" . $this->stringField($this->confidence) . ", " .
+            "didYouMean=" . $this->stringField($this->didYouMean) . ", " .
+            "failureReason=" . $this->stringField($this->failureReason) . "}";
     }
 }

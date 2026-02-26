@@ -671,8 +671,11 @@ class ZeroBounce
      */
     public function guessFormat($domain, $firstName, $middleName, $lastName)
     {
-        error_log('Deprecated: Method ' . __METHOD__ . ' is deprecated. Use findEmail or findEmailFormat instead.');
-        
+        trigger_error(
+            'Method ' . __METHOD__ . ' is deprecated. Use findEmail or findEmailFormat instead.',
+            E_USER_DEPRECATED
+        );
+
         $this->checkValidApiKey();
 
         if (!$domain) throw new ZBMissingParameterException("domain is required");
