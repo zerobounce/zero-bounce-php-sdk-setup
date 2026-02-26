@@ -198,6 +198,49 @@ class ZeroBounce
     }
 
     /**
+     * Send a file for bulk email validation from stream content (e.g. in-memory CSV).
+     * @param string $streamContent The file content (e.g. from stream_get_contents() or file_get_contents())
+     * @param string $fileName The file name to use for the upload (e.g. "emails.csv")
+     * @param int $emailAddressColumn
+     * @param string|null $returnUrl
+     * @param int|null $firstNameColumn
+     * @param int|null $lastNameColumn
+     * @param int|null $genderColumn
+     * @param int|null $ipAddressColumn
+     * @param bool|null $hasHeaderRow
+     * @return ZBSendFileResponse
+     */
+    public function sendFileStream(
+        $streamContent, $fileName, $emailAddressColumn, $returnUrl = NULL, $firstNameColumn = NULL,
+        $lastNameColumn = NULL, $genderColumn = NULL, $ipAddressColumn = NULL, $hasHeaderRow = NULL)
+    {
+        return $this->_sendFileWithContent(
+            self::BulkApiBaseUrl . "/sendfile",
+            $fileName, $streamContent, $emailAddressColumn,
+            $returnUrl, $firstNameColumn, $lastNameColumn, $genderColumn, $ipAddressColumn, $hasHeaderRow
+        );
+    }
+
+    /**
+     * Send a file for bulk email scoring from stream content.
+     * @param string $streamContent The file content
+     * @param string $fileName The file name to use for the upload (e.g. "emails.csv")
+     * @param int $emailAddressColumn
+     * @param string|null $returnUrl
+     * @param bool|null $hasHeaderRow
+     * @return ZBSendFileResponse
+     */
+    public function scoringSendFileStream(
+        $streamContent, $fileName, $emailAddressColumn, $returnUrl = NULL, $hasHeaderRow = NULL)
+    {
+        return $this->_sendFileWithContent(
+            self::BulkApiBaseUrl . "/scoring/sendfile",
+            $fileName, $streamContent, $emailAddressColumn,
+            $returnUrl, NULL, NULL, NULL, NULL, $hasHeaderRow
+        );
+    }
+
+    /**
      * @param string $url
      * @param string $filepath
      * @param int $emailAddressColumn
@@ -237,6 +280,51 @@ class ZeroBounce
 
             $files = array();
             $files[$filepath] = file_get_contents($filepath);
+
+            $response = $this->curl($url, $fields, $files);
+
+            $rsp = new ZBSendFileResponse();
+            $rsp->Deserialize($response);
+            return $rsp;
+        } catch (Exception $e) {
+            throw new ZBException($e->getMessage());
+        }
+    }
+
+    /**
+     * @param string $url
+     * @param string $fileName
+     * @param string $content
+     * @param int $emailAddressColumn
+     * @param string|null $returnUrl
+     * @param int|null $firstNameColumn
+     * @param int|null $lastNameColumn
+     * @param int|null $genderColumn
+     * @param int|null $ipAddressColumn
+     * @param bool|null $hasHeaderRow
+     * @return ZBSendFileResponse
+     */
+    private function _sendFileWithContent(
+        $url, $fileName, $content, $emailAddressColumn, $returnUrl = NULL, $firstNameColumn = NULL,
+        $lastNameColumn = NULL, $genderColumn = NULL, $ipAddressColumn = NULL, $hasHeaderRow = NULL)
+    {
+        $this->checkValidApiKey();
+        if (!$fileName) throw new ZBMissingParameterException("fileName is required");
+        if (!$emailAddressColumn) throw new ZBMissingParameterException("emailAddressColumn is required");
+
+        try {
+            $fields = array(
+                "api_key" => $this->apiKey,
+                "email_address_column" => $emailAddressColumn
+            );
+            if ($returnUrl) $fields["return_url"] = $returnUrl;
+            if ($firstNameColumn) $fields["first_name_column"] = $firstNameColumn;
+            if ($lastNameColumn) $fields["last_name_column"] = $lastNameColumn;
+            if ($genderColumn) $fields["gender_column"] = $genderColumn;
+            if ($ipAddressColumn) $fields["ip_address_column"] = $ipAddressColumn;
+            if ($hasHeaderRow) $fields["has_header_row"] = 'true';
+
+            $files = array($fileName => $content);
 
             $response = $this->curl($url, $fields, $files);
 

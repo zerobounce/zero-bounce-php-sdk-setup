@@ -260,6 +260,15 @@ $email = $response->format;
 
 ## Development
 
+### Run tests with Docker
+From the **parent repository root** (the folder that contains all SDKs and `docker-compose.yml`):
+
+```bash
+docker compose build php
+docker compose run --rm php
+```
+
+### Run tests (local)
 Install required PHP modules
 ```bash
 sudo apt install -y php-curl php-dom php-xml php-xmlwriter

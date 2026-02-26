@@ -168,6 +168,41 @@ class ZBApiUsageResponse extends ZBResponse
      */
     public $subStatusFailedSmtpConnection;
 
+    /** Total number of times the API has a sub status of "accept_all"
+     * @var int|null
+     */
+    public $subStatusAcceptAll;
+
+    /** Total number of times the API has a sub status of "mx_forward"
+     * @var int|null
+     */
+    public $subStatusMxForward;
+
+    /** Total number of times the API has a sub status of "alternate"
+     * @var int|null
+     */
+    public $subStatusAlternate;
+
+    /** Total number of times the API has a sub status of "allowed"
+     * @var int|null
+     */
+    public $subStatusAllowed;
+
+    /** Total number of times the API has a sub status of "blocked"
+     * @var int|null
+     */
+    public $subStatusBlocked;
+
+    /** Total number of times the API has a sub status of "gold"
+     * @var int|null
+     */
+    public $subStatusGold;
+
+    /** Total number of times the API has a sub status of "role_based_accept_all"
+     * @var int|null
+     */
+    public $subStatusRoleBasedAcceptAll;
+
     /**
      * Start date of query
      * @var string|null
@@ -211,6 +246,13 @@ class ZBApiUsageResponse extends ZBResponse
             ", subStatusMailboxQuotaExceeded=" . $this->subStatusMailboxQuotaExceeded .
             ", subStatusForcibleDisconnect=" . $this->subStatusForcibleDisconnect .
             ", subStatusFailedSmtpConnection=" . $this->subStatusFailedSmtpConnection .
+            ", subStatusAcceptAll=" . $this->subStatusAcceptAll .
+            ", subStatusMxForward=" . $this->subStatusMxForward .
+            ", subStatusAlternate=" . $this->subStatusAlternate .
+            ", subStatusAllowed=" . $this->subStatusAllowed .
+            ", subStatusBlocked=" . $this->subStatusBlocked .
+            ", subStatusGold=" . $this->subStatusGold .
+            ", subStatusRoleBasedAcceptAll=" . $this->subStatusRoleBasedAcceptAll .
             ", startDate=" . $this->stringField($this->startDate) .
             ", endDate=" . $this->stringField($this->endDate) .
             "}";

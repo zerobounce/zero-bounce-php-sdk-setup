@@ -15,6 +15,24 @@ class ZBBatchValidateResponse extends ZBResponse
      */
     public $errors = [];
 
+    public function getValue($classKey, $value)
+    {
+        if ($classKey === 'emailBatch' && is_array($value)) {
+            $batch = [];
+            foreach ($value as $item) {
+                if (is_array($item)) {
+                    $obj = new ZBValidateResponse();
+                    $obj->Deserialize($item);
+                    $batch[] = $obj;
+                } else {
+                    $batch[] = $item;
+                }
+            }
+            return $batch;
+        }
+        return parent::getValue($classKey, $value);
+    }
+
     public function __toString()
     {
         $result = "ZBBatchValidateResponse[";

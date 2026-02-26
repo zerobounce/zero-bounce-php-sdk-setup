@@ -164,9 +164,9 @@ class ZeroBounceTest extends TestCase
         
         $this->assertEquals($response->emailBatch[1]->status,
             'invalid');
-        $this->assertEquals($response->emailBatch[3]->sub_status,
+        $this->assertEquals($response->emailBatch[3]->subStatus,
             'toxic');
-        $this->assertEquals($response->emailBatch[3]->smtp_provider,
+        $this->assertEquals($response->emailBatch[3]->smtpProvider,
             'example');
 
 
@@ -186,9 +186,9 @@ class ZeroBounceTest extends TestCase
         
         $this->assertEquals($response->emailBatch[1]->status,
             'invalid');
-        $this->assertEquals($response->emailBatch[3]->sub_status,
+        $this->assertEquals($response->emailBatch[3]->subStatus,
             'toxic');
-        $this->assertEquals($response->emailBatch[3]->smtp_provider,
+        $this->assertEquals($response->emailBatch[3]->smtpProvider,
             'example');
     }
 

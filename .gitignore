@@ -22,4 +22,5 @@ test/downloads/
 
 composer.lock
 
+.DS_Store
 .env
