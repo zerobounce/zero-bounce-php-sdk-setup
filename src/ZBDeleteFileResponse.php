@@ -34,11 +34,11 @@ class ZBDeleteFileResponse extends ZBResponse
 
     public function __toString()
     {
-        return "ZBDeleteFileResponse{".
-            "success=".$this->success.
-            ", message=".$this->arrayField($this->message).
-            ", fileName=".$this->stringField($this->fileName).
-            ", fileId=".$this->stringField($this->fileId).
-            '}';
+        return "ZBDeleteFileResponse{" .
+            "success=" . $this->success .
+            ", message=" . $this->arrayField($this->message) .
+            ", fileName=" . $this->stringField($this->fileName) .
+            ", fileId=" . $this->stringField($this->fileId) .
+            "}";
     }
 }

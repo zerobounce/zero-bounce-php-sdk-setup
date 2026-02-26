@@ -136,15 +136,23 @@ class ZBValidateResponse extends ZBResponse
      */
     public function getClassKey($key)
     {
-        if ($key == "firstname") return "firstName";
-        if ($key == "lastname") return "lastName";
+        if ($key === "firstname") {
+            return "firstName";
+        }
+        if ($key === "lastname") {
+            return "lastName";
+        }
         return parent::getClassKey($key);
     }
 
     public function getValue($classKey, $value)
     {
-        if ($classKey == "status") return ZBValidateStatus::getByValue($value) ?? ZBValidateStatus::__default;
-        if ($classKey == "sub_status") return ZBValidateSubStatus::getByValue($value) ?? ZBValidateSubStatus::__default;
+        if ($classKey === "status") {
+            return ZBValidateStatus::getByValue($value) ?? ZBValidateStatus::__default;
+        }
+        if ($classKey === "sub_status") {
+            return ZBValidateSubStatus::getByValue($value) ?? ZBValidateSubStatus::__default;
+        }
         return parent::getValue($classKey, $value);
     }
 
@@ -170,7 +178,6 @@ class ZBValidateResponse extends ZBResponse
             "zipCode=" . $this->stringField($this->zipcode) . ", " .
             "country=" . $this->stringField($this->country) . ", " .
             "processedAt=" . $this->stringField($this->processedAt) . ", " .
-            "error=" . $this->stringField($this->error) . ", " .
-            "}";
+            "error=" . $this->stringField($this->error) . "}";
     }
 }

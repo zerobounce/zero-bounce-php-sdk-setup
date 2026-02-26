@@ -42,19 +42,20 @@ class ZBFindEmailResponse extends ZBResponse
 
     public function getValue($classKey, $value)
     {
-        if ($classKey == "emailConfidence") return ZBValidateConfidence::getByValue($value) ?? ZBValidateConfidence::__default;
+        if ($classKey === "emailConfidence") {
+            return ZBValidateConfidence::getByValue($value) ?? ZBValidateConfidence::__default;
+        }
         return parent::getValue($classKey, $value);
     }
 
     public function __toString()
     {
-        return "ZBGuessEmailResponse{" .
-            "email=" . $this->email . ", " .
-            "domain=" . $this->domain . ", " .
-            "companyName=" . $this->companyName . ", " .
-            "emailConfidence=" . $this->emailConfidence . ", " .
-            "didYouMean=" . $this->didYouMean . ", " .
-            "failureReason=" . $this->failureReason . ", " .
-            "}";
+        return "ZBFindEmailResponse{" .
+            "email=" . $this->stringField($this->email) . ", " .
+            "domain=" . $this->stringField($this->domain) . ", " .
+            "companyName=" . $this->stringField($this->companyName) . ", " .
+            "emailConfidence=" . $this->stringField($this->emailConfidence) . ", " .
+            "didYouMean=" . $this->stringField($this->didYouMean) . ", " .
+            "failureReason=" . $this->stringField($this->failureReason) . "}";
     }
 }

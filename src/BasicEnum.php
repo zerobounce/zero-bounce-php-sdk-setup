@@ -4,17 +4,20 @@ namespace ZeroBounce\SDK;
 
 use ReflectionClass;
 
-abstract class BasicEnum {
-    private static $constCacheArray = NULL;
+abstract class BasicEnum
+{
+    private static $constCacheArray = null;
 
-    private function __construct(){
+    private function __construct()
+    {
         /*
           Preventing instance :)
         */
     }
 
-    private static function getConstants() {
-        if (self::$constCacheArray == NULL) {
+    private static function getConstants()
+    {
+        if (self::$constCacheArray === null) {
             self::$constCacheArray = [];
         }
         $calledClass = get_called_class();
@@ -25,7 +28,8 @@ abstract class BasicEnum {
         return self::$constCacheArray[$calledClass];
     }
 
-    public static function isValidName($name, $strict = false) {
+    public static function isValidName($name, $strict = false)
+    {
         $constants = self::getConstants();
 
         if ($strict) {
@@ -36,14 +40,18 @@ abstract class BasicEnum {
         return in_array(strtolower($name), $keys);
     }
 
-    public static function isValidValue($value) {
+    public static function isValidValue($value)
+    {
         $values = array_values(self::getConstants());
-        return in_array($value, $values, $strict = true);
+        return in_array($value, $values, true);
     }
 
-    public static function getByValue($value) {
+    public static function getByValue($value)
+    {
         $values = array_values(self::getConstants());
-        if(in_array($value, $values, $strict = true)) return $value;
-        return NULL;
+        if (in_array($value, $values, true)) {
+            return $value;
+        }
+        return null;
     }
 }

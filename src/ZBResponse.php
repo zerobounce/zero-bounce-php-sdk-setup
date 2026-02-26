@@ -24,15 +24,12 @@ class ZBResponse
 
         foreach ($json as $key => $value) {
             $classKey = $this->getClassKey($key);
-            //echo "Deserialize json key=" . $key . ", class key=" . $classKey . "\n";
-            if (!property_exists($this, $classKey)) continue;
-
+            if (!property_exists($this, $classKey)) {
+                continue;
+            }
             $classValue = $this->getValue($classKey, $value);
-            //print "Deserialize class key=" . $classKey . ", value=" . $classValue . "\n";
             $this->{$classKey} = $classValue;
         }
-
-        //return $classInstance;
     }
 
     public function getClassKey($key)
@@ -56,17 +53,22 @@ class ZBResponse
 
     public function __toString()
     {
-        $className = get_called_class();
-        return $className . "{}";
+        return static::class . "{}";
     }
 
-    public function stringField($value) {
-        if($value) return "'".$value."'";
+    public function stringField($value)
+    {
+        if ($value) {
+            return "'" . $value . "'";
+        }
         return "NULL";
     }
 
-    public function arrayField($value) {
-        if($value) return json_encode($value);
+    public function arrayField($value)
+    {
+        if ($value) {
+            return json_encode($value);
+        }
         return "NULL";
     }
 

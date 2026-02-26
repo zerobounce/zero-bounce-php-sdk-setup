@@ -57,6 +57,4 @@ class ZBFileStatusResponse extends ZBResponse
             ", returnUrl=" . $this->stringField($this->returnUrl) .
             "}";
     }
-
-
 }

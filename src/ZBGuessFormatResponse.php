@@ -5,7 +5,7 @@ namespace ZeroBounce\SDK;
 class ZBGuessFormatResponse extends ZBResponse
 {
     /**
-     * The email address beign guessed.
+     * The email address being guessed.
      * @var string|null
      */
     public $email;
@@ -62,8 +62,12 @@ class ZBGuessFormatResponse extends ZBResponse
 
     public function getValue($classKey, $value)
     {
-        if ($classKey == "status") return ZBValidateStatus::getByValue($value) ?? ZBValidateStatus::__default;
-        if ($classKey == "sub_status") return ZBValidateSubStatus::getByValue($value) ?? ZBValidateSubStatus::__default;
+        if ($classKey === "status") {
+            return ZBValidateStatus::getByValue($value) ?? ZBValidateStatus::__default;
+        }
+        if ($classKey === "sub_status") {
+            return ZBValidateSubStatus::getByValue($value) ?? ZBValidateSubStatus::__default;
+        }
         return parent::getValue($classKey, $value);
     }
 

@@ -48,19 +48,21 @@ class ZBFindEmailFormatResponse extends ZBResponse
 
     public function getValue($classKey, $value)
     {
-        if ($classKey == "confidence") return ZBValidateConfidence::getByValue($value) ?? ZBValidateConfidence::__default;
+        if ($classKey === "confidence") {
+            return ZBValidateConfidence::getByValue($value) ?? ZBValidateConfidence::__default;
+        }
         return parent::getValue($classKey, $value);
     }
 
     public function __toString()
     {
-        return "ZBGuessFormatResponse{" .
-            "domain=" . $this->domain . ", " .
-            "companyName=" . $this->companyName . ", " .
-            "format=" . $this->format . ", " .
-            "confidence=" . $this->confidence . ", " .
-            "didYouMean=" . $this->didYouMean . ", " .
-            "failureReason=" . $this->failureReason . ", " .
-            "}";
+        return "ZBFindEmailFormatResponse{" .
+            "domain=" . $this->stringField($this->domain) . ", " .
+            "companyName=" . $this->stringField($this->companyName) . ", " .
+            "format=" . $this->stringField($this->format) . ", " .
+            "confidence=" . $this->stringField($this->confidence) . ", " .
+            "didYouMean=" . $this->stringField($this->didYouMean) . ", " .
+            "failureReason=" . $this->stringField($this->failureReason) . ", " .
+            "otherDomainFormats=" . $this->arrayField($this->otherDomainFormats) . "}";
     }
 }

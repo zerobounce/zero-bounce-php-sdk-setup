@@ -34,13 +34,11 @@ class ZBSendFileResponse extends ZBResponse
 
     public function __toString()
     {
-        return "ZBSendFileResponse{".
-            "success=".$this->success.
-            ", message=".$this->arrayField($this->message).
-            ", fileName=".$this->stringField($this->fileName).
-            ", fileId=".$this->stringField($this->fileId).
-            '}';
+        return "ZBSendFileResponse{" .
+            "success=" . $this->success .
+            ", message=" . $this->arrayField($this->message) .
+            ", fileName=" . $this->stringField($this->fileName) .
+            ", fileId=" . $this->stringField($this->fileId) .
+            "}";
     }
-
-
 }

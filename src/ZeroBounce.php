@@ -77,21 +77,25 @@ class ZeroBounce
         if (!$emails or !count($emails)) throw new ZBMissingParameterException("emails parameter is required");
 
         $params = [];
-        if (gettype($emails[0])=='string')
+        if (gettype($emails[0]) === 'string')
             $params = array_map(
-                fn($email) => ['email_address' => $email], 
+                function ($email) {
+                    return ['email_address' => $email];
+                },
                 $emails
             );
-        else if (gettype($emails[0])=='array')
+        elseif (gettype($emails[0]) === 'array')
             $params = array_map(
-                fn($email) => [
-                    'email_address' => $email[0],
-                    'ip_address' => $email[1]
-                ],
+                function ($email) {
+                    return [
+                        'email_address' => $email[0],
+                        'ip_address' => $email[1]
+                    ];
+                },
                 $emails
             );
         else
-            throw ZBException('Unknown Parameter Type');
+            throw new ZBException('Unknown Parameter Type');
         $params = ['email_batch' => $params];
 
         $response = new ZBBatchValidateResponse();
