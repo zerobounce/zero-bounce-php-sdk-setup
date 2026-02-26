@@ -514,6 +514,10 @@ class ZeroBounce
                 throw new ZBException("No response");
             }
 
+            if (function_exists('http_get_last_response_headers')) {
+                // @see https://wiki.php.net/rfc/deprecations_php_8_5#deprecate_the_http_response_header_predefined_variable
+                $http_response_header = http_get_last_response_headers();
+            }
             $code = $this->getHttpCode($http_response_header);
             $response->Deserialize($json);
             return $code;
@@ -530,10 +534,10 @@ class ZeroBounce
         if (!$this->apiKey) throw new ZBMissingApiKeyException("ZeroBounce SDK is not initialized. Please call ZeroBounce::Instance()->initialize(\"API_KEY\") first");
     }
 
-    private function getHttpCode($http_response_header)
+    private function getHttpCode($httpResponseHeader)
     {
-        if (is_array($http_response_header)) {
-            $parts = explode(' ', $http_response_header[0]);
+        if (is_array($httpResponseHeader)) {
+            $parts = explode(' ', $httpResponseHeader[0]);
             if (count($parts) > 1) //HTTP/1.0 <code> <text>
                 return intval($parts[1]); //Get code
         }
