@@ -65,4 +65,36 @@ class ZBResponse
         if($value) return json_encode($value);
         return "NULL";
     }
+
+    /**
+     * Return the response as an associative array (e.g. for JSON or array access).
+     * Nested response objects and arrays of response objects are converted recursively.
+     *
+     * @return array<string, mixed>
+     */
+    public function toArray()
+    {
+        $result = [];
+        foreach (get_object_vars($this) as $key => $value) {
+            $result[$key] = $this->valueToArray($value);
+        }
+        return $result;
+    }
+
+    /**
+     * @param mixed $value
+     * @return mixed
+     */
+    protected function valueToArray($value)
+    {
+        if ($value instanceof ZBResponse) {
+            return $value->toArray();
+        }
+        if (is_array($value)) {
+            return array_map(function ($item) {
+                return $this->valueToArray($item);
+            }, $value);
+        }
+        return $value;
+    }
 }
