@@ -284,20 +284,6 @@ Run tests
 ./vendor/bin/phpunit test
 ```
 
-## Publish (release)
+## Publish
 
-Releases are driven by **git tags**. [Packagist](https://packagist.org/packages/zero-bounce/sdk) picks up new versions automatically when you push a tag.
-
-From the repo root, on the branch you want to release:
-
-```bash
-# Ensure tests pass
-composer install --no-progress
-./vendor/bin/phpunit test
-
-# Create and push tag (replace X.Y.Z with the release version, e.g. 1.3.0)
-git tag -a vX.Y.Z -m "Release vX.Y.Z"
-git push origin vX.Y.Z
-```
-
-Packagist will list the new version after it syncs from GitHub. Optionally create a [GitHub Release](https://github.com/zerobounce/zero-bounce-php-sdk-setup/releases/new) for the tag.
+Releases are driven by **git tags**. [Packagist](https://packagist.org/packages/zero-bounce/sdk) picks up new versions automatically when you push a tag. No manual publish step. For the release workflow (version/tag from the SDKs repo), see the [sdk-docs](../sdk-docs/) guide (Packagist and RELEASE-WORKFLOW).
