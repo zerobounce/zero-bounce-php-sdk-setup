@@ -6,6 +6,9 @@ require_once __DIR__ . '/../vendor/autoload.php';
 require_once('MockZeroBounce.php');
 
 use ZeroBounce\SDK\ZBValidateStatus;
+use ZeroBounce\SDK\ZBDownloadType;
+use ZeroBounce\SDK\ZBGetFileOptions;
+use ZeroBounce\SDK\ZeroBounce as SdkZeroBounce;
 use ZeroBounce\Tests\MockZeroBounce as ZeroBounce;
 use PHPUnit\Framework\TestCase;
 
@@ -256,6 +259,41 @@ class ZeroBounceTest extends TestCase
         $this->assertEquals($response->fileName, "email_list.txt");
     }
 
+    public function testSendFileAllowPhase2()
+    {
+        ZeroBounce::Instance()->responseText = "{
+            \"success\": true,
+            \"message\": \"File Accepted\",
+            \"file_name\": \"email_list.txt\",
+            \"file_id\": \"fae8b155-da88-45fb-8058-0ccfad168812\"
+        }";
+        ZeroBounce::Instance()->sendFile(
+            "./test/email_file.csv",
+            1,
+            null,
+            null,
+            null,
+            null,
+            null,
+            false,
+            true
+        );
+        $this->assertArrayHasKey('allow_phase_2', ZeroBounce::Instance()->lastMultipartFields);
+        $this->assertEquals('true', ZeroBounce::Instance()->lastMultipartFields['allow_phase_2']);
+    }
+
+    public function testScoringSendFileDoesNotSendAllowPhase2()
+    {
+        ZeroBounce::Instance()->responseText = "{
+            \"success\": true,
+            \"message\": \"File Accepted\",
+            \"file_name\": \"email_list.txt\",
+            \"file_id\": \"fae8b155-da88-45fb-8058-0ccfad168812\"
+        }";
+        ZeroBounce::Instance()->scoringSendFile("./test/email_file.csv", 1, null, true);
+        $this->assertArrayNotHasKey('allow_phase_2', ZeroBounce::Instance()->lastMultipartFields);
+    }
+
     public function testFileStatus()
     {
         ZeroBounce::Instance()->responseText = "{
@@ -264,12 +302,14 @@ class ZeroBounceTest extends TestCase
             \"file_name\": \"email_list.txt\",
             \"upload_date\": \"2023-03-24T14:18:31Z\",
             \"file_status\": \"Complete\",
+            \"file_phase_2_status\": \"N/A\",
             \"complete_percentage\": \"100% Complete.\",
             \"return_url\": \"returnUrl\"
         }";
         $response = ZeroBounce::Instance()->fileStatus("fae8b155-da88-45fb-8058-0ccfad168812");
         $this->assertEquals($response->success, true);
         $this->assertEquals($response->fileName, "email_list.txt");
+        $this->assertEquals($response->filePhase2Status, "N/A");
     }
 
     public function testGetFile()
@@ -282,6 +322,45 @@ class ZeroBounceTest extends TestCase
         $response = ZeroBounce::Instance()->getFile("fae8b155-da88-45fb-8058-0ccfad168812", "email_list.txt");
         $this->assertEquals($response->localFilePath, "email_list.txt");
         unlink("email_list.txt");
+    }
+
+    public function testGetFileJsonErrorThrows()
+    {
+        ZeroBounce::Instance()->responseText = '{ "success": false, "message": "File not ready" }';
+        $this->expectException(\ZeroBounce\SDK\ZBException::class);
+        ZeroBounce::Instance()->getFile("fae8b155-da88-45fb-8058-0ccfad168812", "err_file.csv");
+    }
+
+    public function testGetFileWithOptionsAddsQueryParams()
+    {
+        ZeroBounce::Instance()->responseText =
+            "\"Email Address\",\"ZB Status\"\n\"a@b.com\",\"valid\"\n";
+        $opt = new ZBGetFileOptions();
+        $opt->downloadType = ZBDownloadType::COMBINED;
+        $opt->activityData = true;
+        ZeroBounce::Instance()->getFile("fae8b155-da88-45fb-8058-0ccfad168812", "opt_out.csv", $opt);
+        $this->assertStringContainsString('download_type=combined', ZeroBounce::Instance()->lastGetFileUrl);
+        $this->assertStringContainsString('activity_data=true', ZeroBounce::Instance()->lastGetFileUrl);
+        unlink('opt_out.csv');
+    }
+
+    public function testScoringGetFileOptionsOmitsActivityData()
+    {
+        ZeroBounce::Instance()->responseText =
+            "\"Email Address\",\"ZeroBounceQualityScore\"\n\"a@b.com\",\"10\"\n";
+        $opt = new ZBGetFileOptions();
+        $opt->downloadType = ZBDownloadType::PHASE_2;
+        $opt->activityData = true;
+        ZeroBounce::Instance()->scoringGetFile("fae8b155-da88-45fb-8058-0ccfad168812", "sco_out.csv", $opt);
+        $this->assertStringContainsString('download_type=phase_2', ZeroBounce::Instance()->lastGetFileUrl);
+        $this->assertStringNotContainsString('activity_data', ZeroBounce::Instance()->lastGetFileUrl);
+        unlink('sco_out.csv');
+    }
+
+    public function testGetFileJsonIndicatesErrorStatic()
+    {
+        $this->assertTrue(SdkZeroBounce::getFileJsonIndicatesError('{"success":false,"message":""}'));
+        $this->assertFalse(SdkZeroBounce::getFileJsonIndicatesError('{"file_id":"x"}'));
     }
 
     public function testDeleteFile()

@@ -170,17 +170,18 @@ class ZeroBounce
      * @param int|null $genderColumn
      * @param int|null $ipAddressColumn
      * @param bool|null $hasHeaderRow
+     * @param bool|null $allowPhase2 When not null, sends allow_phase_2 (validation bulk sendfile only).
      * @return ZBSendFileResponse
      * @throws ZBMissingApiKeyException
      * @throws ZBException
      */
     public function sendFile(
         $filepath, $emailAddressColumn, $returnUrl = NULL, $firstNameColumn = NULL, $lastNameColumn = NULL,
-        $genderColumn = NULL, $ipAddressColumn = NULL, $hasHeaderRow = NULL)
+        $genderColumn = NULL, $ipAddressColumn = NULL, $hasHeaderRow = NULL, $allowPhase2 = null)
     {
         return $this->_sendFile(self::BulkApiBaseUrl . "/sendfile", $filepath, $emailAddressColumn,
             $returnUrl, $firstNameColumn, $lastNameColumn,
-            $genderColumn, $ipAddressColumn, $hasHeaderRow);
+            $genderColumn, $ipAddressColumn, $hasHeaderRow, $allowPhase2);
     }
 
     /**
@@ -198,7 +199,7 @@ class ZeroBounce
     {
         return $this->_sendFile(self::BulkApiBaseUrl . "/scoring/sendfile", $filepath, $emailAddressColumn,
             $returnUrl, NULL, NULL,
-            NULL, NULL, $hasHeaderRow);
+            NULL, NULL, $hasHeaderRow, null);
     }
 
     /**
@@ -212,16 +213,19 @@ class ZeroBounce
      * @param int|null $genderColumn
      * @param int|null $ipAddressColumn
      * @param bool|null $hasHeaderRow
+     * @param bool|null $allowPhase2 When not null, sends allow_phase_2 (validation bulk sendfile only).
      * @return ZBSendFileResponse
      */
     public function sendFileStream(
         $streamContent, $fileName, $emailAddressColumn, $returnUrl = NULL, $firstNameColumn = NULL,
-        $lastNameColumn = NULL, $genderColumn = NULL, $ipAddressColumn = NULL, $hasHeaderRow = NULL)
+        $lastNameColumn = NULL, $genderColumn = NULL, $ipAddressColumn = NULL, $hasHeaderRow = NULL,
+        $allowPhase2 = null)
     {
         return $this->_sendFileWithContent(
             self::BulkApiBaseUrl . "/sendfile",
             $fileName, $streamContent, $emailAddressColumn,
-            $returnUrl, $firstNameColumn, $lastNameColumn, $genderColumn, $ipAddressColumn, $hasHeaderRow
+            $returnUrl, $firstNameColumn, $lastNameColumn, $genderColumn, $ipAddressColumn, $hasHeaderRow,
+            $allowPhase2
         );
     }
 
@@ -240,7 +244,7 @@ class ZeroBounce
         return $this->_sendFileWithContent(
             self::BulkApiBaseUrl . "/scoring/sendfile",
             $fileName, $streamContent, $emailAddressColumn,
-            $returnUrl, NULL, NULL, NULL, NULL, $hasHeaderRow
+            $returnUrl, NULL, NULL, NULL, NULL, $hasHeaderRow, null
         );
     }
 
@@ -254,6 +258,7 @@ class ZeroBounce
      * @param int|null $genderColumn
      * @param int|null $ipAddressColumn
      * @param bool|null $hasHeaderRow
+     * @param bool|null $allowPhase2
      * @return ZBSendFileResponse
      * @throws ZBMissingApiKeyException
      * @throws ZBException
@@ -261,7 +266,7 @@ class ZeroBounce
     private function _sendFile(
         $url,
         $filepath, $emailAddressColumn, $returnUrl = NULL, $firstNameColumn = NULL, $lastNameColumn = NULL,
-        $genderColumn = NULL, $ipAddressColumn = NULL, $hasHeaderRow = NULL)
+        $genderColumn = NULL, $ipAddressColumn = NULL, $hasHeaderRow = NULL, $allowPhase2 = null)
     {
 
         $this->checkValidApiKey();
@@ -281,6 +286,9 @@ class ZeroBounce
             if ($genderColumn) $fields["gender_column"] = $genderColumn;
             if ($ipAddressColumn) $fields["ip_address_column"] = $ipAddressColumn;
             if ($hasHeaderRow) $fields["has_header_row"] = 'true';
+            if ($allowPhase2 !== null && strpos($url, '/scoring/') === false) {
+                $fields['allow_phase_2'] = $allowPhase2 ? 'true' : 'false';
+            }
 
             $files = array();
             $files[$filepath] = file_get_contents($filepath);
@@ -306,11 +314,13 @@ class ZeroBounce
      * @param int|null $genderColumn
      * @param int|null $ipAddressColumn
      * @param bool|null $hasHeaderRow
+     * @param bool|null $allowPhase2
      * @return ZBSendFileResponse
      */
     private function _sendFileWithContent(
         $url, $fileName, $content, $emailAddressColumn, $returnUrl = NULL, $firstNameColumn = NULL,
-        $lastNameColumn = NULL, $genderColumn = NULL, $ipAddressColumn = NULL, $hasHeaderRow = NULL)
+        $lastNameColumn = NULL, $genderColumn = NULL, $ipAddressColumn = NULL, $hasHeaderRow = NULL,
+        $allowPhase2 = null)
     {
         $this->checkValidApiKey();
         if (!$fileName) throw new ZBMissingParameterException("fileName is required");
@@ -327,6 +337,9 @@ class ZeroBounce
             if ($genderColumn) $fields["gender_column"] = $genderColumn;
             if ($ipAddressColumn) $fields["ip_address_column"] = $ipAddressColumn;
             if ($hasHeaderRow) $fields["has_header_row"] = 'true';
+            if ($allowPhase2 !== null && strpos($url, '/scoring/') === false) {
+                $fields['allow_phase_2'] = $allowPhase2 ? 'true' : 'false';
+            }
 
             $files = array($fileName => $content);
 
@@ -468,37 +481,40 @@ class ZeroBounce
      * The getfile API allows users to get the validation results file for the file been submitted using sendfile API
      * @param string $fileId
      * @param string $downloadPath
+     * @param ZBGetFileOptions|null $options Optional download_type and activity_data (validation only).
      * @return ZBGetFileResponse
      * @throws ZBMissingApiKeyException
      * @throws ZBException
      */
-    public function getFile($fileId, $downloadPath)
+    public function getFile($fileId, $downloadPath, $options = null)
     {
-        return $this->_getFile(false, $fileId, $downloadPath);
+        return $this->_getFile(false, $fileId, $downloadPath, $options);
     }
 
     /**
      * The scoring getfile API allows users to get the validation results file for the file been submitted using sendfile API
      * @param string $fileId
      * @param string $downloadPath
+     * @param ZBGetFileOptions|null $options Optional download_type; activity_data is not sent.
      * @return ZBGetFileResponse
      * @throws ZBMissingApiKeyException
      * @throws ZBException
      */
-    public function scoringGetFile($fileId, $downloadPath)
+    public function scoringGetFile($fileId, $downloadPath, $options = null)
     {
-        return $this->_getFile(true, $fileId, $downloadPath);
+        return $this->_getFile(true, $fileId, $downloadPath, $options);
     }
 
     /**
      * @param bool $scoring
      * @param string $fileId
      * @param string $downloadPath
+     * @param ZBGetFileOptions|null $options
      * @return ZBGetFileResponse
      * @throws ZBMissingApiKeyException
      * @throws ZBException
      */
-    private function _getFile($scoring, $fileId, $downloadPath)
+    private function _getFile($scoring, $fileId, $downloadPath, $options = null)
     {
         $this->checkValidApiKey();
 
@@ -506,19 +522,43 @@ class ZeroBounce
         if (!$downloadPath) throw new ZBMissingParameterException("downloadPath is required");
 
         try {
+            $query = array(
+                'api_key' => $this->apiKey,
+                'file_id' => $fileId,
+            );
+            if ($options instanceof ZBGetFileOptions) {
+                if ($options->downloadType !== null && $options->downloadType !== '') {
+                    $query['download_type'] = $options->downloadType;
+                }
+                if (!$scoring && $options->activityData !== null) {
+                    $query['activity_data'] = $options->activityData ? 'true' : 'false';
+                }
+            }
+
+            $path = ($scoring ? '/scoring' : '') . '/getfile';
+            $url = self::BulkApiBaseUrl . $path . '?' . http_build_query($query);
+
+            $result = $this->getBulkFileHttp($url);
+            $body = $result['body'];
+            $headers = $result['headers'];
+            $code = self::parseHttpStatusFromHeaders($headers);
+            $contentType = self::parseContentTypeFromHeaders($headers);
+
+            if ($code > 299) {
+                throw new ZBException(self::formatGetFileErrorMessage($body));
+            }
+
+            if (self::shouldTreatGetFileBodyAsError($body, $contentType)) {
+                throw new ZBException(self::formatGetFileErrorMessage($body));
+            }
+
             $folder = dirname($downloadPath);
-            if (!file_exists($folder)) {
+            if ($folder !== '' && $folder !== '.' && !file_exists($folder)) {
                 mkdir($folder, 0777, true);
             }
 
-            $content = @file_put_contents($downloadPath,
-                $this->downloadFile(self::BulkApiBaseUrl
-                    . ($scoring ? "/scoring" : "")
-                    . "/getfile?api_key=" . $this->apiKey
-                    . "&file_id=" . $fileId));
-
-            if ($content === FALSE) {
-                throw new ZBException("Invalid request");
+            if (file_put_contents($downloadPath, $body) === false) {
+                throw new ZBException('Could not write file');
             }
 
             $response = new ZBGetFileResponse();
@@ -530,13 +570,136 @@ class ZeroBounce
     }
 
     /**
-     * this function is separated like this for easy mocking in the tests
      * @param string $url
+     * @return array{body: string, headers: string[]}
+     * @throws ZBException
+     */
+    protected function getBulkFileHttp($url)
+    {
+        $context = stream_context_create(array(
+            'http' => array(
+                'ignore_errors' => true,
+            ),
+        ));
+        $body = @file_get_contents($url, false, $context);
+        if ($body === false) {
+            throw new ZBException('No response');
+        }
+        $headers = array();
+        if (isset($http_response_header) && is_array($http_response_header)) {
+            $headers = $http_response_header;
+        }
+        return array('body' => $body, 'headers' => $headers);
+    }
+
+    /**
+     * @param string[] $headers
+     * @return int
+     */
+    protected static function parseHttpStatusFromHeaders($headers)
+    {
+        if (!is_array($headers) || !isset($headers[0])) {
+            return 200;
+        }
+        if (preg_match('#HTTP/\S+\s+(\d+)#', $headers[0], $m)) {
+            return (int) $m[1];
+        }
+        return 200;
+    }
+
+    /**
+     * @param string[] $headers
      * @return string
      */
-    protected function downloadFile($url)
+    protected static function parseContentTypeFromHeaders($headers)
     {
-        return fopen($url, 'r');
+        if (!is_array($headers)) {
+            return '';
+        }
+        foreach ($headers as $h) {
+            if (stripos($h, 'Content-Type:') === 0) {
+                $v = trim(substr($h, strlen('Content-Type:')));
+                $semi = strpos($v, ';');
+                if ($semi !== false) {
+                    $v = trim(substr($v, 0, $semi));
+                }
+                return $v;
+            }
+        }
+        return '';
+    }
+
+    /**
+     * Whether a getfile response body looks like a JSON error payload (including HTTP 200).
+     *
+     * @param string $body
+     * @return bool
+     */
+    public static function getFileJsonIndicatesError($body)
+    {
+        $t = ltrim($body);
+        if ($t === '' || $t[0] !== '{') {
+            return false;
+        }
+        $o = json_decode($body, true);
+        if (!is_array($o)) {
+            return false;
+        }
+        if (array_key_exists('success', $o)) {
+            $s = $o['success'];
+            if ($s === false || $s === 'False' || $s === 'false') {
+                return true;
+            }
+        }
+        foreach (array('message', 'error', 'error_message') as $k) {
+            if (!empty($o[$k])) {
+                if (is_string($o[$k]) && trim($o[$k]) !== '') {
+                    return true;
+                }
+                if (is_array($o[$k]) && count($o[$k]) > 0) {
+                    return true;
+                }
+            }
+        }
+        return array_key_exists('success', $o);
+    }
+
+    /**
+     * @param string $body
+     * @param string $contentType
+     * @return bool
+     */
+    protected static function shouldTreatGetFileBodyAsError($body, $contentType)
+    {
+        $ct = strtolower($contentType);
+        if (strpos($ct, 'application/json') !== false) {
+            return true;
+        }
+        return self::getFileJsonIndicatesError($body);
+    }
+
+    /**
+     * @param string $body
+     * @return string
+     */
+    protected static function formatGetFileErrorMessage($body)
+    {
+        $o = json_decode($body, true);
+        if (!is_array($o)) {
+            return $body !== '' ? $body : 'Invalid getfile response';
+        }
+        foreach (array('message', 'error', 'error_message') as $k) {
+            if (empty($o[$k])) {
+                continue;
+            }
+            if (is_string($o[$k]) && trim($o[$k]) !== '') {
+                return trim($o[$k]);
+            }
+            if (is_array($o[$k]) && isset($o[$k][0]) && is_string($o[$k][0])) {
+                return trim($o[$k][0]);
+            }
+        }
+        return $body;
     }
 
 

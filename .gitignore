@@ -1,8 +1,17 @@
-
+# IDE & OS
 \.idea/
+.DS_Store
+Thumbs.db
+
+# PHP / Composer
 vendor/
 vendor/composer/
 /vendor/*
+.phpunit.cache/
+phpunit.result.cache
+coverage/
+
+# Legacy / app paths (keep if your tree uses them)
 /config/app.php
 
 /tmp/cache/models/*
@@ -20,7 +29,4 @@ vendor/composer/
 !/logs/empty
 test/downloads/
 
-composer.lock
-
-.DS_Store
 .env

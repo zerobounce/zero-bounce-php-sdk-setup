@@ -22,6 +22,16 @@ class ZBFileStatusResponse extends ZBResponse
     /**
      * @var string|null
      */
+    public $filePhase2Status;
+
+    /**
+     * @var string|null
+     */
+    public $errorReason;
+
+    /**
+     * @var string|null
+     */
     public $fileId;
 
     /**
@@ -50,6 +60,8 @@ class ZBFileStatusResponse extends ZBResponse
             "success=" . $this->success .
             ", message=" . $this->stringField($this->message) .
             ", fileStatus=" . $this->stringField($this->fileStatus) .
+            ", filePhase2Status=" . $this->stringField($this->filePhase2Status) .
+            ", errorReason=" . $this->stringField($this->errorReason) .
             ", fileId=" . $this->stringField($this->fileId) .
             ", fileName=" . $this->stringField($this->fileName) .
             ", uploadDate=" . $this->stringField($this->uploadDate) .

@@ -18,6 +18,18 @@ class MockZeroBounce extends ZeroBounce
     public $responseText;
 
     /**
+     * Last multipart form fields passed to curl() (sendfile).
+     * @var array<string, mixed>|null
+     */
+    public $lastMultipartFields;
+
+    /**
+     * Last getfile URL passed to getBulkFileHttp().
+     * @var string|null
+     */
+    public $lastGetFileUrl;
+
+    /**
      * Call this method to get singleton
      *
      * @return MockZeroBounce
@@ -75,16 +87,22 @@ class MockZeroBounce extends ZeroBounce
      */
     protected function curl($url, $fields, $files)
     {
+        $this->lastMultipartFields = $fields;
         return $this->responseText;
     }
 
     /**
-     * Overwrites the file download request made within the ZeroBounce class
      * @param string $url
-     * @return string
+     * @return array{body: string, headers: string[]}
      */
-    protected function downloadFile($url)
+    protected function getBulkFileHttp($url)
     {
-        return $this->responseText;
+        $this->lastGetFileUrl = $url;
+        $t = ltrim($this->responseText);
+        $ct = ($t !== '' && $t[0] === '{') ? 'application/json' : 'text/csv';
+        return array(
+            'body' => $this->responseText,
+            'headers' => array('HTTP/1.1 200 OK', 'Content-Type: ' . $ct),
+        );
     }
 }

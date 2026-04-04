@@ -1,0 +1,20 @@
+.git
+.gitignore
+
+# Docs not needed to run tests in the image
+*.md
+documentation*.md
+
+# Local Composer install (image runs composer install)
+vendor/
+
+# PHPUnit / tooling
+.phpunit.cache/
+phpunit.result.cache
+coverage/
+
+# OS & env
+.DS_Store
+Thumbs.db
+.env
+.env.*

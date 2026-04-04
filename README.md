@@ -169,10 +169,13 @@ $response = ZeroBounce::Instance()->sendFile(
     "<LAST_NAME_COLUMN>",       // The column index of the user's last name in the file
     "<GENDER_COLUMN>",          // The column index of the user's gender in the file
     "<IP_ADDRESS_COLUMN>",      // The column index of the IP address in the file
-    "<HAS_HEADER_ROW>"          // If the first row from the submitted file is a header row. True or False
+    "<HAS_HEADER_ROW>",         // If the first row from the submitted file is a header row. True or False
+    true                        // Optional ninth argument: allowPhase2 — sends allow_phase_2 (validation bulk only; omit or null to skip)
 );
 $fileId = $response->fileId;    // e.g. "aaaaaaaa-zzzz-xxxx-yyyy-5003727fffff"
 ```
+
+Bulk validation uses `https://bulkapi.zerobounce.net/v2`. See [v2 send file](https://www.zerobounce.net/docs/email-validation-api-quickstart/v2-send-file), [v2 file status](https://www.zerobounce.net/docs/email-validation-api-quickstart/v2-file-status), and [v2 get file](https://www.zerobounce.net/docs/email-validation-api-quickstart/v2-get-file).
 
 - Check the status of a file uploaded via "sendFile" method
 ```php
@@ -180,7 +183,9 @@ $fileId = "<FILE_ID>";   // The file ID received from "sendFile" response
  
 /** @var $response ZeroBounce\SDK\ZBFileStatusResponse */
 $response = ZeroBounce::Instance()->fileStatus($fileId);
-$status = $response->fileStatus;    // e.g. "Complete"
+$status = $response->fileStatus;              // e.g. "Complete"
+$phase2 = $response->filePhase2Status;      // When present (e.g. "N/A", "Processing", "Complete")
+$errorReason = $response->errorReason;        // When present
 ```
 
 - Get the validation results file for the file been submitted using sendfile API
@@ -192,6 +197,21 @@ $downloadPath = "<DOWNLOAD_PATH>";  // The path where the file will be downloade
 $response = ZeroBounce::Instance()->getFile($fileId, $downloadPath);
 $localPath = $response->localFilePath;
 ```
+
+Optional [v2 get file](https://www.zerobounce.net/docs/email-validation-api-quickstart/v2-get-file) query parameters use `ZBGetFileOptions` and `ZBDownloadType` (`PHASE_1`, `PHASE_2`, `COMBINED`). Set `activityData` on the options object for validation `getFile` only; it is not sent for `scoringGetFile`.
+
+```php
+use ZeroBounce\SDK\ZBGetFileOptions;
+use ZeroBounce\SDK\ZBDownloadType;
+
+$options = new ZBGetFileOptions();
+$options->downloadType = ZBDownloadType::COMBINED;
+$options->activityData = true;
+
+$response = ZeroBounce::Instance()->getFile($fileId, $downloadPath, $options);
+```
+
+If the API returns a non-success HTTP status or a JSON error body (including some HTTP 200 responses with `success: false`), the SDK throws `ZBException`. To inspect raw bodies yourself, use `ZeroBounce::getFileJsonIndicatesError($jsonString)`.
 
 - Deletes the file that was submitted using scoring sendfile API. File can be deleted only when its status is _`Complete`_
 ```php
@@ -232,6 +252,9 @@ $downloadPath = "<DOWNLOAD_PATH>";  // The path where the file will be downloade
 /** @var $response ZeroBounce\SDK\ZBGetFileResponse */
 $response = ZeroBounce::Instance()->scoringGetFile($fileId, $downloadPath);
 $localPath = $response->localFilePath;
+
+// Optional third argument: ZBGetFileOptions with downloadType only (activity_data is not used for scoring getfile)
+// $response = ZeroBounce::Instance()->scoringGetFile($fileId, $downloadPath, $options);
 ```
 
 - Deletes the file that was submitted using scoringSendfile API. File can be deleted only when its status is _`Complete`_
