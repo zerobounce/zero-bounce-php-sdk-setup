@@ -1,6 +1,6 @@
 {
   "name": "zero-bounce/sdk",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "description": "The ZeroBounce SDK for PHP programming language",
   "keywords": [
     "zero",
