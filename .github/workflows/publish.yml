@@ -34,8 +34,8 @@ jobs:
           fi
           echo "Publishing tag: $TAG"
 
-  publish:
-    name: Test and update Packagist
+  test:
+    name: Test
     needs: [validate-tag]
     if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
     runs-on: ubuntu-latest
@@ -56,20 +56,9 @@ jobs:
       - name: Run tests
         run: vendor/bin/phpunit --colors=always
 
-      - name: Trigger Packagist update
-        env:
-          PACKAGIST_API_TOKEN: ${{ secrets.API_TOKEN }}
-          PACKAGIST_PACKAGE_URL: ${{ secrets.PACKAGIST_PACKAGE_URL }}
-        run: |
-          REPO_URL="${PACKAGIST_PACKAGE_URL:-https://github.com/${{ github.repository }}}"
-          curl -fsSL -X POST \
-            -H 'content-type: application/json' \
-            "https://packagist.org/api/update-package?username=zerobounce&apiToken=${PACKAGIST_API_TOKEN}" \
-            -d "{\"repository\":{\"url\":\"${REPO_URL}\"}}"
-
   release:
     name: Create GitHub Release
-    needs: [publish]
+    needs: [test]
     if: ${{ !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     permissions:
@@ -94,3 +83,20 @@ jobs:
               --title "$TAG" \
               --generate-notes
           fi
+
+  update-packagist:
+    name: Update Packagist
+    needs: [release]
+    if: ${{ !cancelled() && !failure() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Packagist update
+        env:
+          PACKAGIST_API_TOKEN: ${{ secrets.API_TOKEN }}
+          PACKAGIST_PACKAGE_URL: ${{ secrets.PACKAGIST_PACKAGE_URL }}
+        run: |
+          REPO_URL="${PACKAGIST_PACKAGE_URL:-https://github.com/${{ github.repository }}}"
+          curl -fsSL -X POST \
+            -H 'content-type: application/json' \
+            "https://packagist.org/api/update-package?username=zerobounce&apiToken=${PACKAGIST_API_TOKEN}" \
+            -d "{\"repository\":{\"url\":\"${REPO_URL}\"}}"
