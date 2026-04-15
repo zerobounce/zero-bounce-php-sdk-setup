@@ -93,10 +93,12 @@ jobs:
       - name: Trigger Packagist update
         env:
           PACKAGIST_API_TOKEN: ${{ secrets.API_TOKEN }}
-          PACKAGIST_PACKAGE_URL: ${{ secrets.PACKAGIST_PACKAGE_URL }}
         run: |
-          REPO_URL="${PACKAGIST_PACKAGE_URL:-https://github.com/${{ github.repository }}}"
-          curl -fsSL -X POST \
+          REPO_URL="https://github.com/${{ github.repository }}"
+          # API expects {"repository":"https://..."} (see https://packagist.org/apidoc#update-package)
+          jq -n --arg url "$REPO_URL" '{repository: $url}' | curl -fsSL -X POST \
             -H 'content-type: application/json' \
-            "https://packagist.org/api/update-package?username=zerobounce&apiToken=${PACKAGIST_API_TOKEN}" \
-            -d "{\"repository\":{\"url\":\"${REPO_URL}\"}}"
+            -H "Authorization: Bearer zerobounce:${PACKAGIST_API_TOKEN}" \
+            -H 'User-Agent: ZeroBounce-PHP-SDK-Publish-Workflow (integrations@zerobounce.net)' \
+            --data-binary @- \
+            'https://packagist.org/api/update-package'
