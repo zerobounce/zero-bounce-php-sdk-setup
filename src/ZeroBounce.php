@@ -588,7 +588,10 @@ class ZeroBounce
         $headers = array();
         if (function_exists('http_get_last_response_headers')) {
             // @see https://wiki.php.net/rfc/deprecations_php_8_5#deprecate_the_http_response_header_predefined_variable
-            $headers = http_get_last_response_headers();
+            $fromFn = http_get_last_response_headers();
+            if (is_array($fromFn)) {
+                $headers = $fromFn;
+            }
         } elseif (isset($http_response_header) && is_array($http_response_header)) {
             $headers = $http_response_header;
         }
