@@ -592,8 +592,8 @@ class ZeroBounce
             if (is_array($fromFn)) {
                 $headers = $fromFn;
             }
-        } elseif (isset($http_response_header) && is_array($http_response_header)) {
-            $headers = $http_response_header;
+        } elseif (\PHP_VERSION_ID < 80500) {
+            $headers = require __DIR__ . '/ZBLegacyHttpResponseHeaders.php';
         }
         return array('body' => $body, 'headers' => $headers);
     }
@@ -775,11 +775,17 @@ class ZeroBounce
                 throw new ZBException("No response");
             }
 
+            $responseHeaders = null;
             if (function_exists('http_get_last_response_headers')) {
                 // @see https://wiki.php.net/rfc/deprecations_php_8_5#deprecate_the_http_response_header_predefined_variable
-                $http_response_header = http_get_last_response_headers();
+                $responseHeaders = http_get_last_response_headers();
+            } elseif (\PHP_VERSION_ID < 80500) {
+                $responseHeaders = require __DIR__ . '/ZBLegacyHttpResponseHeaders.php';
             }
-            $code = $this->getHttpCode($http_response_header);
+            if (!is_array($responseHeaders)) {
+                $responseHeaders = array();
+            }
+            $code = $this->getHttpCode($responseHeaders);
             $response->Deserialize($json);
             return $code;
         } catch (Exception $e) {

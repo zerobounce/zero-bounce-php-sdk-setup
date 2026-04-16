@@ -30,8 +30,15 @@ final class ZeroBounceHttpHeadersPhp85Test extends TestCase
         return substr($src, $start, $end - $start);
     }
 
-    public function testGetBulkFileHttpPrefersHttpGetLastResponseHeadersBeforeMagicVariable(): void
+    /**
+     * On PHP 8.5+, referencing $http_response_header (including isset) in getBulkFileHttp() is deprecated
+     * and may emit at class load; the method must not contain a legacy elseif on that variable.
+     */
+    public function testGetBulkFileHttpSourceHasNoIssetOnHttpResponseHeaderOnPhp85(): void
     {
+        if (\PHP_VERSION_ID < 80500) {
+            $this->markTestSkipped('PHP 8.5 $http_response_header deprecation');
+        }
         $src = file_get_contents(self::zeroBounceSourcePath());
         $method = self::extractMethodSource(
             $src,
@@ -41,16 +48,10 @@ final class ZeroBounceHttpHeadersPhp85Test extends TestCase
 
         $this->assertStringContainsString("function_exists('http_get_last_response_headers')", $method);
         $this->assertStringContainsString('http_get_last_response_headers()', $method);
-        $this->assertStringContainsString('isset($http_response_header)', $method);
-
-        $posFn = strpos($method, "function_exists('http_get_last_response_headers')");
-        $posIsset = strpos($method, 'isset($http_response_header)');
-        $this->assertNotFalse($posFn);
-        $this->assertNotFalse($posIsset);
-        $this->assertLessThan(
-            $posIsset,
-            $posFn,
-            'getBulkFileHttp must call http_get_last_response_headers() before any isset($http_response_header) fallback (PHP 8.5).'
+        $this->assertStringNotContainsString(
+            'isset($http_response_header)',
+            $method,
+            'Remove isset($http_response_header) / elseif legacy branch; it is deprecated on PHP 8.5 (see RFC deprecations).'
         );
     }
 
@@ -65,10 +66,11 @@ final class ZeroBounceHttpHeadersPhp85Test extends TestCase
 
         $this->assertStringContainsString("function_exists('http_get_last_response_headers')", $method);
         $this->assertStringContainsString('http_get_last_response_headers()', $method);
-        $this->assertStringContainsString('$http_response_header = http_get_last_response_headers()', $method);
+        $this->assertStringContainsString('$responseHeaders = http_get_last_response_headers()', $method);
+        $this->assertStringNotContainsString('getHttpCode($http_response_header)', $method);
 
         $posFn = strpos($method, "function_exists('http_get_last_response_headers')");
-        $posGetHttp = strpos($method, 'getHttpCode($http_response_header)');
+        $posGetHttp = strpos($method, 'getHttpCode($responseHeaders)');
         $this->assertNotFalse($posFn);
         $this->assertNotFalse($posGetHttp);
         $this->assertLessThan(
@@ -78,6 +80,10 @@ final class ZeroBounceHttpHeadersPhp85Test extends TestCase
         );
     }
 
+    /**
+     * PHP 8.5 emits $http_response_header deprecations without invoking set_error_handler (Zend logs them).
+     * A subprocess with stderr capture is required to fail the suite when they occur.
+     */
     public function testGetBulkFileHttpViaFileUrlDoesNotEmitHttpResponseHeaderDeprecation(): void
     {
         $tmp = tempnam(sys_get_temp_dir(), 'zb_');
@@ -85,35 +91,88 @@ final class ZeroBounceHttpHeadersPhp85Test extends TestCase
             $this->markTestSkipped('Could not create temp file');
         }
         $this->assertNotFalse(file_put_contents($tmp, "col1,col2\na@b.com,1\n"));
-
-        $hadDeprecation = false;
-        $deprecationMessage = '';
-        set_error_handler(
-            function (int $errno, string $errstr) use (&$hadDeprecation, &$deprecationMessage): bool {
-                if ($errno === E_DEPRECATED && strpos($errstr, 'http_response_header') !== false) {
-                    $hadDeprecation = true;
-                    $deprecationMessage = $errstr;
-                }
-                return false;
-            },
-            E_DEPRECATED
-        );
+        $url = 'file://' . str_replace('\\', '/', $tmp);
 
         try {
+            if (\PHP_VERSION_ID >= 80500) {
+                $bootstrap = realpath(dirname(__DIR__) . '/vendor/autoload.php');
+                $this->assertNotFalse($bootstrap);
+                $probePath = sys_get_temp_dir() . '/zb_http_deprecation_probe_' . uniqid('', true) . '.php';
+                $probeBody = self::getBulkFileHttpProbeScript($bootstrap, $tmp);
+                $this->assertNotFalse(file_put_contents($probePath, $probeBody));
+
+                $cmd = [\PHP_BINARY, '-d', 'display_errors=1', '-d', 'error_reporting=' . (string) \E_ALL, $probePath];
+                $proc = proc_open($cmd, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, null, ['bypass_shell' => true]);
+                $this->assertNotFalse($proc);
+                fclose($pipes[0]);
+                $stdout = stream_get_contents($pipes[1]);
+                $stderr = stream_get_contents($pipes[2]);
+                fclose($pipes[1]);
+                fclose($pipes[2]);
+                $code = proc_close($proc);
+                @unlink($probePath);
+
+                $this->assertSame(0, $code, 'Probe script exit code');
+                $combined = $stdout . $stderr;
+                $this->assertStringNotContainsStringIgnoringCase(
+                    'deprecated',
+                    $combined,
+                    'Expected no $http_response_header deprecation on stderr/stdout (PHP 8.5). Output: ' . $combined
+                );
+                $this->assertStringNotContainsString(
+                    'http_response_header',
+                    $combined,
+                    'Expected no http_response_header deprecation text. Output: ' . $combined
+                );
+
+                return;
+            }
+
             $zb = new GetBulkFileHttpProbe();
-            $url = 'file://' . str_replace('\\', '/', $tmp);
             $out = $zb->callGetBulkFileHttp($url);
+            $this->assertSame("col1,col2\na@b.com,1\n", $out['body']);
+            $this->assertIsArray($out['headers']);
         } finally {
-            restore_error_handler();
             @unlink($tmp);
         }
+    }
 
-        $this->assertFalse(
-            $hadDeprecation,
-            $hadDeprecation ? ('Unexpected deprecation: ' . $deprecationMessage) : ''
-        );
-        $this->assertSame("col1,col2\na@b.com,1\n", $out['body']);
-        $this->assertIsArray($out['headers']);
+    /**
+     * Standalone script so PHP 8.5 engine deprecation output is visible to the parent process on stderr.
+     *
+     * @param non-empty-string $bootstrap
+     */
+    private static function getBulkFileHttpProbeScript(string $bootstrap, string $dataFilePath): string
+    {
+        $bootstrapExport = var_export($bootstrap, true);
+        $fileExport = var_export($dataFilePath, true);
+
+        return <<<PHP
+<?php
+require {$bootstrapExport};
+
+final class ZbGetBulkProbe extends \ZeroBounce\SDK\ZeroBounce
+{
+    public function __construct()
+    {
+        parent::__construct();
+    }
+
+    public function run(string \$url): array
+    {
+        return \$this->getBulkFileHttp(\$url);
+    }
+}
+
+\$url = 'file://' . str_replace('\\\\', '/', {$fileExport});
+\$out = (new ZbGetBulkProbe())->run(\$url);
+if (\$out['body'] !== "col1,col2\\na@b.com,1\\n") {
+    fwrite(STDERR, "unexpected body\\n");
+    exit(1);
+}
+exit(0);
+
+PHP;
     }
 }
 
