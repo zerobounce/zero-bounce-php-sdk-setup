@@ -803,7 +803,7 @@ class ZeroBounce
 
     private function getHttpCode($httpResponseHeader)
     {
-        if (is_array($httpResponseHeader)) {
+        if (is_array($httpResponseHeader) && !empty($httpResponseHeader)) {
             $parts = explode(' ', $httpResponseHeader[0]);
             if (count($parts) > 1) //HTTP/1.0 <code> <text>
                 return intval($parts[1]); //Get code
