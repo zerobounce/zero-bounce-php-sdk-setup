@@ -284,9 +284,10 @@ $email = $response->format;
 ## Development
 
 ### Run tests with Docker
-From the **parent repository root** (the folder that contains all SDKs and `docker-compose.yml`):
+From the **`sdk-docs/`** folder in the SDKs monorepo:
 
 ```bash
+cd sdk-docs
 docker compose build php
 docker compose run --rm php
 ```
@@ -309,21 +310,7 @@ Run tests
 
 ## Publish
 
-Publishing to [Packagist](https://packagist.org/packages/zero-bounce/sdk) uses **GitHub Actions** (manual tag workflow).
+1. Bump `version` in `composer.json`, commit, tag (`vX.Y.Z`), push tag.
+2. **Actions → Publish → Run workflow** with that tag.
 
-### One-time setup
-
-Add repo secret **`PACKAGIST_API_TOKEN`** in [zero-bounce-php-sdk-setup](https://github.com/zerobounce/zero-bounce-php-sdk-setup) → Settings → Secrets → Actions (Packagist API token for the `zerobounce` account).
-
-### Release steps
-
-1. Bump `"version"` in `composer.json`, commit, tag (`v2.1.9`), and push the tag.
-2. **Actions → Publish → Run workflow** and enter the tag, or:
-
-```bash
-gh workflow run publish.yml --repo zerobounce/zero-bounce-php-sdk-setup -f tag=v2.1.9
-```
-
-The workflow validates the tag, runs PHPUnit, creates a GitHub release if missing, then triggers Packagist to refresh `zero-bounce/sdk`.
-
-See also the [sdk-docs (Packagist)](../sdk-docs/packagist/) guide.
+Registry: [zero-bounce/sdk on Packagist](https://packagist.org/packages/zero-bounce/sdk)

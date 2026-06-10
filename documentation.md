@@ -222,9 +222,10 @@ $email = $response->format;
 
 #### Development
 
-From the **parent repository root** (folder that contains all SDKs and `docker-compose.yml`):
+From the **`sdk-docs/`** folder in the SDKs monorepo:
 
 ```bash
+cd sdk-docs
 docker compose build php
 docker compose run --rm php
 ```
