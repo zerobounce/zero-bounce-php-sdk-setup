@@ -20,8 +20,9 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          ref: ${{ github.event.inputs.tag }}
 
-      - name: Verify tag exists
+      - name: Verify tag and composer version
         run: |
           TAG="${{ github.event.inputs.tag }}"
           if [ -z "$TAG" ]; then
@@ -32,7 +33,13 @@ jobs:
             echo "Error: Tag '$TAG' does not exist."
             exit 1
           fi
-          echo "Publishing tag: $TAG"
+          TAG_VERSION="${TAG#v}"
+          PKG_VERSION=$(php -r 'echo json_decode(file_get_contents("composer.json"))->version;')
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "Error: composer.json version ($PKG_VERSION) does not match tag ($TAG)."
+            exit 1
+          fi
+          echo "Publishing tag: $TAG (zero-bounce/sdk@$PKG_VERSION)"
 
   test:
     name: Test
@@ -100,6 +107,10 @@ jobs:
           PACKAGIST_API_TOKEN: ${{ secrets.PACKAGIST_API_TOKEN }}
         run: |
           set -euo pipefail
+          if [ -z "${PACKAGIST_API_TOKEN:-}" ]; then
+            echo "Error: PACKAGIST_API_TOKEN secret is not set."
+            exit 1
+          fi
           API_TOKEN_ENC=$(jq -nr --arg t "$PACKAGIST_API_TOKEN" '$t|@uri')
           BODY=$(jq -n --arg url 'https://packagist.org/packages/zero-bounce/sdk' '{"repository":{"url":$url}}')
           curl -fsSL -X POST \

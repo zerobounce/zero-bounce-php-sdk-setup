@@ -309,4 +309,21 @@ Run tests
 
 ## Publish
 
-Releases are driven by **git tags**. [Packagist](https://packagist.org/packages/zero-bounce/sdk) picks up new versions automatically when you push a tag. No manual publish step. For the release workflow (version/tag from the SDKs repo), see the [sdk-docs](../sdk-docs/) guide (Packagist and RELEASE-WORKFLOW).
+Publishing to [Packagist](https://packagist.org/packages/zero-bounce/sdk) uses **GitHub Actions** (manual tag workflow).
+
+### One-time setup
+
+Add repo secret **`PACKAGIST_API_TOKEN`** in [zero-bounce-php-sdk-setup](https://github.com/zerobounce/zero-bounce-php-sdk-setup) → Settings → Secrets → Actions (Packagist API token for the `zerobounce` account).
+
+### Release steps
+
+1. Bump `"version"` in `composer.json`, commit, tag (`v2.1.9`), and push the tag.
+2. **Actions → Publish → Run workflow** and enter the tag, or:
+
+```bash
+gh workflow run publish.yml --repo zerobounce/zero-bounce-php-sdk-setup -f tag=v2.1.9
+```
+
+The workflow validates the tag, runs PHPUnit, creates a GitHub release if missing, then triggers Packagist to refresh `zero-bounce/sdk`.
+
+See also the [sdk-docs (Packagist)](../sdk-docs/packagist/) guide.
