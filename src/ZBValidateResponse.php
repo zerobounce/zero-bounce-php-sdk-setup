@@ -77,6 +77,12 @@ class ZBValidateResponse extends ZBResponse
     public $smtpProvider;
 
     /**
+     * [true/false or null] Is the domain name a catch-all (the domain email server responds with valid to any SMTP checks and emailing to an invalid might not bounce)?
+     * @var bool|null
+     */
+    public $catchallDomain;
+
+    /**
      * The first name of the owner of the email when available or [null].
      * @var string|null
      */
@@ -170,6 +176,7 @@ class ZBValidateResponse extends ZBResponse
             "mxFound=" . $this->mxFound . ", " .
             "mxRecord=" . $this->stringField($this->mxRecord) . ", " .
             "smtpProvider=" . $this->stringField($this->smtpProvider) . ", " .
+            "catchallDomain=" . $this->catchallDomain . ", " .
             "firstName=" . $this->stringField($this->firstName) . ", " .
             "lastName=" . $this->stringField($this->lastName) . ", " .
             "gender=" . $this->stringField($this->gender) . ", " .

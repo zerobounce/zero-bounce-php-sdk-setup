@@ -56,6 +56,7 @@ class ZBBatchValidateResponse extends ZBResponse
             "mxFound=" . $email->mxFound . ", " .
             "mxRecord=" . $this->stringField($email->mxRecord) . ", " .
             "smtpProvider=" . $this->stringField($email->smtpProvider) . ", " .
+            "catchallDomain=" . $email->catchallDomain . ", " .
             "firstName=" . $this->stringField($email->firstName) . ", " .
             "lastName=" . $this->stringField($email->lastName) . ", " .
             "gender=" . $this->stringField($email->gender) . ", " .
