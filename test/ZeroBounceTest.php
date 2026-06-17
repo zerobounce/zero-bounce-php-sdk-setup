@@ -162,6 +162,9 @@ class ZeroBounceTest extends TestCase
 
         $response = ZeroBounce::Instance()->validateBatch($emails);
 
+        $this->assertStringContainsString('api.zerobounce.net/v2/validatebatch', ZeroBounce::Instance()->lastJsonUrl);
+        $this->assertStringNotContainsString('bulkapi', ZeroBounce::Instance()->lastJsonUrl);
+
         $this->assertEquals($response->emailBatch[0]->address, 
             'disposable@example.com');
         

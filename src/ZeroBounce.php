@@ -100,7 +100,7 @@ class ZeroBounce
 
         $response = new ZBBatchValidateResponse();
         $code = $this->json(
-            self::BulkApiBaseUrl . "/validatebatch", $params, $response);
+            self::$ApiBaseUrl . "/validatebatch", $params, $response);
         return $response;
     }
 

@@ -44,6 +44,12 @@ class MockZeroBounce extends ZeroBounce
     }
 
     /**
+     * Last JSON POST URL passed to json().
+     * @var string|null
+     */
+    public $lastJsonUrl;
+
+    /**
      * Overwrites the HTTP JSON POST request made within the ZeroBounce class
      * @param string $url
      * @param array $data
@@ -51,6 +57,7 @@ class MockZeroBounce extends ZeroBounce
      */
     protected function json($url, $data, $response)
     {
+        $this->lastJsonUrl = $url;
         try {
             $code = 200;
             $response->Deserialize($this->responseText);
