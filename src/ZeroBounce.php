@@ -369,6 +369,7 @@ class ZeroBounce
             CURLOPT_URL => $url,
             CURLOPT_HEADER => false, 
             CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 120,
             CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
             CURLOPT_POSTFIELDS => $content
         ));
@@ -408,7 +409,7 @@ class ZeroBounce
             CURLOPT_URL => $url,
             CURLOPT_RETURNTRANSFER => 1,
             CURLOPT_MAXREDIRS => 10,
-            CURLOPT_TIMEOUT => 30,
+            CURLOPT_TIMEOUT => 120,
             //CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
             CURLOPT_CUSTOMREQUEST => "POST",
             CURLOPT_POST => 1,
@@ -579,6 +580,7 @@ class ZeroBounce
         $context = stream_context_create(array(
             'http' => array(
                 'ignore_errors' => true,
+                'timeout' => 120,
             ),
         ));
         $body = @file_get_contents($url, false, $context);
@@ -765,7 +767,8 @@ class ZeroBounce
         try {
             $context = stream_context_create(array(
                 'http' => array(
-                    'ignore_errors' => true
+                    'ignore_errors' => true,
+                    'timeout' => 120,
                 )
             ));
 
