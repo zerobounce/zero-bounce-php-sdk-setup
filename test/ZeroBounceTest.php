@@ -248,6 +248,21 @@ class ZeroBounceTest extends TestCase
         $this->assertEquals($response->activeInDays, 180);
     }
 
+    public function testScoreEmail()
+    {
+        ZeroBounce::Instance()->responseText = "{
+            \"email\": \"mark@gmail.com\",
+            \"score\": 10
+        }";
+        $response = ZeroBounce::Instance()->scoreEmail("mark@gmail.com");
+        $this->assertEquals($response->email, "mark@gmail.com");
+        $this->assertEquals($response->score, 10);
+
+        $responsePost = ZeroBounce::Instance()->scoreEmailPost("mark@gmail.com");
+        $this->assertEquals($responsePost->email, "mark@gmail.com");
+        $this->assertEquals($responsePost->score, 10);
+    }
+
     public function testSendFile()
     {
         ZeroBounce::Instance()->responseText = "{

@@ -185,6 +185,42 @@ class ZeroBounce
     }
 
     /**
+     * Real-time AI scoring for a single email (GET /scoring).
+     * @param string $email
+     * @return ZBScoreEmailResponse
+     * @throws ZBMissingApiKeyException
+     * @throws ZBException
+     */
+    public function scoreEmail($email)
+    {
+        $this->checkValidApiKey();
+        if (!$email) throw new ZBMissingParameterException("email is required");
+
+        $response = new ZBScoreEmailResponse();
+        $this->request(self::$ApiBaseUrl . "/scoring?api_key=" . urlencode($this->apiKey)
+            . "&email=" . urlencode($email),
+            $response);
+        return $response;
+    }
+
+    /**
+     * Real-time AI scoring for a single email (POST /scoring, form-encoded).
+     * @param string $email
+     * @return ZBScoreEmailResponse
+     * @throws ZBMissingApiKeyException
+     * @throws ZBException
+     */
+    public function scoreEmailPost($email)
+    {
+        $this->checkValidApiKey();
+        if (!$email) throw new ZBMissingParameterException("email is required");
+
+        $response = new ZBScoreEmailResponse();
+        $this->formPost(self::$ApiBaseUrl . "/scoring", array('email' => $email), $response);
+        return $response;
+    }
+
+    /**
      * The sendfile API allows user to send a file for bulk email validation
      * @param string $filepath
      * @param int $emailAddressColumn
@@ -411,6 +447,38 @@ class ZeroBounce
 
         $response->Deserialize($json);
         return $code;
+    }
+
+    /**
+     * @param string $url
+     * @param array $data
+     * @param ZBResponse $response
+     * @return int http statusCode
+     * @throws ZBException
+     */
+    protected function formPost($url, $data, $response)
+    {
+        $data['api_key'] = $this->apiKey;
+
+        $curl = curl_init($url);
+        curl_setopt_array($curl, array(
+            CURLOPT_URL => $url,
+            CURLOPT_HEADER => false,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 120,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => http_build_query($data),
+        ));
+
+        $json = curl_exec($curl);
+        curl_close($curl);
+
+        if (!$json) {
+            throw new ZBException("No response");
+        }
+
+        $response->Deserialize($json);
+        return 200;
     }
 
     /**
