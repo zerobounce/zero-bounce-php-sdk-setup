@@ -60,7 +60,8 @@ class ZeroBounce
         $this->checkValidApiKey();
         if (!$email) throw new ZBMissingParameterException("email is required");
         $response = new ZBValidateResponse();
-        $this->request(self::$ApiBaseUrl . "/validate?api_key=" . $this->apiKey . "&email=" . urlencode($email) . "&ip_address=" . ($ipAddress ? $ipAddress : ""), $response);
+        $ipPart = $ipAddress ? urlencode($ipAddress) : "";
+        $this->request(self::$ApiBaseUrl . "/validate?api_key=" . urlencode($this->apiKey) . "&email=" . urlencode($email) . "&ip_address=" . $ipPart, $response);
         return $response;
     }
 
@@ -113,7 +114,7 @@ class ZeroBounce
     {
         $this->checkValidApiKey();
         $response = new ZBGetCreditsResponse();
-        $this->request(self::$ApiBaseUrl . "/getcredits?api_key=" . $this->apiKey, $response);
+        $this->request(self::$ApiBaseUrl . "/getcredits?api_key=" . urlencode($this->apiKey), $response);
         return $response;
     }
 
@@ -133,7 +134,7 @@ class ZeroBounce
 
         $response = new ZBApiUsageResponse();
         $format = "Y-m-d";
-        $this->request(self::$ApiBaseUrl . "/getapiusage?api_key=" . $this->apiKey
+        $this->request(self::$ApiBaseUrl . "/getapiusage?api_key=" . urlencode($this->apiKey)
             . "&start_date=" . $startDate->format($format)
             . "&end_date=" . $endDate->format($format),
             $response);
@@ -154,7 +155,7 @@ class ZeroBounce
 
         $response = new ZBActivityResponse();
         $format = "Y-m-d";
-        $this->request(self::$ApiBaseUrl . "/activity?api_key=" . $this->apiKey
+        $this->request(self::$ApiBaseUrl . "/activity?api_key=" . urlencode($this->apiKey)
             . "&email=" . urlencode($email),
             $response);
         return $response;
@@ -299,7 +300,7 @@ class ZeroBounce
             $rsp->Deserialize($response);
             return $rsp;
         } catch (Exception $e) {
-            throw new ZBException($e->getMessage());
+            throw new ZBException($this->redactApiKey($e->getMessage()));
         }
     }
 
@@ -349,7 +350,7 @@ class ZeroBounce
             $rsp->Deserialize($response);
             return $rsp;
         } catch (Exception $e) {
-            throw new ZBException($e->getMessage());
+            throw new ZBException($this->redactApiKey($e->getMessage()));
         }
     }
 
@@ -400,7 +401,7 @@ class ZeroBounce
     {
         $curl = curl_init();
 
-        $boundary = uniqid();
+        $boundary = bin2hex(random_bytes(16));
         $delimiter = '-------------' . $boundary;
 
         $post_data = $this->build_data_files($boundary, $fields, $files);
@@ -471,8 +472,8 @@ class ZeroBounce
         $response = new ZBFileStatusResponse();
         $this->request(self::BulkApiBaseUrl
             . ($scoring ? "/scoring" : "")
-            . "/filestatus?api_key=" . $this->apiKey
-            . "&file_id=" . $fileId,
+            . "/filestatus?api_key=" . urlencode($this->apiKey)
+            . "&file_id=" . urlencode($fileId),
             $response);
 
         return $response;
@@ -566,8 +567,21 @@ class ZeroBounce
             $response->localFilePath = $downloadPath;
             return $response;
         } catch (Exception $e) {
-            throw new ZBException($e->getMessage());
+            throw new ZBException($this->redactApiKey($e->getMessage()));
         }
+    }
+
+
+    /**
+     * Masks the API key in text that can end up in exception messages or logs.
+     */
+    private function redactApiKey($message)
+    {
+        $message = (string) $message;
+        if (!$this->apiKey) {
+            return $message;
+        }
+        return str_replace(array($this->apiKey, urlencode($this->apiKey), rawurlencode($this->apiKey)), '***', $message);
     }
 
     /**
@@ -749,8 +763,8 @@ class ZeroBounce
         $response = new ZBDeleteFileResponse();
         $this->request(self::BulkApiBaseUrl
             . ($scoring ? "/scoring" : "")
-            . "/deletefile?api_key=" . $this->apiKey
-            . "&file_id=" . $fileId,
+            . "/deletefile?api_key=" . urlencode($this->apiKey)
+            . "&file_id=" . urlencode($fileId),
             $response);
 
         return $response;
@@ -792,7 +806,7 @@ class ZeroBounce
             $response->Deserialize($json);
             return $code;
         } catch (Exception $e) {
-            throw new ZBException($e->getMessage());
+            throw new ZBException($this->redactApiKey($e->getMessage()));
         }
     }
 
@@ -829,7 +843,7 @@ class ZeroBounce
 
 
         foreach ($files as $path => $content) {
-            $name = basename($path);
+            $name = str_replace(array('"', "\r", "\n"), array('%22', '%0D', '%0A'), basename($path));
             $data .= "--" . $delimiter . $eol
                 . 'Content-Disposition: form-data; name="file"; filename="' . $name . '"' . $eol
                 //. 'Content-Type: image/png'.$eol
