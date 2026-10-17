@@ -62,7 +62,27 @@ class ZeroBounce
         if (!$email) throw new ZBMissingParameterException("email is required");
         $response = new ZBValidateResponse();
         $ipPart = $ipAddress ? urlencode($ipAddress) : "";
-        $url = self::$ApiBaseUrl . "/validate?api_key=" . urlencode($this->apiKey) . "&email=" . urlencode($email) . "&ip_address=" . $ipPart;
+        $fields = array(
+            'email' => $email,
+            'ip_address' => $ipAddress ? $ipAddress : '',
+        );
+        if ($options instanceof ZBValidateOptions) {
+            if ($options->timeout !== null) {
+                $fields['timeout'] = (string)$options->timeout;
+            }
+            if ($options->activityData !== null) {
+                $fields['activity_data'] = $options->activityData ? "true" : "false";
+            }
+            if ($options->verifyPlus !== null) {
+                $fields['verify_plus'] = $options->verifyPlus ? "true" : "false";
+            }
+            if ($options->usePost) {
+                $this->formPost(self::$ApiBaseUrl . "/validate", $fields, $response);
+                return $response;
+            }
+        }
+        $url = self::$ApiBaseUrl . "/validate?api_key=" . urlencode($this->apiKey)
+            . "&email=" . urlencode($email) . "&ip_address=" . $ipPart;
         if ($options instanceof ZBValidateOptions) {
             if ($options->timeout !== null) {
                 $url .= "&timeout=" . urlencode((string)$options->timeout);

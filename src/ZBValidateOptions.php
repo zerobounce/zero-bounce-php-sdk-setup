@@ -15,4 +15,7 @@ class ZBValidateOptions
 
     /** @var bool|null */
     public $verifyPlus;
+
+    /** @var bool When true, uses form-encoded POST for /validate. */
+    public $usePost = false;
 }

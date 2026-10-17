@@ -190,6 +190,24 @@ trait ZeroBouncePriority3
         ));
     }
 
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function listS3Files($bucket = null, $search = null)
+    {
+        $this->checkValidApiKey();
+        $url = self::BulkApiRootUrl . '/listS3files?api_key=' . urlencode($this->apiKey);
+        if ($bucket !== null && $bucket !== '') {
+            $url .= '&bucket=' . urlencode($bucket);
+        }
+        if ($search !== null && $search !== '') {
+            $url .= '&search=' . urlencode($search);
+        }
+        $holder = new ZBRawJsonResponse();
+        $this->request($url, $holder);
+        return $holder->data;
+    }
+
     public function validateS3File(array $options)
     {
         if (empty($options['file_name'])) {
