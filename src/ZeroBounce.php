@@ -55,13 +55,25 @@ class ZeroBounce
      * @throws ZBMissingParameterException
      * @throws ZBException
      */
-    public function validate($email, $ipAddress = NULL)
+    public function validate($email, $ipAddress = NULL, $options = NULL)
     {
         $this->checkValidApiKey();
         if (!$email) throw new ZBMissingParameterException("email is required");
         $response = new ZBValidateResponse();
         $ipPart = $ipAddress ? urlencode($ipAddress) : "";
-        $this->request(self::$ApiBaseUrl . "/validate?api_key=" . urlencode($this->apiKey) . "&email=" . urlencode($email) . "&ip_address=" . $ipPart, $response);
+        $url = self::$ApiBaseUrl . "/validate?api_key=" . urlencode($this->apiKey) . "&email=" . urlencode($email) . "&ip_address=" . $ipPart;
+        if ($options instanceof ZBValidateOptions) {
+            if ($options->timeout !== null) {
+                $url .= "&timeout=" . urlencode((string)$options->timeout);
+            }
+            if ($options->activityData !== null) {
+                $url .= "&activity_data=" . ($options->activityData ? "true" : "false");
+            }
+            if ($options->verifyPlus !== null) {
+                $url .= "&verify_plus=" . ($options->verifyPlus ? "true" : "false");
+            }
+        }
+        $this->request($url, $response);
         return $response;
     }
 
@@ -72,7 +84,7 @@ class ZeroBounce
      * @throws ZBMissingParameterException
      * @throws ZBException
      */
-    public function validateBatch($emails)
+    public function validateBatch($emails, $options = NULL)
     {
         $this->checkValidApiKey();
         if (!$emails or !count($emails)) throw new ZBMissingParameterException("emails parameter is required");
@@ -98,6 +110,17 @@ class ZeroBounce
         else
             throw new ZBException('Unknown Parameter Type');
         $params = ['email_batch' => $params];
+        if ($options instanceof ZBValidateOptions) {
+            if ($options->timeout !== null) {
+                $params['timeout'] = $options->timeout;
+            }
+            if ($options->activityData !== null) {
+                $params['activity_data'] = $options->activityData;
+            }
+            if ($options->verifyPlus !== null) {
+                $params['verify_plus'] = $options->verifyPlus;
+            }
+        }
 
         $response = new ZBBatchValidateResponse();
         $code = $this->json(

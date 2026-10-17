@@ -46,6 +46,12 @@ class ZBValidateResponse extends ZBResponse
      */
     public $didYouMean;
 
+    /** @var string|null */
+    public $activeInDays;
+
+    /** @var string|null */
+    public $activeFirstSeen;
+
     /**
      * Age of the email domain in days or [null].
      * @var string|null
