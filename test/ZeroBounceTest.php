@@ -717,4 +717,34 @@ class ZeroBounceTest extends TestCase
         $this->assertEquals($response->confidence, "high");
         $this->assertEquals(count($response->otherDomainFormats), 26);
     }
+
+    public function testSendEmailFinderFileUsesBulkEmailFinderEndpoint()
+    {
+        ZeroBounce::Instance()->responseText = '{
+            "success": true,
+            "file_id": "abc-def",
+            "message": "File Accepted"
+        }';
+        $path = sys_get_temp_dir() . '/zb_finder_p3.csv';
+        file_put_contents($path, "domain,name\nacme.com,Jane");
+        try {
+            ZeroBounce::Instance()->sendEmailFinderFile($path, 1);
+            $this->assertStringContainsString('bulkapi.zerobounce.net/email-finder/sendfile', ZeroBounce::Instance()->lastCurlUrl);
+        } finally {
+            if (file_exists($path)) {
+                unlink($path);
+            }
+        }
+    }
+
+    public function testValidateS3FilePostsToBulkRoot()
+    {
+        ZeroBounce::Instance()->responseText = '{
+            "success": true,
+            "file_id": "s3-job",
+            "message": "File Accepted"
+        }';
+        ZeroBounce::Instance()->validateS3File(array('file_name' => 'bucket/key.csv'));
+        $this->assertStringContainsString('bulkapi.zerobounce.net/validateS3file', ZeroBounce::Instance()->lastFormPostUrl);
+    }
 }

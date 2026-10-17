@@ -9,6 +9,7 @@ use Exception;
  */
 class ZeroBounce
 {
+    use ZeroBouncePriority3;
 
     /**
      * Call this method to get singleton
