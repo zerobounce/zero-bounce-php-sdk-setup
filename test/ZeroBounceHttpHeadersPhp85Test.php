@@ -42,41 +42,50 @@ final class ZeroBounceHttpHeadersPhp85Test extends TestCase
         $src = file_get_contents(self::zeroBounceSourcePath());
         $method = self::extractMethodSource(
             $src,
+            'private function lastHttpHeaders()',
+            'protected function request($url, $response)'
+        );
+        $bulk = self::extractMethodSource(
+            $src,
             'protected function getBulkFileHttp($url)',
             'protected static function parseHttpStatusFromHeaders'
         );
 
         $this->assertStringContainsString("function_exists('http_get_last_response_headers')", $method);
         $this->assertStringContainsString('http_get_last_response_headers()', $method);
-        $this->assertStringNotContainsString(
-            'isset($http_response_header)',
-            $method,
-            'Remove isset($http_response_header) / elseif legacy branch; it is deprecated on PHP 8.5 (see RFC deprecations).'
-        );
+        $this->assertStringNotContainsString('isset($http_response_header)', $method);
+        $this->assertStringNotContainsString('isset($http_response_header)', $bulk);
+        $this->assertStringContainsString('executeHttp', $bulk);
     }
 
     public function testRequestUsesHttpGetLastResponseHeadersBeforeReadingStatus(): void
     {
         $src = file_get_contents(self::zeroBounceSourcePath());
-        $method = self::extractMethodSource(
+        $execute = self::extractMethodSource(
             $src,
-            'protected function request($url, $response)',
-            'private function checkValidApiKey'
+            'protected function executeHttp($method, $url, array $headers = array(), $body = null, $timeout = 120)',
+            'private function lastHttpHeaders()'
+        );
+        $headers = self::extractMethodSource(
+            $src,
+            'private function lastHttpHeaders()',
+            'protected function request($url, $response)'
         );
 
-        $this->assertStringContainsString("function_exists('http_get_last_response_headers')", $method);
-        $this->assertStringContainsString('http_get_last_response_headers()', $method);
-        $this->assertStringContainsString('$responseHeaders = http_get_last_response_headers()', $method);
-        $this->assertStringNotContainsString('getHttpCode($http_response_header)', $method);
+        $this->assertStringContainsString("function_exists('http_get_last_response_headers')", $headers);
+        $this->assertStringContainsString('http_get_last_response_headers()', $headers);
+        $this->assertStringContainsString('$fromFn = http_get_last_response_headers()', $headers);
+        $this->assertStringNotContainsString('getHttpCode($http_response_header)', $execute);
+        $this->assertStringNotContainsString('isset($http_response_header)', $execute);
 
-        $posFn = strpos($method, "function_exists('http_get_last_response_headers')");
-        $posGetHttp = strpos($method, 'getHttpCode($responseHeaders)');
-        $this->assertNotFalse($posFn);
+        $posHeaders = strpos($execute, 'lastHttpHeaders()');
+        $posGetHttp = strpos($execute, 'getHttpCode($responseHeaders)');
+        $this->assertNotFalse($posHeaders);
         $this->assertNotFalse($posGetHttp);
         $this->assertLessThan(
             $posGetHttp,
-            $posFn,
-            'request() must resolve headers via http_get_last_response_headers() before getHttpCode() (PHP 8.5).'
+            $posHeaders,
+            'executeHttp() must resolve headers via lastHttpHeaders() before getHttpCode() (PHP 8.5).'
         );
     }
 
