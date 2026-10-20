@@ -6,6 +6,7 @@ require_once __DIR__ . '/../vendor/autoload.php';
 require_once('MockZeroBounce.php');
 
 use ZeroBounce\SDK\ZBValidateStatus;
+use ZeroBounce\SDK\ZBValidateSubStatus;
 use ZeroBounce\SDK\ZBDownloadType;
 use ZeroBounce\SDK\ZBGetFileOptions;
 use ZeroBounce\SDK\ZeroBounce as SdkZeroBounce;
@@ -212,6 +213,48 @@ class ZeroBounceTest extends TestCase
         $response = ZeroBounce::Instance()->validate("valid@example.com");
         $this->assertEquals($response->address, "valid@example.com");
         $this->assertEquals($response->status, ZBValidateStatus::Valid);
+    }
+
+    public function testValidateAiAgentMailboxValid()
+    {
+        ZeroBounce::Instance()->responseText = "{
+            \"address\": \"agent@example.com\",
+            \"status\": \"valid\",
+            \"sub_status\": \"ai_agent_mailbox\"
+        }";
+        $response = ZeroBounce::Instance()->validate("agent@example.com");
+        $this->assertEquals($response->status, ZBValidateStatus::Valid);
+        $this->assertEquals($response->subStatus, ZBValidateSubStatus::AiAgentMailbox);
+    }
+
+    public function testValidateAiAgentMailboxCatchAll()
+    {
+        ZeroBounce::Instance()->responseText = "{
+            \"address\": \"agent@example.com\",
+            \"status\": \"catch-all\",
+            \"sub_status\": \"ai_agent_mailbox\"
+        }";
+        $response = ZeroBounce::Instance()->validate("agent@example.com");
+        $this->assertEquals($response->subStatus, ZBValidateSubStatus::AiAgentMailbox);
+    }
+
+    public function testValidateUnknownSubStatusIsPassedThrough()
+    {
+        // ZBValidateResponse::getValue() branches on $classKey === "sub_status",
+        // but ZBResponse::deserialize() has already camel-cased the key to
+        // "subStatus" by then, so that branch never runs and the raw value is
+        // assigned as-is. That is the safe outcome -- a sub_status the SDK has
+        // not heard of yet reaches the caller instead of being blanked -- so it
+        // is pinned here rather than "fixed". ("status" has no underscore, so
+        // its normalisation does run.)
+        ZeroBounce::Instance()->responseText = "{
+            \"address\": \"future@example.com\",
+            \"status\": \"valid\",
+            \"sub_status\": \"some_future_sub_status\"
+        }";
+        $response = ZeroBounce::Instance()->validate("future@example.com");
+        $this->assertEquals(ZBValidateStatus::Valid, $response->status);
+        $this->assertEquals("some_future_sub_status", $response->subStatus);
     }
 
     public function testGetCredits()

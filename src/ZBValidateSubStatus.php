@@ -31,4 +31,5 @@ class ZBValidateSubStatus extends BasicEnum
     const Disposable = "disposable";
     const Toxic = "toxic";
     const AcceptAll = "accept_all";
+    const AiAgentMailbox = "ai_agent_mailbox";
 }
