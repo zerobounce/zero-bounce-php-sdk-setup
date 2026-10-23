@@ -1094,6 +1094,92 @@ return true;
         $this->assertSame('/custom/listevaluator/fid/', $custom['path']);
     }
 
+
+    public function testS3AndSftpJobsSendDocumentedFieldsOnly()
+    {
+        $api = new FakeApi();
+        $client = $this->client($api, 'bulk-key');
+
+        $client->emailFinderS3File(array('file_name' => 'inbox.csv', 'has_header_row' => false));
+        $finder = $this->only($api);
+        $this->assertSame('POST', $finder['method']);
+        $this->assertSame('bulkapi.zerobounce.net', $finder['host']);
+        $this->assertSame('/emailFinderS3file', $finder['path']);
+        $this->assertSame('inbox.csv', $finder['fields']['file_name']);
+        $this->assertSame('false', $finder['fields']['has_header_row']);
+        $this->assertArrayNotHasKey('remove_duplicates', $finder['fields']);
+        $this->assertArrayNotHasKey('return_url', $finder['fields']);
+
+        $api->clear();
+        $client->domainSearchS3File(array(
+            'file_name' => 'inbox.csv',
+            'has_header_row' => true,
+            'remove_duplicates' => false,
+            'return_url' => 'https://example.com/done',
+        ));
+        $search = $this->only($api);
+        $this->assertSame('/domainSearchS3file', $search['path']);
+        $this->assertSame('true', $search['fields']['has_header_row']);
+        $this->assertSame('false', $search['fields']['remove_duplicates']);
+        $this->assertSame('https://example.com/done', $search['fields']['return_url']);
+
+        // validateSFTPfile is the one job whose file_name the docs mark optional.
+        $api->clear();
+        $client->validateSFTPFile(array('has_header_row' => true));
+        $sftp = $this->only($api);
+        $this->assertSame('/validateSFTPfile', $sftp['path']);
+        $this->assertArrayNotHasKey('file_name', $sftp['fields']);
+
+        $api->clear();
+        $client->scoreSFTPFile(array('file_name' => 'my_file.txt', 'has_header_row' => true));
+        $this->assertSame('/scoreSFTPfile', $this->only($api)['path']);
+
+        $api->clear();
+        $client->emailFinderSFTPFile(array('file_name' => 'my_file.txt', 'has_header_row' => true));
+        $this->assertSame('/emailFinderSFTPfile', $this->only($api)['path']);
+
+        $api->clear();
+        $client->domainSearchSFTPFile(array('file_name' => 'my_file.txt', 'has_header_row' => true));
+        $this->assertSame('/domainSearchSFTPfile', $this->only($api)['path']);
+
+        // exportSFTPfile takes export_path, not the export_bucket exportS3File uses.
+        $api->clear();
+        $client->exportSFTPFile('fid');
+        $exported = $this->only($api);
+        $this->assertSame('/exportSFTPfile', $exported['path']);
+        $this->assertSame('fid', $exported['fields']['file_id']);
+        $this->assertArrayNotHasKey('export_path', $exported['fields']);
+
+        $api->clear();
+        $client->exportSFTPFile('fid', '/exports');
+        $this->assertSame('/exports', $this->only($api)['fields']['export_path']);
+    }
+
+    public function testS3AndSftpJobsRejectInvalidArgumentsBeforeRequest()
+    {
+        $api = new FakeApi();
+        $client = $this->client($api, 'bulk-key');
+
+        $cases = array(
+            function () use ($client) { $client->emailFinderS3File(array('has_header_row' => true)); },
+            function () use ($client) { $client->domainSearchS3File(array('file_name' => 'f.csv')); },
+            function () use ($client) { $client->scoreSFTPFile(array('file_name' => '  ', 'has_header_row' => true)); },
+            function () use ($client) { $client->domainSearchSFTPFile(array('file_name' => 'f.csv')); },
+            function () use ($client) { $client->exportSFTPFile(''); },
+            function () use ($client) { $client->exportSFTPFile('fid', '  '); },
+        );
+        foreach ($cases as $case) {
+            $threw = false;
+            try {
+                $case();
+            } catch (ZBException $e) {
+                $threw = true;
+            }
+            $this->assertTrue($threw);
+        }
+        $this->assertSame(0, $api->count());
+    }
+
     private function client(FakeApi $api, $key)
     {
         $client = new OfflineClient($api);

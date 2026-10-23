@@ -153,6 +153,9 @@ class FakeApi
         if (strpos($path, 'getfile') !== false) {
             return $this->respond(200, 'text/csv', "email\n" . $key . "@example.com\n");
         }
+        if (preg_match('#/(emailFinder|domainSearch|validate|score|export)(S3|SFTP)file$#', $path)) {
+            return $this->respond(200, 'application/json', '{"success":true,"file_id":' . $quoted . '}');
+        }
         if (strpos($path, 'listS3files') !== false) {
             return $this->respond(200, 'application/json', '[{"file_name":' . $quoted . ',"size":1}]');
         }

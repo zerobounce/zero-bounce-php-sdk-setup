@@ -141,6 +141,32 @@ echo $response->message;
 echo $response->domainWebsiteExists;
 ```
 
+- S3 and SFTP/FTP bulk jobs:
+```php
+// Amazon S3: https://www.zerobounce.net/docs/api-integrations/amazon-s3-bulk-api
+ZeroBounce::Instance()->emailFinderS3File(array(
+    'file_name' => 'lists/leads.csv',
+    'has_header_row' => true,
+));
+ZeroBounce::Instance()->domainSearchS3File(array(
+    'file_name' => 'lists/leads.csv',
+    'has_header_row' => true,
+    'remove_duplicates' => true,
+    'return_url' => 'https://example.com/zerobounce-done',
+));
+
+// SFTP/FTP: https://www.zerobounce.net/docs/api-integrations/sftp_bulk_api
+// The server, path and protocol come from your ZeroBounce settings.
+// file_name is optional for validateSFTPFile only.
+ZeroBounce::Instance()->validateSFTPFile(array('has_header_row' => true));
+ZeroBounce::Instance()->scoreSFTPFile(array('file_name' => 'my_file.txt', 'has_header_row' => true));
+ZeroBounce::Instance()->emailFinderSFTPFile(array('file_name' => 'my_file.txt', 'has_header_row' => true));
+ZeroBounce::Instance()->domainSearchSFTPFile(array('file_name' => 'my_file.txt', 'has_header_row' => true));
+
+// exportSFTPFile takes export_path, not export_bucket. Omit it to use your settings.
+ZeroBounce::Instance()->exportSFTPFile('<FILE_ID>', '/exports');
+```
+
 - Inbox Placement Tester:
 ```php
 // Lives on https://bulkapi.zerobounce.net/api/ipt and spends inbox test credits.

@@ -17,7 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bulk domain search (`sendDomainSearchFile`, `domainSearchFileStatus`, `domainSearchGetFile`, `domainSearchDeleteFile`, plus stream upload).
 - List evaluator (`sendListEvaluatorFile`, `getListEvaluatorResult`, `sendEvaluatedFile`, plus stream uploads).
 - Filters (`addFilter`, `listFilters`, `deleteFilter`).
-- S3 bulk (`validateS3File`, `scoreS3File`, `exportS3File`, `listS3Files`).
+- S3 bulk (`validateS3File`, `scoreS3File`, `exportS3File`, `listS3Files`, `emailFinderS3File`, `domainSearchS3File`).
+- SFTP/FTP bulk (`validateSFTPFile`, `scoreSFTPFile`, `emailFinderSFTPFile`, `domainSearchSFTPFile`, `exportSFTPFile`). The server, path and protocol come from your ZeroBounce settings. `validateSFTPFile`'s `file_name` is optional; `exportSFTPFile` takes `export_path` rather than `export_bucket`.
 - `validate` accepts `domainInfo`, `greylistProcessing`, and `callbackUrl` on `ZBValidateOptions`. `callbackUrl` needs `greylistProcessing = true` and is rejected without it, and when blank, before a request is sent.
 - `ZBValidateResponse` carries `domainWebsiteExists`, `domainRegistrantCompanyName`, and `message`. `message` is read from the API's `Message` key, returned while greylist processing is still running.
 - Inbox Placement Tester on `https://bulkapi.zerobounce.net/api/ipt`: `getInboxPlacementProviders`, `getInboxPlacementTestTypes`, `createInboxPlacementTest`, `getInboxPlacementTest`, `listInboxPlacementTests`, `deleteInboxPlacementTest`, `getInboxPlacementWebhook`, `setInboxPlacementWebhook`.

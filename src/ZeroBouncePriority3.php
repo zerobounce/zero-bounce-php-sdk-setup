@@ -5,7 +5,7 @@ namespace ZeroBounce\SDK;
 use Exception;
 
 /**
- * Priority 3 API: bulk email finder, domain search, list evaluator, filters, S3 helpers.
+ * Priority 3 API: bulk email finder, domain search, list evaluator, filters, S3 and SFTP/FTP bulk.
  */
 trait ZeroBouncePriority3
 {
@@ -270,6 +270,134 @@ trait ZeroBouncePriority3
         if ($value !== null) {
             $fields[$key] = $value ? 'true' : 'false';
         }
+    }
+
+    /**
+     * Shared shape for the documented S3 and SFTP file jobs on the bulkapi root.
+     * Only fields the caller set are sent; booleans go as the strings true/false.
+     *
+     * @param bool $fileNameRequired false for validateSFTPfile, whose file_name is optional
+     * @return ZBSendFileResponse
+     * @throws ZBException
+     */
+    private function bulkRootFileJob($path, array $options, $fileNameRequired = true)
+    {
+        $fileName = isset($options['file_name']) ? $options['file_name'] : null;
+        if ($fileNameRequired && ($fileName === null || trim((string)$fileName) === '')) {
+            throw new ZBMissingParameterException('file_name is required');
+        }
+        if ($fileName !== null && trim((string)$fileName) === '') {
+            throw new ZBMissingParameterException('file_name is required');
+        }
+        if (!isset($options['has_header_row'])) {
+            throw new ZBMissingParameterException('has_header_row is required');
+        }
+
+        $fields = array();
+        if ($fileName !== null) {
+            $fields['file_name'] = $fileName;
+        }
+        $this->appendOptionalBool($fields, 'has_header_row', $options['has_header_row']);
+        if (isset($options['remove_duplicates'])) {
+            $this->appendOptionalBool($fields, 'remove_duplicates', $options['remove_duplicates']);
+        }
+        if (isset($options['return_url'])) {
+            $fields['return_url'] = $options['return_url'];
+        }
+        return $this->postBulkRootForm($path, $fields);
+    }
+
+    /**
+     * Run the email finder on a file in your Amazon S3 bucket. POST /emailFinderS3file
+     *
+     * @return ZBSendFileResponse
+     * @throws ZBException
+     */
+    public function emailFinderS3File(array $options)
+    {
+        return $this->bulkRootFileJob('/emailFinderS3file', $options);
+    }
+
+    /**
+     * Run domain search on a file in your Amazon S3 bucket. POST /domainSearchS3file
+     *
+     * @return ZBSendFileResponse
+     * @throws ZBException
+     */
+    public function domainSearchS3File(array $options)
+    {
+        return $this->bulkRootFileJob('/domainSearchS3file', $options);
+    }
+
+    // SFTP / FTP bulk. The server, path and protocol come from your ZeroBounce settings.
+
+    /**
+     * Validate a file from your SFTP/FTP server. POST /validateSFTPfile
+     *
+     * The docs list file_name as optional here; leave it out to use the input
+     * bucket configured in your settings.
+     *
+     * @return ZBSendFileResponse
+     * @throws ZBException
+     */
+    public function validateSFTPFile(array $options)
+    {
+        return $this->bulkRootFileJob('/validateSFTPfile', $options, false);
+    }
+
+    /**
+     * Score a file from your SFTP/FTP server. POST /scoreSFTPfile
+     *
+     * @return ZBSendFileResponse
+     * @throws ZBException
+     */
+    public function scoreSFTPFile(array $options)
+    {
+        return $this->bulkRootFileJob('/scoreSFTPfile', $options);
+    }
+
+    /**
+     * Run the email finder on a file from your SFTP/FTP server. POST /emailFinderSFTPfile
+     *
+     * @return ZBSendFileResponse
+     * @throws ZBException
+     */
+    public function emailFinderSFTPFile(array $options)
+    {
+        return $this->bulkRootFileJob('/emailFinderSFTPfile', $options);
+    }
+
+    /**
+     * Run domain search on a file from your SFTP/FTP server. POST /domainSearchSFTPfile
+     *
+     * @return ZBSendFileResponse
+     * @throws ZBException
+     */
+    public function domainSearchSFTPFile(array $options)
+    {
+        return $this->bulkRootFileJob('/domainSearchSFTPfile', $options);
+    }
+
+    /**
+     * Export a validated or scored file back to your SFTP/FTP server. POST /exportSFTPfile
+     *
+     * Without $exportPath the export path from your ZeroBounce settings is used.
+     * Note this takes export_path, not the export_bucket that exportS3File uses.
+     *
+     * @return ZBSendFileResponse
+     * @throws ZBException
+     */
+    public function exportSFTPFile($fileId, $exportPath = null)
+    {
+        $this->requireProvided($fileId, 'fileId is required');
+        if ($exportPath !== null && trim((string)$exportPath) === '') {
+            throw new ZBMissingParameterException('exportPath is required');
+        }
+        $fields = array('file_id' => $fileId);
+        if ($exportPath !== null) {
+            $fields['export_path'] = $exportPath;
+        }
+        return $this->postBulkRootForm('/exportSFTPfile', $fields);
     }
 
     private function buildEmailFinderFields($domainColumn, $firstNameColumn, $lastNameColumn, $middleNameColumn, $fullNameColumn, $hasHeaderRow)
