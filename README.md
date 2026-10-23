@@ -121,6 +121,65 @@ $response = ZeroBounce::Instance()->validate(
 $status = $response->status;
 ```
 
+- Validate with domain info and greylist processing:
+```php
+use ZeroBounce\SDK\ZBValidateOptions;
+
+$options = new ZBValidateOptions();
+// domainInfo adds domainWebsiteExists and domainRegistrantCompanyName.
+$options->domainInfo = true;
+// greylistProcessing re-runs a greylisted address instead of returning unknown.
+$options->greylistProcessing = true;
+// callbackUrl is only allowed together with greylistProcessing = true.
+$options->callbackUrl = "https://example.com/zerobounce-callback";
+
+$response = ZeroBounce::Instance()->validate("<EMAIL_ADDRESS>", null, $options);
+
+// While the greylist retry is still running the API returns a message
+// instead of a result; validate again in about 30 minutes to pick it up.
+echo $response->message;
+echo $response->domainWebsiteExists;
+```
+
+- Inbox Placement Tester:
+```php
+// Lives on https://bulkapi.zerobounce.net/api/ipt and spends inbox test credits.
+$providers = ZeroBounce::Instance()->getInboxPlacementProviders();
+$testTypes = ZeroBounce::Instance()->getInboxPlacementTestTypes();
+
+// testType 1 (Email) needs a sender email; 2 is Unique ID and 3 is Auto Alias.
+$created = ZeroBounce::Instance()->createInboxPlacementTest(
+    "October campaign",                        // required, at most 64 characters
+    1,                                         // testType
+    "news@example.com",                        // senderEmail, required for testType 1
+    null,                                      // providerIds
+    null,                                      // seedIds
+    array(array("id" => 1, "maxSeeds" => 5)),  // per-provider seed cap
+    "https://example.com/ipt-webhook"
+);
+
+// Send your campaign to the seeds in $created->data, then read the results.
+$result = ZeroBounce::Instance()->getInboxPlacementTest($created->data["id"]);
+
+$tests = ZeroBounce::Instance()->listInboxPlacementTests("finished", null, null, 1, 25);
+
+ZeroBounce::Instance()->setInboxPlacementWebhook("https://example.com/ipt-webhook");
+$webhook = ZeroBounce::Instance()->getInboxPlacementWebhook();
+ZeroBounce::Instance()->deleteInboxPlacementTest($created->data["id"]);
+```
+
+- Point an API at a different base URL:
+```php
+// The list evaluator and the Inbox Placement Tester have their own base URLs,
+// separate from the main and bulk hosts.
+ZeroBounce::Instance()->initialize(
+    "<YOUR_API_KEY>",
+    null,                                                   // main API base URL
+    "https://bulkapi.zerobounce.net/v2/listevaluator",      // list evaluator
+    "https://bulkapi.zerobounce.net/api/ipt"                // Inbox Placement Tester
+);
+```
+
 - Verify a batch of email addresses:
 ```php
 /** @var response ZeroBounce\SDK\ZBBatchValidateResponse */

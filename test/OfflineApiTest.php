@@ -470,53 +470,6 @@ class OfflineApiTest extends TestCase
         $client->deleteFilter('exclude', 'domain', 'example.com');
         $this->assertSame('/v2/filters/delete', $this->only($api)['path']);
 
-        $api->clear();
-        $client->validateS3File(array(
-            'file_name' => 'inbox.csv',
-            'email_address_column' => 0,
-            'has_header_row' => false,
-            'remove_duplicate' => true,
-            'first_name_column' => 0,
-        ));
-        $validated = $this->only($api);
-        $this->assertSame('POST', $validated['method']);
-        $this->assertSame('/validateS3file', $validated['path']);
-        $this->assertSame('bulkapi.zerobounce.net', $validated['host']);
-        $this->assertSame('inbox.csv', $validated['fields']['file_name']);
-        $this->assertSame('0', (string)$validated['fields']['email_address_column']);
-        $this->assertSame('false', $validated['fields']['has_header_row']);
-        $this->assertSame('true', $validated['fields']['remove_duplicate']);
-        $this->assertSame('0', (string)$validated['fields']['first_name_column']);
-        $this->assertArrayNotHasKey('remove_duplicates', $validated['fields']);
-        $this->assertArrayNotHasKey('allow_phase_2', $validated['fields']);
-
-        $api->clear();
-        $client->scoreS3File(array('file_name' => 'inbox.csv'));
-        $scored = $this->only($api);
-        $this->assertSame('/scoreS3file', $scored['path']);
-        $this->assertArrayNotHasKey('email_address_column', $scored['fields']);
-        $this->assertArrayNotHasKey('has_header_row', $scored['fields']);
-
-        $api->clear();
-        $client->exportS3File('fid', 'bucket-out');
-        $exported = $this->only($api);
-        $this->assertSame('/exportS3file', $exported['path']);
-        $this->assertSame('fid', $exported['fields']['file_id']);
-        $this->assertSame('bucket-out', $exported['fields']['export_bucket']);
-
-        $api->clear();
-        $files = $client->listS3Files();
-        $this->assertSame('p3-key', $files[0]['file_name']);
-        $listedFiles = $this->only($api);
-        $this->assertSame('/listS3files', $listedFiles['path']);
-        $this->assertArrayNotHasKey('bucket', $listedFiles['fields']);
-        $this->assertArrayNotHasKey('search', $listedFiles['fields']);
-
-        $api->clear();
-        $client->listS3Files('inbox', 'csv');
-        $filtered = $this->only($api);
-        $this->assertSame('inbox', $filtered['fields']['bucket']);
-        $this->assertSame('csv', $filtered['fields']['search']);
     }
 
     public function testRejectsMissingKeyAndInvalidArgumentsBeforeRequest()
@@ -541,15 +494,6 @@ class OfflineApiTest extends TestCase
             },
             function () use ($client) {
                 $client->sendDomainSearchFile($this->csv, 1);
-            },
-            function () use ($client) {
-                $client->validateS3File(array('file_name' => 'inbox.csv'));
-            },
-            function () use ($client) {
-                $client->scoreS3File(array('file_name' => 'inbox.csv'));
-            },
-            function () use ($client) {
-                $client->exportS3File('fid', 'bucket');
             },
             function () use ($client) {
                 $client->sendEmailFinderFile($this->csv, 1);
@@ -591,9 +535,6 @@ class OfflineApiTest extends TestCase
         $this->assertRejected(function () use ($keyed) {
             $keyed->sendDomainSearchFile($this->csv, '');
         }, 'domainColumn');
-        $this->assertRejected(function () use ($keyed) {
-            $keyed->validateS3File(array());
-        }, 'file_name');
         $this->assertRejected(function () use ($keyed) {
             $keyed->sendFile('', 1);
         }, 'filePath');
@@ -898,6 +839,199 @@ return true;
             }
             @unlink($router);
         }
+    }
+
+    public function testValidateSendsTheNewOptionsOnlyWhenSet()
+    {
+        $api = new FakeApi();
+        $client = $this->client($api, 'p1-key');
+
+        $client->validate('a@example.com');
+        $plain = $this->only($api);
+        $this->assertArrayNotHasKey('domain_info', $plain['fields']);
+        $this->assertArrayNotHasKey('greylist_processing', $plain['fields']);
+        $this->assertArrayNotHasKey('callback_url', $plain['fields']);
+
+        $api->clear();
+        $options = new ZBValidateOptions();
+        $options->domainInfo = true;
+        $options->greylistProcessing = false;
+        $client->validate('a@example.com', null, $options);
+        $set = $this->only($api);
+        $this->assertSame('true', (string)$set['fields']['domain_info']);
+        $this->assertSame('false', (string)$set['fields']['greylist_processing']);
+
+        $api->clear();
+        $options = new ZBValidateOptions();
+        $options->greylistProcessing = true;
+        $options->callbackUrl = 'https://example.com/cb';
+        $options->usePost = true;
+        $client->validate('a@example.com', null, $options);
+        $posted = $this->only($api);
+        $this->assertSame('POST', $posted['method']);
+        $this->assertSame('true', (string)$posted['fields']['greylist_processing']);
+        $this->assertSame('https://example.com/cb', $posted['fields']['callback_url']);
+    }
+
+    public function testValidateRejectsCallbackUrlWithoutGreylistProcessing()
+    {
+        $api = new FakeApi();
+        $client = $this->client($api, 'p1-key');
+
+        $options = new ZBValidateOptions();
+        $options->callbackUrl = 'https://example.com/cb';
+        $this->assertRejected(function () use ($client, $options) {
+            $client->validate('a@example.com', null, $options);
+        }, 'greylistProcessing');
+
+        $blank = new ZBValidateOptions();
+        $blank->greylistProcessing = true;
+        $blank->callbackUrl = '   ';
+        $this->assertRejected(function () use ($client, $blank) {
+            $client->validate('a@example.com', null, $blank);
+        }, 'callbackUrl');
+
+        $this->assertSame(0, $api->count());
+    }
+
+    public function testInboxPlacementUsesItsOwnHostAndCamelCaseJson()
+    {
+        $api = new FakeApi();
+        $client = $this->client($api, 'ipt-key');
+
+        $client->getInboxPlacementProviders();
+        $providers = $this->only($api);
+        $this->assertSame('GET', $providers['method']);
+        $this->assertSame('bulkapi.zerobounce.net', $providers['host']);
+        $this->assertSame('/api/ipt/providers', $providers['path']);
+        $this->assertSame('ipt-key', $providers['fields']['api_key']);
+
+        $api->clear();
+        $client->getInboxPlacementTestTypes();
+        $this->assertSame('/api/ipt/test-types', $this->only($api)['path']);
+
+        $api->clear();
+        $client->createInboxPlacementTest('basic');
+        $created = $this->only($api);
+        $this->assertSame('POST', $created['method']);
+        $this->assertSame('/api/ipt/test', $created['path']);
+        $this->assertSame(array('name' => 'basic'), $created['json']);
+
+        $api->clear();
+        $client->createInboxPlacementTest(
+            'full',
+            1,
+            'from@example.com',
+            array(1, 2),
+            array(3),
+            array(array('id' => 4, 'maxSeeds' => 2)),
+            'https://example.com/hook'
+        );
+        $this->assertSame(array(
+            'name' => 'full',
+            'testType' => 1,
+            'senderEmail' => 'from@example.com',
+            'providerIds' => array(1, 2),
+            'seedIds' => array(3),
+            'providers' => array(array('id' => 4, 'maxSeeds' => 2)),
+            'webhookUrl' => 'https://example.com/hook',
+        ), $this->only($api)['json']);
+
+        $api->clear();
+        $client->getInboxPlacementTest('a b/c');
+        $this->assertSame('/api/ipt/test/a%20b%2Fc', $this->only($api)['path']);
+
+        $api->clear();
+        $client->deleteInboxPlacementTest('t1');
+        $this->assertSame('DELETE', $this->only($api)['method']);
+
+        $api->clear();
+        $client->setInboxPlacementWebhook('https://example.com/hook');
+        $webhook = $this->only($api);
+        $this->assertSame('PUT', $webhook['method']);
+        $this->assertSame(array('webhookUrl' => 'https://example.com/hook'), $webhook['json']);
+    }
+
+    public function testInboxPlacementListSendsOnlyTheFiltersThatAreSet()
+    {
+        $api = new FakeApi();
+        $client = $this->client($api, 'ipt-key');
+
+        $client->listInboxPlacementTests();
+        $this->assertSame(array('api_key'), array_keys($this->only($api)['fields']));
+
+        $api->clear();
+        $client->listInboxPlacementTests('finished', '2026-01-01', '2026-02-01', 2, 50);
+        $fields = $this->only($api)['fields'];
+        $this->assertSame('finished', $fields['status']);
+        $this->assertSame('2026-01-01', $fields['createdAfter']);
+        $this->assertSame('2026-02-01', $fields['createdBefore']);
+        $this->assertSame('2', (string)$fields['page']);
+        $this->assertSame('50', (string)$fields['page_size']);
+    }
+
+    public function testInboxPlacementRejectsInvalidArgumentsBeforeRequest()
+    {
+        $api = new FakeApi();
+        $client = $this->client($api, 'ipt-key');
+
+        $cases = array(
+            function () use ($client) { $client->createInboxPlacementTest(''); },
+            function () use ($client) { $client->createInboxPlacementTest(str_repeat('x', 65)); },
+            function () use ($client) { $client->createInboxPlacementTest('t', 4); },
+            function () use ($client) { $client->createInboxPlacementTest('t', 1); },
+            function () use ($client) { $client->createInboxPlacementTest('t', null, null, null, null, array(array('maxSeeds' => 2))); },
+            function () use ($client) { $client->createInboxPlacementTest('t', null, null, null, null, array(array('id' => 1, 'maxSeeds' => 0))); },
+            function () use ($client) { $client->listInboxPlacementTests('queued'); },
+            function () use ($client) { $client->listInboxPlacementTests(null, null, null, 0); },
+            function () use ($client) { $client->listInboxPlacementTests(null, null, null, null, 101); },
+            function () use ($client) { $client->getInboxPlacementTest(''); },
+            function () use ($client) { $client->deleteInboxPlacementTest(''); },
+            function () use ($client) { $client->setInboxPlacementWebhook(''); },
+        );
+        foreach ($cases as $case) {
+            $threw = false;
+            try {
+                $case();
+            } catch (ZBException $e) {
+                $threw = true;
+            }
+            $this->assertTrue($threw);
+        }
+        $this->assertSame(0, $api->count());
+    }
+
+    public function testInboxPlacementDetailErrorBecomesTheMessage()
+    {
+        $api = new FakeApi();
+        $client = $this->client($api, 'ipt-detail-key');
+
+        try {
+            $client->getInboxPlacementProviders();
+            $this->fail('expected a ZBException');
+        } catch (ZBException $e) {
+            $this->assertStringContainsString('Inbox placement test not found', $e->getMessage());
+            $this->assertLessThan(500, strlen($e->getMessage()));
+        }
+    }
+
+    public function testListEvaluatorUsesItsOwnBaseUrlAndEncodesFileId()
+    {
+        $api = new FakeApi();
+        $client = $this->client($api, 'le-key');
+
+        $client->getListEvaluatorResult('a b/c');
+        $result = $this->only($api);
+        $this->assertSame('bulkapi.zerobounce.net', $result['host']);
+        $this->assertSame('/v2/listevaluator/a%20b%2Fc/', $result['path']);
+
+        $api->clear();
+        $overridden = new OfflineClient($api);
+        $overridden->initialize('le-key', null, 'https://example.com/custom/listevaluator');
+        $overridden->getListEvaluatorResult('fid');
+        $custom = $this->only($api);
+        $this->assertSame('example.com', $custom['host']);
+        $this->assertSame('/custom/listevaluator/fid/', $custom['path']);
     }
 
     private function client(FakeApi $api, $key)

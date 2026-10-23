@@ -737,25 +737,4 @@ class ZeroBounceTest extends TestCase
         }
     }
 
-    public function testValidateS3FilePostsToBulkRoot()
-    {
-        ZeroBounce::Instance()->responseText = '{
-            "success": true,
-            "file_id": "s3-job",
-            "message": "File Accepted"
-        }';
-        ZeroBounce::Instance()->validateS3File(array('file_name' => 'bucket/key.csv'));
-        $this->assertStringContainsString('bulkapi.zerobounce.net/validateS3file', ZeroBounce::Instance()->lastFormPostUrl);
-    }
-
-    public function testListS3FilesCallsBulkListS3files()
-    {
-        ZeroBounce::Instance()->responseText = '[{"file_name":"bucket/key.csv","size":1024}]';
-        $result = ZeroBounce::Instance()->listS3Files('my-bucket', 'key');
-        $this->assertStringContainsString('bulkapi.zerobounce.net/listS3files', ZeroBounce::Instance()->lastRequestUrl);
-        $this->assertStringContainsString('bucket=my-bucket', ZeroBounce::Instance()->lastRequestUrl);
-        $this->assertStringContainsString('search=key', ZeroBounce::Instance()->lastRequestUrl);
-        $this->assertIsArray($result);
-        $this->assertEquals('bucket/key.csv', $result[0]['file_name']);
-    }
 }

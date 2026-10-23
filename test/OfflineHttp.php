@@ -52,6 +52,11 @@ class FakeApi
             'body' => $body === null ? '' : $body,
             'content_type' => $contentType,
             'fields' => $fields,
+            'json' => (
+                $body !== null && $body !== '' && stripos((string)$contentType, 'application/json') !== false
+                    ? json_decode((string)$body, true)
+                    : null
+            ),
             'api_key' => $apiKey,
             'timeout' => $timeout,
         );
@@ -88,6 +93,14 @@ class FakeApi
     {
         $key = $request['api_key'];
         $path = $request['path'];
+        $isInboxPlacement = strpos($path, '/api/ipt/') !== false || substr($path, -8) === '/api/ipt';
+        if ($isInboxPlacement && strpos($key, 'ipt-detail') === 0) {
+            // The Inbox Placement Tester (Django REST framework) reports "detail".
+            return $this->respond(404, 'application/json', '{"detail":"Inbox placement test not found."}');
+        }
+        if ($isInboxPlacement) {
+            return $this->respond(200, 'application/json', '{"ok":true,"echo_api_key":' . json_encode($key) . '}');
+        }
         if (strpos($key, 'html-403-') === 0 || strpos($key, 'html-200-') === 0) {
             $status = strpos($key, 'html-403-') === 0 ? 403 : 200;
             return $this->respond($status, 'text/html; charset=UTF-8', self::accessDeniedPage());
@@ -139,9 +152,6 @@ class FakeApi
         $quoted = json_encode($key);
         if (strpos($path, 'getfile') !== false) {
             return $this->respond(200, 'text/csv', "email\n" . $key . "@example.com\n");
-        }
-        if (strpos($path, 'listS3files') !== false) {
-            return $this->respond(200, 'application/json', '[{"file_name":' . $quoted . ',"size":1}]');
         }
         if (strpos($path, 'validatebatch') !== false) {
             return $this->respond(200, 'application/json', '{"email_batch":[{"address":' . $quoted . ',"status":"valid"}],"errors":[]}');

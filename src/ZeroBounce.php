@@ -10,6 +10,7 @@ use Exception;
 class ZeroBounce
 {
     use ZeroBouncePriority3;
+    use ZeroBounceInboxPlacement;
 
     /**
      * Call this method to get singleton
@@ -47,16 +48,36 @@ class ZeroBounce
     /** @var string */
     protected $apiBaseUrl;
     const BulkApiBaseUrl = "https://bulkapi.zerobounce.net/v2";
+
+    /** The list evaluator and the Inbox Placement Tester are not under the bulk /v2 path. */
+    const ListEvaluatorBaseUrl = "https://bulkapi.zerobounce.net/v2/listevaluator";
+    const InboxPlacementBaseUrl = "https://bulkapi.zerobounce.net/api/ipt";
+
+    /** @var string Overridable per instance; defaults to ListEvaluatorBaseUrl. */
+    protected $listEvaluatorBaseUrl = self::ListEvaluatorBaseUrl;
+
+    /** @var string Overridable per instance; defaults to InboxPlacementBaseUrl. */
+    protected $inboxPlacementBaseUrl = self::InboxPlacementBaseUrl;
     
     private $apiKey = null;
 
     /**
      * @param string $apiKey
      */
-    public function initialize($apiKey, $baseUrl = null)
-    {
+    public function initialize(
+        $apiKey,
+        $baseUrl = null,
+        $listEvaluatorBaseUrl = null,
+        $inboxPlacementBaseUrl = null
+    ) {
         $this->apiKey = $apiKey;
         $this->apiBaseUrl = ZBBaseUrl::getByValue($baseUrl);
+        if ($listEvaluatorBaseUrl !== null && $listEvaluatorBaseUrl !== '') {
+            $this->listEvaluatorBaseUrl = rtrim($listEvaluatorBaseUrl, '/');
+        }
+        if ($inboxPlacementBaseUrl !== null && $inboxPlacementBaseUrl !== '') {
+            $this->inboxPlacementBaseUrl = rtrim($inboxPlacementBaseUrl, '/');
+        }
     }
 
     /**
@@ -73,6 +94,16 @@ class ZeroBounce
         if (!$email) throw new ZBMissingParameterException("email is required");
         if ($options instanceof ZBValidateOptions) {
             $this->checkTimeout($options->timeout, false);
+            // callbackUrl only means anything while greylist processing is on, so
+            // reject it here rather than letting the API take the request.
+            if ($options->callbackUrl !== null && $options->greylistProcessing !== true) {
+                throw new ZBMissingParameterException(
+                    "callbackUrl requires greylistProcessing = true"
+                );
+            }
+            if ($options->callbackUrl !== null && trim((string)$options->callbackUrl) === '') {
+                throw new ZBMissingParameterException("callbackUrl is required");
+            }
         }
         $response = new ZBValidateResponse();
         $ipValue = ($ipAddress === null) ? '' : (string)$ipAddress;
@@ -90,6 +121,15 @@ class ZeroBounce
             if ($options->verifyPlus !== null) {
                 $fields['verify_plus'] = $options->verifyPlus ? "true" : "false";
             }
+            if ($options->domainInfo !== null) {
+                $fields['domain_info'] = $options->domainInfo ? "true" : "false";
+            }
+            if ($options->greylistProcessing !== null) {
+                $fields['greylist_processing'] = $options->greylistProcessing ? "true" : "false";
+            }
+            if ($options->callbackUrl !== null) {
+                $fields['callback_url'] = $options->callbackUrl;
+            }
             if ($options->usePost) {
                 $this->formPost($this->apiBaseUrl . "/validate", $fields, $response);
                 return $response;
@@ -106,6 +146,15 @@ class ZeroBounce
             }
             if ($options->verifyPlus !== null) {
                 $url .= "&verify_plus=" . ($options->verifyPlus ? "true" : "false");
+            }
+            if ($options->domainInfo !== null) {
+                $url .= "&domain_info=" . ($options->domainInfo ? "true" : "false");
+            }
+            if ($options->greylistProcessing !== null) {
+                $url .= "&greylist_processing=" . ($options->greylistProcessing ? "true" : "false");
+            }
+            if ($options->callbackUrl !== null) {
+                $url .= "&callback_url=" . urlencode($options->callbackUrl);
             }
         }
         $this->request($url, $response);
@@ -703,7 +752,7 @@ class ZeroBounce
                 return true;
             }
         }
-        foreach (array('message', 'error', 'error_message') as $k) {
+        foreach (array('message', 'error', 'error_message', 'detail') as $k) {
             if (!empty($o[$k])) {
                 if (is_string($o[$k]) && trim($o[$k]) !== '') {
                     return true;
@@ -740,7 +789,7 @@ class ZeroBounce
         if (!is_array($o)) {
             return ZBHttpError::message(0, $body);
         }
-        foreach (array('message', 'error', 'error_message') as $k) {
+        foreach (array('message', 'error', 'error_message', 'detail') as $k) {
             if (empty($o[$k])) {
                 continue;
             }

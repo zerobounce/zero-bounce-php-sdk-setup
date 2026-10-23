@@ -17,14 +17,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bulk domain search (`sendDomainSearchFile`, `domainSearchFileStatus`, `domainSearchGetFile`, `domainSearchDeleteFile`, plus stream upload).
 - List evaluator (`sendListEvaluatorFile`, `getListEvaluatorResult`, `sendEvaluatedFile`, plus stream uploads).
 - Filters (`addFilter`, `listFilters`, `deleteFilter`).
-- S3 bulk (`validateS3File`, `scoreS3File`, `exportS3File`, `listS3Files`).
+- `validate` accepts `domainInfo`, `greylistProcessing`, and `callbackUrl` on `ZBValidateOptions`. `callbackUrl` needs `greylistProcessing = true` and is rejected without it, and when blank, before a request is sent.
+- `ZBValidateResponse` carries `domainWebsiteExists`, `domainRegistrantCompanyName`, and `message`. `message` is read from the API's `Message` key, returned while greylist processing is still running.
+- Inbox Placement Tester on `https://bulkapi.zerobounce.net/api/ipt`: `getInboxPlacementProviders`, `getInboxPlacementTestTypes`, `createInboxPlacementTest`, `getInboxPlacementTest`, `listInboxPlacementTests`, `deleteInboxPlacementTest`, `getInboxPlacementWebhook`, `setInboxPlacementWebhook`.
+- `initialize` takes optional third and fourth arguments to override the list evaluator and Inbox Placement Tester base URLs.
 
 ### Changed
+
+- List evaluator requests use their own base URL (`https://bulkapi.zerobounce.net/v2/listevaluator`) instead of building the path from the bulk base, and the file id is URL-encoded as one path segment. `sendEvaluatedFile` stays on the bulk base.
 
 - API requests time out after 120 seconds.
 - Each `ZeroBounce` instance keeps its own API base URL.
 
 ### Fixed
+
+- An error body whose JSON carries a `detail` string (the Inbox Placement Tester, Django REST framework) raises with that text.
 
 - A 403 HTML "Access denied" page is a short `ZBException`. An HTML page with status 200 is an error as well, including `getFile`, `emailFinderGetFile`, and `domainSearchGetFile`, instead of a saved CSV.
 - Empty and non-JSON bodies are a short error. A repeated `Error:` / `[Error]:` prefix is removed.
@@ -32,7 +39,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `has_header_row` is sent as `false` when the caller sets it to false, on `sendFile`, `scoringSendFile`, bulk email finder, and domain search.
 - Column `0` is sent. That includes the required email and domain columns and optional name, gender, and IP columns. `null` still omits an optional column. `validate` sends IP address `0`. A filter `value` of `0` is sent.
 - `validate` rejects a timeout outside 3–60 seconds, and `validateBatch` rejects a timeout outside 10–120 seconds, before a request is sent.
-- `validateS3File`, `scoreS3File`, and `exportS3File` reject an empty API key before a request is sent.
 
 ### Security
 

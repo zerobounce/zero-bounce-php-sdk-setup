@@ -16,6 +16,24 @@ class ZBValidateOptions
     /** @var bool|null */
     public $verifyPlus;
 
+    /**
+     * @var bool|null When true, the response adds domainWebsiteExists and
+     * domainRegistrantCompanyName (website availability and WHOIS).
+     */
+    public $domainInfo;
+
+    /**
+     * @var bool|null When true, a greylisted address is processed again instead of
+     * being returned as unknown.
+     */
+    public $greylistProcessing;
+
+    /**
+     * @var string|null With greylistProcessing = true, the URL the result is sent to.
+     * Rejected without it.
+     */
+    public $callbackUrl;
+
     /** @var bool When true, uses form-encoded POST for /validate. */
     public $usePost = false;
 }

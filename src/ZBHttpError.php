@@ -154,7 +154,7 @@ class ZBHttpError
 
     private static function stringField(array $decoded)
     {
-        foreach (array('message', 'error', 'error_message') as $key) {
+        foreach (array('message', 'error', 'error_message', 'detail') as $key) {
             if (!isset($decoded[$key]) || $decoded[$key] === '' || $decoded[$key] === null || $decoded[$key] === array()) {
                 continue;
             }

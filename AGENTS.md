@@ -9,7 +9,8 @@ Guidance for AI coding agents working in this repository.
 ## Layout
 
 - `src/ZeroBounce.php`: validation, bulk file, credits, activity, scoring. `executeHttp` is the HTTP call.
-- `src/ZeroBouncePriority3.php`: bulk email finder, domain search, list evaluator, filters, S3. It is a trait on `ZeroBounce`.
+- `src/ZeroBouncePriority3.php`: bulk email finder, domain search, list evaluator, filters. It is a trait on `ZeroBounce`.
+- `src/ZeroBounceInboxPlacement.php`: Inbox Placement Tester. Also a trait on `ZeroBounce`.
 - `src/ZBHttpError.php`: turns HTTP failures, HTML pages, and empty or non-JSON bodies into a short `ZBException`.
 - `test/ZeroBounceTest.php`: PHPUnit cases with `MockZeroBounce`, which replaces `request`, `json`, `formPost`, `curl`, and `getBulkFileHttp`.
 - `test/OfflineApiTest.php`: offline suite. `test/OfflineHttp.php` records every request and answers without the network.
@@ -27,14 +28,17 @@ composer test    # phpunit
 
 ## Conventions
 
+- **Only endpoints documented at https://www.zerobounce.net/docs/.** Do not add a method for an endpoint that the public docs do not describe, even if it exists on the server.
+- **The Inbox Placement Tester takes the API key as the `api_key` query parameter and JSON bodies with camelCase fields.** Only fields the caller set are sent. Its error bodies use `detail`.
+
 - **One client per API key.** `Instance()` is process-wide. Do not reuse it across users or requests. Call `create()` and `initialize` for each key. The API base URL is stored on the instance.
 - **Do not treat `0` as missing.** `if ($column)` and `empty($column)` drop `0`. Unset is `null` or `''`. `0` and `false` are sent. `null` omits an optional parameter.
-- **Column indexes are 1-based on the API and are not converted.** The SDK forwards the integer it is given, including `0`, for required and optional columns. `sendFile` does not have `remove_duplicate`. That flag is the `remove_duplicate` key on the S3 option array.
+- **Column indexes are 1-based on the API and are not converted.** The SDK forwards the integer it is given, including `0`, for required and optional columns.
 - **Booleans are the strings `true` and `false`** on query strings, form bodies, and multipart fields. A PHP bool would be sent as `1` or `0`. On `validateBatch` JSON, `activity_data` and `verify_plus` are JSON booleans.
 - **`has_header_row`:** `null` is omitted, `false` is sent as `false`, `true` is sent as `true`. The same rule applies to `allow_phase_2`, `activity_data`, and `verify_plus`.
-- **`allow_phase_2` is validation `sendFile` and `validateS3File` only.** Scoring `sendFile` ignores it. `activity_data` on get-file is validation `getFile` only.
+- **`allow_phase_2` is validation `sendFile` only.** Scoring `sendFile` ignores it. `activity_data` on get-file is validation `getFile` only.
 - **`validate` timeout is 3–60 seconds. `validateBatch` timeout is 10–120.** An out-of-range timeout throws before a request. `null` omits `timeout`.
-- **`validateBatch` uses `api.zerobounce.net`**, not `bulkapi.zerobounce.net`. Bulk file, email finder, domain search, list evaluator, and S3 use `bulkapi.zerobounce.net`. Filters and single-email calls use the host from `initialize`.
+- **`validateBatch` uses `api.zerobounce.net`**, not `bulkapi.zerobounce.net`. Bulk file, email finder and domain search use `bulkapi.zerobounce.net`. The list evaluator and the Inbox Placement Tester have their own base URLs (`$listEvaluatorBaseUrl`, `$inboxPlacementBaseUrl`), set by `initialize`'s third and fourth arguments; `sendEvaluatedFile` stays on the bulk base. Filters and single-email calls use the host from `initialize`.
 - **`ZBBaseUrl` accepts only the default, US, and EU hosts.** Any other value falls back to the default. There is no extra `https://` check.
 - **Failures throw `ZBException`.** `ZBMissingApiKeyException` and `ZBMissingParameterException` extend it. The message must be short: no raw HTML, no megabyte body, and no `Error: Error:` prefix. An account-level `validateBatch` error (`email_address` `all`) throws. A per-address error stays on `$response->errors`.
 - **`getCredits` can return `Credits` `-1` for a bad key.** That is a normal response. Throw for an `error` string, an HTML page, or a non-JSON body.

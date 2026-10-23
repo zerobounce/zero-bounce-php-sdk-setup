@@ -137,6 +137,27 @@ class ZBValidateResponse extends ZBResponse
     public $processedAt;
 
     /**
+     * With domainInfo: whether the domain has a website ("True", "False" or "unchecked").
+     * @var string|null
+     */
+    public $domainWebsiteExists;
+
+    /**
+     * With domainInfo: the WHOIS registrant company, "Registrant info not found"
+     * or "unchecked".
+     * @var string|null
+     */
+    public $domainRegistrantCompanyName;
+
+    /**
+     * Set instead of a result while greylist processing is still running; validate
+     * again later to pick it up. Read from the API's "Message" key, which
+     * ZBResponse camel-cases to this property.
+     * @var string|null
+     */
+    public $message;
+
+    /**
      * @var string|null
      */
     public $error;
@@ -191,6 +212,9 @@ class ZBValidateResponse extends ZBResponse
             "zipCode=" . $this->stringField($this->zipcode) . ", " .
             "country=" . $this->stringField($this->country) . ", " .
             "processedAt=" . $this->stringField($this->processedAt) . ", " .
+            "domainWebsiteExists=" . $this->stringField($this->domainWebsiteExists) . ", " .
+            "domainRegistrantCompanyName=" . $this->stringField($this->domainRegistrantCompanyName) . ", " .
+            "message=" . $this->stringField($this->message) . ", " .
             "error=" . $this->stringField($this->error) . "}";
     }
 }
