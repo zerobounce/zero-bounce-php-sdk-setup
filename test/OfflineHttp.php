@@ -153,6 +153,9 @@ class FakeApi
         if (strpos($path, 'getfile') !== false) {
             return $this->respond(200, 'text/csv', "email\n" . $key . "@example.com\n");
         }
+        if (strpos($path, 'listS3files') !== false) {
+            return $this->respond(200, 'application/json', '[{"file_name":' . $quoted . ',"size":1}]');
+        }
         if (strpos($path, 'validatebatch') !== false) {
             return $this->respond(200, 'application/json', '{"email_batch":[{"address":' . $quoted . ',"status":"valid"}],"errors":[]}');
         }

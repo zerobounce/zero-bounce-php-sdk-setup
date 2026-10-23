@@ -470,6 +470,54 @@ class OfflineApiTest extends TestCase
         $client->deleteFilter('exclude', 'domain', 'example.com');
         $this->assertSame('/v2/filters/delete', $this->only($api)['path']);
 
+        $api->clear();
+        $client->validateS3File(array(
+            'file_name' => 'inbox.csv',
+            'email_address_column' => 0,
+            'has_header_row' => false,
+            'remove_duplicate' => true,
+            'first_name_column' => 0,
+        ));
+        $validated = $this->only($api);
+        $this->assertSame('POST', $validated['method']);
+        $this->assertSame('/validateS3file', $validated['path']);
+        $this->assertSame('bulkapi.zerobounce.net', $validated['host']);
+        $this->assertSame('inbox.csv', $validated['fields']['file_name']);
+        $this->assertSame('0', (string)$validated['fields']['email_address_column']);
+        $this->assertSame('false', $validated['fields']['has_header_row']);
+        $this->assertSame('true', $validated['fields']['remove_duplicate']);
+        $this->assertSame('0', (string)$validated['fields']['first_name_column']);
+        $this->assertArrayNotHasKey('remove_duplicates', $validated['fields']);
+        $this->assertArrayNotHasKey('allow_phase_2', $validated['fields']);
+
+        $api->clear();
+        $client->scoreS3File(array('file_name' => 'inbox.csv'));
+        $scored = $this->only($api);
+        $this->assertSame('/scoreS3file', $scored['path']);
+        $this->assertArrayNotHasKey('email_address_column', $scored['fields']);
+        $this->assertArrayNotHasKey('has_header_row', $scored['fields']);
+
+        $api->clear();
+        $client->exportS3File('fid', 'bucket-out');
+        $exported = $this->only($api);
+        $this->assertSame('/exportS3file', $exported['path']);
+        $this->assertSame('fid', $exported['fields']['file_id']);
+        $this->assertSame('bucket-out', $exported['fields']['export_bucket']);
+
+        $api->clear();
+        $files = $client->listS3Files();
+        $this->assertSame('p3-key', $files[0]['file_name']);
+        $listedFiles = $this->only($api);
+        $this->assertSame('/listS3files', $listedFiles['path']);
+        $this->assertArrayNotHasKey('bucket', $listedFiles['fields']);
+        $this->assertArrayNotHasKey('search', $listedFiles['fields']);
+
+        $api->clear();
+        $client->listS3Files('inbox', 'csv');
+        $filtered = $this->only($api);
+        $this->assertSame('inbox', $filtered['fields']['bucket']);
+        $this->assertSame('csv', $filtered['fields']['search']);
+
     }
 
     public function testRejectsMissingKeyAndInvalidArgumentsBeforeRequest()
@@ -494,6 +542,15 @@ class OfflineApiTest extends TestCase
             },
             function () use ($client) {
                 $client->sendDomainSearchFile($this->csv, 1);
+            },
+            function () use ($client) {
+                $client->validateS3File(array('file_name' => 'inbox.csv'));
+            },
+            function () use ($client) {
+                $client->scoreS3File(array('file_name' => 'inbox.csv'));
+            },
+            function () use ($client) {
+                $client->exportS3File('fid', 'bucket');
             },
             function () use ($client) {
                 $client->sendEmailFinderFile($this->csv, 1);
@@ -535,6 +592,9 @@ class OfflineApiTest extends TestCase
         $this->assertRejected(function () use ($keyed) {
             $keyed->sendDomainSearchFile($this->csv, '');
         }, 'domainColumn');
+        $this->assertRejected(function () use ($keyed) {
+            $keyed->validateS3File(array());
+        }, 'file_name');
         $this->assertRejected(function () use ($keyed) {
             $keyed->sendFile('', 1);
         }, 'filePath');

@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bulk domain search (`sendDomainSearchFile`, `domainSearchFileStatus`, `domainSearchGetFile`, `domainSearchDeleteFile`, plus stream upload).
 - List evaluator (`sendListEvaluatorFile`, `getListEvaluatorResult`, `sendEvaluatedFile`, plus stream uploads).
 - Filters (`addFilter`, `listFilters`, `deleteFilter`).
+- S3 bulk (`validateS3File`, `scoreS3File`, `exportS3File`, `listS3Files`).
 - `validate` accepts `domainInfo`, `greylistProcessing`, and `callbackUrl` on `ZBValidateOptions`. `callbackUrl` needs `greylistProcessing = true` and is rejected without it, and when blank, before a request is sent.
 - `ZBValidateResponse` carries `domainWebsiteExists`, `domainRegistrantCompanyName`, and `message`. `message` is read from the API's `Message` key, returned while greylist processing is still running.
 - Inbox Placement Tester on `https://bulkapi.zerobounce.net/api/ipt`: `getInboxPlacementProviders`, `getInboxPlacementTestTypes`, `createInboxPlacementTest`, `getInboxPlacementTest`, `listInboxPlacementTests`, `deleteInboxPlacementTest`, `getInboxPlacementWebhook`, `setInboxPlacementWebhook`.
@@ -31,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `validateS3File`, `scoreS3File`, and `exportS3File` reject an empty API key before a request is sent.
 - An error body whose JSON carries a `detail` string (the Inbox Placement Tester, Django REST framework) raises with that text.
 
 - A 403 HTML "Access denied" page is a short `ZBException`. An HTML page with status 200 is an error as well, including `getFile`, `emailFinderGetFile`, and `domainSearchGetFile`, instead of a saved CSV.
