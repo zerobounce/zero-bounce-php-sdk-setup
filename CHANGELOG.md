@@ -46,6 +46,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Four `ZBApiUsageResponse` counters were never populated and stayed `null` for every caller. The base class converts `snake_case` to `camelCase`, which turns `sub_status_antispam_system`, `sub_status_greylisted`, `sub_status_unroutable_ip_address` and `sub_status_mail_server_did_not_respond` into names that do not match the declared properties (`$subStatusAntiSpamSystem`, `$subStatusGreyListed`, `$subStatusUnRoutableIpAddress`, `$subStatusMailServerDidNotResponse`). The four are now mapped explicitly; the property names are unchanged, so no caller breaks.
+- `ZBApiUsageResponse` gained `$subStatusLeadingPeriodRemoved` and `$subStatusAliasAddress`, two counters the API returns that were silently discarded.
+
 - The HTTP status of a `GET` is read correctly. It was always recorded as 0, because the stream wrapper reports it only through PHP's predefined response-header variable, which the engine makes visible to the function that called `file_get_contents` and to no one else; an error status therefore never reached the response check and a 404 from the list evaluator came back as a successful result.
 - `{"success": false}` on an HTTP 200 raises instead of being returned as a result. The API answers an unknown bulk file id that way.
 - `getApiUsage` formats its dates. A `DateTime` was interpolated whole, so the request carried a locale-formatted timestamp that the API rejects and Cloudflare can block.

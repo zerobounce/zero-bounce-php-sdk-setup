@@ -203,6 +203,16 @@ class ZBApiUsageResponse extends ZBResponse
      */
     public $subStatusRoleBasedAcceptAll;
 
+    /** Total emails with a leading period that was removed
+     * @var int|null
+     */
+    public $subStatusLeadingPeriodRemoved;
+
+    /** Total number of times the API has a sub status of "alias_address"
+     * @var int|null
+     */
+    public $subStatusAliasAddress;
+
     /**
      * Start date of query
      * @var string|null
@@ -253,8 +263,39 @@ class ZBApiUsageResponse extends ZBResponse
             ", subStatusBlocked=" . $this->subStatusBlocked .
             ", subStatusGold=" . $this->subStatusGold .
             ", subStatusRoleBasedAcceptAll=" . $this->subStatusRoleBasedAcceptAll .
+            ", subStatusLeadingPeriodRemoved=" . $this->subStatusLeadingPeriodRemoved .
+            ", subStatusAliasAddress=" . $this->subStatusAliasAddress .
             ", startDate=" . $this->stringField($this->startDate) .
             ", endDate=" . $this->stringField($this->endDate) .
             "}";
     }
+
+    /**
+     * LIVE: four of these counters do not survive the snake_case to camelCase
+     * conversion the base class does, so they were never populated and stayed
+     * null for every caller: the API sends `sub_status_antispam_system`,
+     * `sub_status_greylisted`, `sub_status_unroutable_ip_address` and
+     * `sub_status_mail_server_did_not_respond`, which convert to
+     * `subStatusAntispamSystem`, `subStatusGreylisted`,
+     * `subStatusUnroutableIpAddress` and `subStatusMailServerDidNotRespond` —
+     * none of which is the property name. Renaming the properties would break
+     * callers, so the four are mapped explicitly instead.
+     *
+     * @param string $key
+     * @return string
+     */
+    public function getClassKey($key)
+    {
+        $overrides = array(
+            'sub_status_antispam_system' => 'subStatusAntiSpamSystem',
+            'sub_status_greylisted' => 'subStatusGreyListed',
+            'sub_status_unroutable_ip_address' => 'subStatusUnRoutableIpAddress',
+            'sub_status_mail_server_did_not_respond' => 'subStatusMailServerDidNotResponse',
+        );
+        if (isset($overrides[$key])) {
+            return $overrides[$key];
+        }
+        return parent::getClassKey($key);
+    }
+
 }
