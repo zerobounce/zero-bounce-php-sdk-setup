@@ -107,7 +107,14 @@ trait ZeroBouncePriority3
     }
 
     /**
-     * @return array<string, mixed> decoded JSON
+     * The evaluation's progress and results. GET /listevaluator/{file_id}/
+     *
+     * Everything the API sent is also on ->data, including any field this
+     * version of the SDK does not name yet.
+     *
+     * @param string $fileId
+     * @return ZBListEvaluatorResponse
+     * @throws ZBException
      */
     public function getListEvaluatorResult($fileId)
     {
@@ -115,9 +122,9 @@ trait ZeroBouncePriority3
         $this->requireProvided($fileId, 'fileId is required');
         $url = $this->listEvaluatorBaseUrl . '/' . self::pathSegment($fileId, 'fileId')
             . '/?api_key=' . urlencode($this->apiKey);
-        $holder = new ZBRawJsonResponse();
-        $this->request($url, $holder);
-        return $holder->data;
+        $response = new ZBListEvaluatorResponse();
+        $this->request($url, $response);
+        return $response;
     }
 
     /**

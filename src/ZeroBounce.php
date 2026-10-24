@@ -812,6 +812,9 @@ class ZeroBounce
             $path = ($scoring ? '/scoring' : '') . '/getfile';
             $url = self::BulkApiBaseUrl . $path . '?' . http_build_query($query);
 
+            if ($options instanceof ZBGetFileOptions && $options->stream) {
+                return $this->streamBulkDownload($url, $downloadPath);
+            }
             return $this->saveBulkDownload($this->getBulkFileHttp($url), $downloadPath);
         } catch (Exception $e) {
             throw new ZBException($this->redactApiKey($e->getMessage()));
@@ -1194,6 +1197,130 @@ class ZeroBounce
         if (file_put_contents($downloadPath, $body) === false) {
             throw new ZBException('Could not write file');
         }
+        $response = new ZBGetFileResponse();
+        $response->localFilePath = $downloadPath;
+        return $response;
+    }
+
+    /**
+     * Stream a GET to $handle, keeping the first DownloadSniffBytes in memory
+     * so the caller can tell a result file from an error body. Separated like
+     * executeHttp so tests never touch the network.
+     *
+     * @param string $url
+     * @param resource $handle open for writing
+     * @return array{status: int, headers: string[], head: string, error: string}
+     * @throws ZBException
+     */
+    protected function streamHttpToHandle($url, $handle)
+    {
+        $head = '';
+        $headers = array();
+        $sniffing = true;
+        $curl = curl_init();
+        curl_setopt_array($curl, array(
+            CURLOPT_URL => $this->checkedUrl($url),
+            CURLOPT_TIMEOUT => 0,
+            CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_MAXREDIRS => 0,
+            CURLOPT_HEADERFUNCTION => function ($curlHandle, $header) use (&$headers) {
+                $line = trim($header);
+                if ($line !== '') {
+                    $headers[] = $line;
+                }
+                return strlen($header);
+            },
+            CURLOPT_WRITEFUNCTION => function ($curlHandle, $chunk) use (&$head, &$sniffing, $handle) {
+                if ($sniffing) {
+                    $head .= $chunk;
+                    if (strlen($head) >= self::DownloadSniffBytes) {
+                        $sniffing = false;
+                        fwrite($handle, $head);
+                    }
+                    return strlen($chunk);
+                }
+                fwrite($handle, $chunk);
+                return strlen($chunk);
+            },
+        ));
+        $ok = curl_exec($curl);
+        $status = (int)curl_getinfo($curl, CURLINFO_HTTP_CODE);
+        $error = curl_error($curl);
+        curl_close($curl);
+        if ($sniffing) {
+            // The whole body fit inside the sniff window and was never written.
+            fwrite($handle, $head);
+        }
+        return array(
+            'status' => $status,
+            'headers' => $headers,
+            'head' => $head,
+            'error' => $ok === false ? ($error === '' ? 'The download failed.' : $error) : '',
+        );
+    }
+
+    /** Sniff this much before deciding whether a download is really an error body. */
+    const DownloadSniffBytes = 65536;
+
+    /** An error body is short; reading more than this to quote it would defeat streaming. */
+    const DownloadMaxErrorBytes = 2097152;
+
+    /**
+     * GET a result file and write it to $downloadPath in chunks.
+     *
+     * The bytes go to a temporary file beside $downloadPath and are moved into
+     * place only once the transfer finishes, so a large file never has to fit
+     * in memory and a failed download leaves nothing at $downloadPath.
+     *
+     * @param string $url
+     * @param string $downloadPath
+     * @return ZBGetFileResponse
+     * @throws ZBException
+     */
+    protected function streamBulkDownload($url, $downloadPath)
+    {
+        $folder = dirname($downloadPath);
+        if ($folder === '' || $folder === '.') {
+            $folder = '.';
+        } elseif (!file_exists($folder)) {
+            mkdir($folder, 0777, true);
+        }
+        $partial = tempnam($folder, '.zb-download-');
+        if ($partial === false) {
+            throw new ZBException('Could not write file');
+        }
+        $handle = fopen($partial, 'wb');
+        if ($handle === false) {
+            @unlink($partial);
+            throw new ZBException('Could not write file');
+        }
+
+        $transfer = $this->streamHttpToHandle($url, $handle);
+        fclose($handle);
+        $head = (string)$transfer['head'];
+        $headers = (array)$transfer['headers'];
+        $status = (int)$transfer['status'];
+        $error = (string)$transfer['error'];
+
+        try {
+            if ($error !== '') {
+                // Rebuilt rather than wrapped: the original holds the URL.
+                throw new ZBException($this->redactApiKey($error));
+            }
+            $contentType = self::parseContentTypeFromHeaders($headers);
+            $sample = substr($head, 0, self::DownloadMaxErrorBytes);
+            if (trim($sample) === '' || $status > 299 || ZBHttpError::isHtml($sample, $headers)
+                || self::shouldTreatGetFileBodyAsError($sample, $contentType)) {
+                throw new ZBException($this->redactApiKey(ZBHttpError::message($status, $sample, $headers)));
+            }
+            if (!rename($partial, $downloadPath)) {
+                throw new ZBException('Could not write file');
+            }
+        } catch (Exception $e) {
+            @unlink($partial);
+            throw $e;
+        }
+
         $response = new ZBGetFileResponse();
         $response->localFilePath = $downloadPath;
         return $response;

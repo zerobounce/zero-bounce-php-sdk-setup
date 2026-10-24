@@ -330,6 +330,19 @@ class OfflineClient extends ZeroBounce
     {
         return $this->fake->handle($method, $url, $headers, $body, $timeout);
     }
+
+    protected function streamHttpToHandle($url, $handle)
+    {
+        $result = $this->fake->handle('GET', $url, array(), null, 120);
+        $body = (string)$result['body'];
+        fwrite($handle, $body);
+        return array(
+            'status' => (int)$result['status'],
+            'headers' => $result['headers'],
+            'head' => substr($body, 0, 65536),
+            'error' => '',
+        );
+    }
 }
 
 class DirectClient extends ZeroBounce

@@ -432,7 +432,7 @@ class OfflineApiTest extends TestCase
 
         $api->clear();
         $raw = $client->getListEvaluatorResult('a/b');
-        $this->assertSame('p3-key', $raw['echo_api_key']);
+        $this->assertSame('p3-key', $raw->data['echo_api_key']);
         $result = $this->only($api);
         $this->assertSame('/v2/listevaluator/a%2Fb/', $result['path']);
         $this->assertSame('p3-key', $result['fields']['api_key']);
@@ -1327,6 +1327,51 @@ return true;
         $this->assertCount(1, $warnings, 'the mismatch is reported once per client');
         $this->assertStringContainsString('EU', $warnings[0]);
         $this->assertStringContainsString('bulkapi.zerobounce.net', $warnings[0]);
+    }
+
+    public function testAStreamedDownloadLandsAtTheDownloadPath()
+    {
+        $api = new FakeApi();
+        $client = $this->client($api, 'stream-key');
+        $target = sys_get_temp_dir() . '/zb-stream-' . uniqid('', true) . '/result.csv';
+        $options = new ZBGetFileOptions();
+        $options->stream = true;
+
+        $response = $client->getFile('f1', $target, $options);
+        try {
+            $this->assertSame($target, $response->localFilePath);
+            $this->assertSame("email\nstream-key@example.com\n", file_get_contents($target));
+            $this->assertSame('GET', $this->only($api)['method']);
+        } finally {
+            @unlink($target);
+            @rmdir(dirname($target));
+        }
+    }
+
+    public function testAStreamedDownloadThatIsReallyAnErrorLeavesNothingBehind()
+    {
+        $api = new FakeApi();
+        $client = $this->client($api, 'html-403-stream');
+        $folder = sys_get_temp_dir() . '/zb-stream-' . uniqid('', true);
+        mkdir($folder);
+        $target = $folder . '/result.csv';
+        $options = new ZBGetFileOptions();
+        $options->stream = true;
+
+        try {
+            $error = $this->capture(function () use ($client, $target, $options) {
+                $client->getFile('f1', $target, $options);
+            });
+            $this->assertStringContainsString('HTML error page', $error->getMessage());
+            $this->assertFileDoesNotExist($target);
+            // Not even the half-written temporary file survives.
+            $this->assertSame(array('.', '..'), array_values(scandir($folder)));
+        } finally {
+            foreach (glob($folder . '/*') ?: array() as $leftover) {
+                @unlink($leftover);
+            }
+            @rmdir($folder);
+        }
     }
 
     private function client(FakeApi $api, $key)
