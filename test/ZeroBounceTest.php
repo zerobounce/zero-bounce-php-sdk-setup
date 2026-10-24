@@ -6,6 +6,7 @@ require_once __DIR__ . '/../vendor/autoload.php';
 require_once('MockZeroBounce.php');
 
 use ZeroBounce\SDK\ZBValidateStatus;
+use ZeroBounce\SDK\ZBValidateSubStatus;
 use ZeroBounce\SDK\ZBDownloadType;
 use ZeroBounce\SDK\ZBGetFileOptions;
 use ZeroBounce\SDK\ZeroBounce as SdkZeroBounce;
@@ -214,6 +215,48 @@ class ZeroBounceTest extends TestCase
         $this->assertEquals($response->status, ZBValidateStatus::Valid);
     }
 
+    public function testValidateAiAgentMailboxValid()
+    {
+        ZeroBounce::Instance()->responseText = "{
+            \"address\": \"agent@example.com\",
+            \"status\": \"valid\",
+            \"sub_status\": \"ai_agent_mailbox\"
+        }";
+        $response = ZeroBounce::Instance()->validate("agent@example.com");
+        $this->assertEquals($response->status, ZBValidateStatus::Valid);
+        $this->assertEquals($response->subStatus, ZBValidateSubStatus::AiAgentMailbox);
+    }
+
+    public function testValidateAiAgentMailboxCatchAll()
+    {
+        ZeroBounce::Instance()->responseText = "{
+            \"address\": \"agent@example.com\",
+            \"status\": \"catch-all\",
+            \"sub_status\": \"ai_agent_mailbox\"
+        }";
+        $response = ZeroBounce::Instance()->validate("agent@example.com");
+        $this->assertEquals($response->subStatus, ZBValidateSubStatus::AiAgentMailbox);
+    }
+
+    public function testValidateUnknownSubStatusIsPassedThrough()
+    {
+        // ZBValidateResponse::getValue() branches on $classKey === "sub_status",
+        // but ZBResponse::deserialize() has already camel-cased the key to
+        // "subStatus" by then, so that branch never runs and the raw value is
+        // assigned as-is. That is the safe outcome -- a sub_status the SDK has
+        // not heard of yet reaches the caller instead of being blanked -- so it
+        // is pinned here rather than "fixed". ("status" has no underscore, so
+        // its normalisation does run.)
+        ZeroBounce::Instance()->responseText = "{
+            \"address\": \"future@example.com\",
+            \"status\": \"valid\",
+            \"sub_status\": \"some_future_sub_status\"
+        }";
+        $response = ZeroBounce::Instance()->validate("future@example.com");
+        $this->assertEquals(ZBValidateStatus::Valid, $response->status);
+        $this->assertEquals("some_future_sub_status", $response->subStatus);
+    }
+
     public function testGetCredits()
     {
         ZeroBounce::Instance()->responseText = "{
@@ -246,6 +289,21 @@ class ZeroBounceTest extends TestCase
         $response = ZeroBounce::Instance()->getActivity("valid@example.com");
         $this->assertEquals($response->found, true);
         $this->assertEquals($response->activeInDays, 180);
+    }
+
+    public function testScoreEmail()
+    {
+        ZeroBounce::Instance()->responseText = "{
+            \"email\": \"mark@gmail.com\",
+            \"score\": 10
+        }";
+        $response = ZeroBounce::Instance()->scoreEmail("mark@gmail.com");
+        $this->assertEquals($response->email, "mark@gmail.com");
+        $this->assertEquals($response->score, 10);
+
+        $responsePost = ZeroBounce::Instance()->scoreEmailPost("mark@gmail.com");
+        $this->assertEquals($responsePost->email, "mark@gmail.com");
+        $this->assertEquals($responsePost->score, 10);
     }
 
     public function testSendFile()
@@ -702,4 +760,46 @@ class ZeroBounceTest extends TestCase
         $this->assertEquals($response->confidence, "high");
         $this->assertEquals(count($response->otherDomainFormats), 26);
     }
+
+    public function testSendEmailFinderFileUsesBulkEmailFinderEndpoint()
+    {
+        ZeroBounce::Instance()->responseText = '{
+            "success": true,
+            "file_id": "abc-def",
+            "message": "File Accepted"
+        }';
+        $path = sys_get_temp_dir() . '/zb_finder_p3.csv';
+        file_put_contents($path, "domain,name\nacme.com,Jane");
+        try {
+            ZeroBounce::Instance()->sendEmailFinderFile($path, 1);
+            $this->assertStringContainsString('bulkapi.zerobounce.net/email-finder/sendfile', ZeroBounce::Instance()->lastCurlUrl);
+        } finally {
+            if (file_exists($path)) {
+                unlink($path);
+            }
+        }
+    }
+
+    public function testValidateS3FilePostsToBulkRoot()
+    {
+        ZeroBounce::Instance()->responseText = '{
+            "success": true,
+            "file_id": "s3-job",
+            "message": "File Accepted"
+        }';
+        ZeroBounce::Instance()->validateS3File(array('file_name' => 'bucket/key.csv'));
+        $this->assertStringContainsString('bulkapi.zerobounce.net/validateS3file', ZeroBounce::Instance()->lastFormPostUrl);
+    }
+
+    public function testListS3FilesCallsBulkListS3files()
+    {
+        ZeroBounce::Instance()->responseText = '[{"file_name":"bucket/key.csv","size":1024}]';
+        $result = ZeroBounce::Instance()->listS3Files('my-bucket', 'key');
+        $this->assertStringContainsString('bulkapi.zerobounce.net/listS3files', ZeroBounce::Instance()->lastRequestUrl);
+        $this->assertStringContainsString('bucket=my-bucket', ZeroBounce::Instance()->lastRequestUrl);
+        $this->assertStringContainsString('search=key', ZeroBounce::Instance()->lastRequestUrl);
+        $this->assertIsArray($result);
+        $this->assertEquals('bucket/key.csv', $result[0]['file_name']);
+    }
+
 }

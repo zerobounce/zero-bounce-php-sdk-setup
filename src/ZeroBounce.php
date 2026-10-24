@@ -3,12 +3,15 @@
 namespace ZeroBounce\SDK;
 
 use DateTime;
+use DateTimeInterface;
 use Exception;
 
 /**
  */
 class ZeroBounce
 {
+    use ZeroBouncePriority3;
+    use ZeroBounceInboxPlacement;
 
     /**
      * Call this method to get singleton
@@ -25,26 +28,159 @@ class ZeroBounce
     }
 
     /**
+     * A new client. Use one instance per API key. Instance() is process-wide.
+     *
+     * @return static
+     */
+    public static function create()
+    {
+        return new static();
+    }
+
+    /**
      * Private constructor so nobody else can instantiate it
      *
      */
     protected function __construct()
     {
-
+        $this->apiBaseUrl = ZBBaseUrl::API_DEFAULT_URL;
     }
 
-    protected static $ApiBaseUrl;
+    /** @var string */
+    protected $apiBaseUrl;
     const BulkApiBaseUrl = "https://bulkapi.zerobounce.net/v2";
+
+    /** The list evaluator and the Inbox Placement Tester are not under the bulk /v2 path. */
+    const ListEvaluatorBaseUrl = "https://bulkapi.zerobounce.net/v2/listevaluator";
+    const InboxPlacementBaseUrl = "https://bulkapi.zerobounce.net/api/ipt";
+
+    /** @var string Overridable per instance; defaults to ListEvaluatorBaseUrl. */
+    protected $listEvaluatorBaseUrl = self::ListEvaluatorBaseUrl;
+
+    /** @var string Overridable per instance; defaults to InboxPlacementBaseUrl. */
+    protected $inboxPlacementBaseUrl = self::InboxPlacementBaseUrl;
     
     private $apiKey = null;
+
+    /** @var string|null "EU" or "US" when apiBaseUrl is a regional host. */
+    private $region = null;
+
+    /** @var bool The regional/bulk-host mismatch is reported once per client. */
+    private $bulkRegionWarned = false;
+
+    /** ZeroBounce documents no regional host for anything under this one. */
+    const BulkHost = 'bulkapi.zerobounce.net';
 
     /**
      * @param string $apiKey
      */
-    public function initialize($apiKey, $baseUrl = null)
+    public function initialize(
+        $apiKey,
+        $baseUrl = null,
+        $listEvaluatorBaseUrl = null,
+        $inboxPlacementBaseUrl = null
+    ) {
+        $this->apiKey = self::checkedApiKey($apiKey);
+        $this->apiBaseUrl = self::requireHttpsUrl(ZBBaseUrl::getByValue($baseUrl), 'baseUrl');
+        if ($listEvaluatorBaseUrl !== null && $listEvaluatorBaseUrl !== '') {
+            $this->listEvaluatorBaseUrl = rtrim(
+                self::requireHttpsUrl($listEvaluatorBaseUrl, 'listEvaluatorBaseUrl'), '/'
+            );
+        }
+        if ($inboxPlacementBaseUrl !== null && $inboxPlacementBaseUrl !== '') {
+            $this->inboxPlacementBaseUrl = rtrim(
+                self::requireHttpsUrl($inboxPlacementBaseUrl, 'inboxPlacementBaseUrl'), '/'
+            );
+        }
+        $host = strtolower((string)parse_url($this->apiBaseUrl, PHP_URL_HOST));
+        $regions = array('api-eu.zerobounce.net' => 'EU', 'api-us.zerobounce.net' => 'US');
+        $this->region = isset($regions[$host]) ? $regions[$host] : null;
+        $this->bulkRegionWarned = false;
+    }
+
+    /**
+     * The key, or a clear error. A key with surrounding whitespace or control
+     * characters would otherwise be quoted, unredacted, in a transport error.
+     *
+     * @param string $apiKey
+     * @return string
+     * @throws ZBException
+     */
+    protected static function checkedApiKey($apiKey)
     {
-        $this->apiKey = $apiKey;
-        self::$ApiBaseUrl = ZBBaseUrl::getByValue($baseUrl);
+        // An empty key stays deferred to checkValidApiKey(), which names the
+        // call that initializes the client.
+        if ($apiKey === null || trim((string)$apiKey) === '') {
+            return $apiKey;
+        }
+        if ($apiKey !== trim($apiKey) || preg_match('/[\x00-\x1f\x7f]/', $apiKey)) {
+            throw new ZBMissingParameterException(
+                'api_key has surrounding whitespace or control characters'
+            );
+        }
+        return $apiKey;
+    }
+
+    /**
+     * @param string $url
+     * @param string $name
+     * @return string
+     * @throws ZBMissingParameterException
+     */
+    protected static function requireHttpsUrl($url, $name)
+    {
+        if (stripos((string)$url, 'https://') !== 0) {
+            throw new ZBMissingParameterException($name . ' must be an https:// URL');
+        }
+        return $url;
+    }
+
+    /**
+     * One path segment, or a clear error. A segment of "." or ".." would walk
+     * the request up out of the endpoint it was meant for.
+     *
+     * @param string|int $value
+     * @param string $name
+     * @return string url-encoded
+     * @throws ZBMissingParameterException
+     */
+    protected static function pathSegment($value, $name)
+    {
+        $trimmed = trim((string)$value);
+        if ($trimmed === '') {
+            throw new ZBMissingParameterException($name . ' is required');
+        }
+        // Everything else, slashes included, is percent-encoded and stays
+        // inside the segment; "." and ".." would walk the request elsewhere.
+        if ($trimmed === '.' || $trimmed === '..') {
+            throw new ZBMissingParameterException($name . ' is invalid');
+        }
+        return rawurlencode($trimmed);
+    }
+
+    /**
+     * The URL, after checking it is https and warning once when a regional
+     * base URL is paired with the single global bulk host.
+     *
+     * @param string $url
+     * @return string
+     * @throws ZBMissingParameterException
+     */
+    protected function checkedUrl($url)
+    {
+        self::requireHttpsUrl($url, 'url');
+        $host = strtolower((string)parse_url($url, PHP_URL_HOST));
+        if (!$this->bulkRegionWarned && $this->region !== null && $host === self::BulkHost) {
+            $this->bulkRegionWarned = true;
+            trigger_error(
+                'baseUrl is the ' . $this->region . ' API, but this request goes to ' . self::BulkHost
+                . ': ZeroBounce documents no regional host for bulk files, scoring files, email finder'
+                . ' and domain search files, the list evaluator, S3/SFTP or the Inbox Placement Tester.'
+                . ' Pass the matching base URLs to initialize() if ZeroBounce gave you regional ones.',
+                E_USER_WARNING
+            );
+        }
+        return $url;
     }
 
     /**
@@ -55,13 +191,76 @@ class ZeroBounce
      * @throws ZBMissingParameterException
      * @throws ZBException
      */
-    public function validate($email, $ipAddress = NULL)
+    public function validate($email, $ipAddress = NULL, $options = NULL)
     {
         $this->checkValidApiKey();
         if (!$email) throw new ZBMissingParameterException("email is required");
+        if ($options instanceof ZBValidateOptions) {
+            $this->checkTimeout($options->timeout, false);
+            // callbackUrl only means anything while greylist processing is on, so
+            // reject it here rather than letting the API take the request.
+            if ($options->callbackUrl !== null && $options->greylistProcessing !== true) {
+                throw new ZBMissingParameterException(
+                    "callbackUrl requires greylistProcessing = true"
+                );
+            }
+            if ($options->callbackUrl !== null && trim((string)$options->callbackUrl) === '') {
+                throw new ZBMissingParameterException("callbackUrl is required");
+            }
+        }
         $response = new ZBValidateResponse();
-        $ipPart = $ipAddress ? urlencode($ipAddress) : "";
-        $this->request(self::$ApiBaseUrl . "/validate?api_key=" . urlencode($this->apiKey) . "&email=" . urlencode($email) . "&ip_address=" . $ipPart, $response);
+        $ipValue = ($ipAddress === null) ? '' : (string)$ipAddress;
+        $fields = array(
+            'email' => $email,
+            'ip_address' => $ipValue,
+        );
+        if ($options instanceof ZBValidateOptions) {
+            if ($options->timeout !== null) {
+                $fields['timeout'] = (string)$options->timeout;
+            }
+            if ($options->activityData !== null) {
+                $fields['activity_data'] = $options->activityData ? "true" : "false";
+            }
+            if ($options->verifyPlus !== null) {
+                $fields['verify_plus'] = $options->verifyPlus ? "true" : "false";
+            }
+            if ($options->domainInfo !== null) {
+                $fields['domain_info'] = $options->domainInfo ? "true" : "false";
+            }
+            if ($options->greylistProcessing !== null) {
+                $fields['greylist_processing'] = $options->greylistProcessing ? "true" : "false";
+            }
+            if ($options->callbackUrl !== null) {
+                $fields['callback_url'] = $options->callbackUrl;
+            }
+            if ($options->usePost) {
+                $this->formPost($this->apiBaseUrl . "/validate", $fields, $response);
+                return $response;
+            }
+        }
+        $url = $this->apiBaseUrl . "/validate?api_key=" . urlencode($this->apiKey)
+            . "&email=" . urlencode($email) . "&ip_address=" . urlencode($ipValue);
+        if ($options instanceof ZBValidateOptions) {
+            if ($options->timeout !== null) {
+                $url .= "&timeout=" . urlencode((string)$options->timeout);
+            }
+            if ($options->activityData !== null) {
+                $url .= "&activity_data=" . ($options->activityData ? "true" : "false");
+            }
+            if ($options->verifyPlus !== null) {
+                $url .= "&verify_plus=" . ($options->verifyPlus ? "true" : "false");
+            }
+            if ($options->domainInfo !== null) {
+                $url .= "&domain_info=" . ($options->domainInfo ? "true" : "false");
+            }
+            if ($options->greylistProcessing !== null) {
+                $url .= "&greylist_processing=" . ($options->greylistProcessing ? "true" : "false");
+            }
+            if ($options->callbackUrl !== null) {
+                $url .= "&callback_url=" . urlencode($options->callbackUrl);
+            }
+        }
+        $this->request($url, $response);
         return $response;
     }
 
@@ -72,10 +271,13 @@ class ZeroBounce
      * @throws ZBMissingParameterException
      * @throws ZBException
      */
-    public function validateBatch($emails)
+    public function validateBatch($emails, $options = NULL)
     {
         $this->checkValidApiKey();
         if (!$emails or !count($emails)) throw new ZBMissingParameterException("emails parameter is required");
+        if ($options instanceof ZBValidateOptions) {
+            $this->checkTimeout($options->timeout, true);
+        }
 
         $params = [];
         if (gettype($emails[0]) === 'string')
@@ -98,10 +300,26 @@ class ZeroBounce
         else
             throw new ZBException('Unknown Parameter Type');
         $params = ['email_batch' => $params];
+        if ($options instanceof ZBValidateOptions) {
+            if ($options->timeout !== null) {
+                // LIVE: the API requires timeout as a JSON string ("30"). As a
+                // number it rejects the whole batch with the account-level
+                // "Invalid API Key or your account ran out of credits" error.
+                // activity_data and verify_plus stay JSON booleans.
+                $params['timeout'] = (string)$options->timeout;
+            }
+            if ($options->activityData !== null) {
+                $params['activity_data'] = $options->activityData;
+            }
+            if ($options->verifyPlus !== null) {
+                $params['verify_plus'] = $options->verifyPlus;
+            }
+        }
 
         $response = new ZBBatchValidateResponse();
-        $code = $this->json(
-            self::$ApiBaseUrl . "/validatebatch", $params, $response);
+        $this->json(
+            $this->apiBaseUrl . "/validatebatch", $params, $response);
+        $this->throwIfBatchAccountError($response);
         return $response;
     }
 
@@ -110,11 +328,11 @@ class ZeroBounce
      * @throws ZBMissingApiKeyException
      * @throws ZBException
      */
-    public function getCredits()
+    public function getCredits($usePost = false)
     {
         $this->checkValidApiKey();
         $response = new ZBGetCreditsResponse();
-        $this->request(self::$ApiBaseUrl . "/getcredits?api_key=" . urlencode($this->apiKey), $response);
+        $this->getOrPostForm($this->apiBaseUrl . "/getcredits", array(), $response, $usePost);
         return $response;
     }
 
@@ -125,7 +343,7 @@ class ZeroBounce
      * @throws ZBMissingApiKeyException
      * @throws ZBException
      */
-    public function getApiUsage($startDate, $endDate)
+    public function getApiUsage($startDate, $endDate, $usePost = false)
     {
         $this->checkValidApiKey();
 
@@ -133,12 +351,38 @@ class ZeroBounce
         if (!$endDate) throw new ZBMissingParameterException("endDate is required");
 
         $response = new ZBApiUsageResponse();
-        $format = "Y-m-d";
-        $this->request(self::$ApiBaseUrl . "/getapiusage?api_key=" . urlencode($this->apiKey)
-            . "&start_date=" . $startDate->format($format)
-            . "&end_date=" . $endDate->format($format),
-            $response);
+        $this->getOrPostForm(
+            $this->apiBaseUrl . "/getapiusage",
+            array(
+                'start_date' => self::apiDate($startDate, 'startDate'),
+                'end_date' => self::apiDate($endDate, 'endDate'),
+            ),
+            $response,
+            $usePost
+        );
         return $response;
+    }
+
+    /**
+     * A date for the API: a DateTime, or a YYYY-MM-DD string.
+     *
+     * A DateTime cast to a string becomes the whole locale-formatted stamp,
+     * which the API rejects and Cloudflare can block outright.
+     *
+     * @param DateTimeInterface|string $value
+     * @param string $name
+     * @return string
+     * @throws ZBMissingParameterException
+     */
+    protected static function apiDate($value, $name)
+    {
+        if ($value instanceof DateTimeInterface) {
+            return $value->format('Y-m-d');
+        }
+        if (is_string($value) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+            return $value;
+        }
+        throw new ZBMissingParameterException($name . ' must be a DateTime or a YYYY-MM-DD string');
     }
 
     /**
@@ -147,17 +391,52 @@ class ZeroBounce
      * @throws ZBMissingApiKeyException
      * @throws ZBException
      */
-    public function getActivity($email)
+    public function getActivity($email, $usePost = false)
     {
         $this->checkValidApiKey();
 
         if (!$email) throw new ZBMissingParameterException("email is required");
 
         $response = new ZBActivityResponse();
-        $format = "Y-m-d";
-        $this->request(self::$ApiBaseUrl . "/activity?api_key=" . urlencode($this->apiKey)
-            . "&email=" . urlencode($email),
-            $response);
+        $this->getOrPostForm(
+            $this->apiBaseUrl . "/activity", array('email' => $email), $response, $usePost
+        );
+        return $response;
+    }
+
+    /**
+     * Real-time AI scoring for a single email (GET /scoring).
+     * @param string $email
+     * @return ZBScoreEmailResponse
+     * @throws ZBMissingApiKeyException
+     * @throws ZBException
+     */
+    public function scoreEmail($email, $usePost = false)
+    {
+        $this->checkValidApiKey();
+        if (!$email) throw new ZBMissingParameterException("email is required");
+
+        $response = new ZBScoreEmailResponse();
+        $this->getOrPostForm(
+            $this->apiBaseUrl . "/scoring", array('email' => $email), $response, $usePost
+        );
+        return $response;
+    }
+
+    /**
+     * Real-time AI scoring for a single email (POST /scoring, form-encoded).
+     * @param string $email
+     * @return ZBScoreEmailResponse
+     * @throws ZBMissingApiKeyException
+     * @throws ZBException
+     */
+    public function scoreEmailPost($email)
+    {
+        $this->checkValidApiKey();
+        if (!$email) throw new ZBMissingParameterException("email is required");
+
+        $response = new ZBScoreEmailResponse();
+        $this->formPost($this->apiBaseUrl . "/scoring", array('email' => $email), $response);
         return $response;
     }
 
@@ -271,25 +550,14 @@ class ZeroBounce
     {
 
         $this->checkValidApiKey();
-        // data fields for POST request
-
-        if (!$filepath) throw new ZBMissingParameterException("filePath is required");
-        if (!$emailAddressColumn) throw new ZBMissingParameterException("emailAddressColumn is required");
+        $this->requireProvided($filepath, "filePath is required");
+        $this->requireProvided($emailAddressColumn, "emailAddressColumn is required");
 
         try {
-            $fields = array(
-                "api_key" => $this->apiKey,
-                "email_address_column" => $emailAddressColumn
+            $fields = $this->multipartFileFields(
+                $emailAddressColumn, $returnUrl, $firstNameColumn, $lastNameColumn,
+                $genderColumn, $ipAddressColumn, $hasHeaderRow, $allowPhase2, $url
             );
-            if ($returnUrl) $fields["return_url"] = $returnUrl;
-            if ($firstNameColumn) $fields["first_name_column"] = $firstNameColumn;
-            if ($lastNameColumn) $fields["last_name_column"] = $lastNameColumn;
-            if ($genderColumn) $fields["gender_column"] = $genderColumn;
-            if ($ipAddressColumn) $fields["ip_address_column"] = $ipAddressColumn;
-            if ($hasHeaderRow) $fields["has_header_row"] = 'true';
-            if ($allowPhase2 !== null && strpos($url, '/scoring/') === false) {
-                $fields['allow_phase_2'] = $allowPhase2 ? 'true' : 'false';
-            }
 
             $files = array();
             $files[$filepath] = file_get_contents($filepath);
@@ -324,23 +592,14 @@ class ZeroBounce
         $allowPhase2 = null)
     {
         $this->checkValidApiKey();
-        if (!$fileName) throw new ZBMissingParameterException("fileName is required");
-        if (!$emailAddressColumn) throw new ZBMissingParameterException("emailAddressColumn is required");
+        $this->requireProvided($fileName, "fileName is required");
+        $this->requireProvided($emailAddressColumn, "emailAddressColumn is required");
 
         try {
-            $fields = array(
-                "api_key" => $this->apiKey,
-                "email_address_column" => $emailAddressColumn
+            $fields = $this->multipartFileFields(
+                $emailAddressColumn, $returnUrl, $firstNameColumn, $lastNameColumn,
+                $genderColumn, $ipAddressColumn, $hasHeaderRow, $allowPhase2, $url
             );
-            if ($returnUrl) $fields["return_url"] = $returnUrl;
-            if ($firstNameColumn) $fields["first_name_column"] = $firstNameColumn;
-            if ($lastNameColumn) $fields["last_name_column"] = $lastNameColumn;
-            if ($genderColumn) $fields["gender_column"] = $genderColumn;
-            if ($ipAddressColumn) $fields["ip_address_column"] = $ipAddressColumn;
-            if ($hasHeaderRow) $fields["has_header_row"] = 'true';
-            if ($allowPhase2 !== null && strpos($url, '/scoring/') === false) {
-                $fields['allow_phase_2'] = $allowPhase2 ? 'true' : 'false';
-            }
 
             $files = array($fileName => $content);
 
@@ -364,30 +623,61 @@ class ZeroBounce
     {
         $data['api_key'] = $this->apiKey;
         $content = json_encode($data);
+        $result = $this->executeHttp(
+            'POST',
+            $this->checkedUrl($url),
+            array('Content-Type: application/json'),
+            $content,
+            120
+        );
 
-        $curl = curl_init($url);
-        curl_setopt_array($curl, array(
-            CURLOPT_URL => $url,
-            CURLOPT_HEADER => false, 
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 120,
-            CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
-            CURLOPT_POSTFIELDS => $content
-        ));
-
-        $json = curl_exec($curl);
-        $err = curl_error($curl);
-
-        $code = curl_getinfo($curl, CURLINFO_HTTP_CODE);
-
-        curl_close($curl);
-
-        if (!$json) {
-            throw new ZBException("No response");
-        }
-
+        $json = $this->readJsonBody($result);
         $response->Deserialize($json);
-        return $code;
+        return (int)$result['status'];
+    }
+
+    /**
+     * @param string $url
+     * @param array $data
+     * @param ZBResponse $response
+     * @return int http statusCode
+     * @throws ZBException
+     */
+    protected function formPost($url, $data, $response)
+    {
+        $data['api_key'] = $this->apiKey;
+        $content = http_build_query($data);
+        $result = $this->executeHttp(
+            'POST',
+            $this->checkedUrl($url),
+            array('Content-Type: application/x-www-form-urlencoded'),
+            $content,
+            120
+        );
+
+        $json = $this->readJsonBody($result);
+        $response->Deserialize($json);
+        return (int)$result['status'];
+    }
+
+    /**
+     * GET with query parameters, or the documented form-encoded POST with the
+     * same parameters. Both are accepted by every endpoint that takes this.
+     *
+     * @param string $url without a query string
+     * @param array<string, mixed> $params without api_key
+     * @param ZBResponse $response
+     * @param bool $usePost
+     * @return int http statusCode
+     * @throws ZBException
+     */
+    protected function getOrPostForm($url, array $params, $response, $usePost)
+    {
+        if ($usePost) {
+            return $this->formPost($url, $params, $response);
+        }
+        $params['api_key'] = $this->apiKey;
+        return $this->request($url . '?' . http_build_query($params), $response);
     }
 
     /**
@@ -399,39 +689,21 @@ class ZeroBounce
      */
     protected function curl($url, $fields, $files)
     {
-        $curl = curl_init();
-
         $boundary = bin2hex(random_bytes(16));
         $delimiter = '-------------' . $boundary;
-
         $post_data = $this->build_data_files($boundary, $fields, $files);
-
-        curl_setopt_array($curl, array(
-            CURLOPT_URL => $url,
-            CURLOPT_RETURNTRANSFER => 1,
-            CURLOPT_MAXREDIRS => 10,
-            CURLOPT_TIMEOUT => 120,
-            //CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-            CURLOPT_CUSTOMREQUEST => "POST",
-            CURLOPT_POST => 1,
-            CURLOPT_POSTFIELDS => $post_data,
-            CURLOPT_HTTPHEADER => array(
-                //"Authorization: Bearer $TOKEN",
+        $result = $this->executeHttp(
+            'POST',
+            $this->checkedUrl($url),
+            array(
                 "Content-Type: multipart/form-data; boundary=" . $delimiter,
-                "Content-Length: " . strlen($post_data)
+                "Content-Length: " . strlen($post_data),
             ),
-        ));
+            $post_data,
+            120
+        );
 
-        $response = curl_exec($curl);
-        $err = curl_error($curl);
-
-        curl_close($curl);
-
-        /*if ($err && count_chars($err) > 0) {
-            throw new ZBApiException($err);
-        }*/
-
-        return $response;
+        return $this->readJsonBody($result);
     }
 
     /**
@@ -467,7 +739,7 @@ class ZeroBounce
     {
         $this->checkValidApiKey();
 
-        if (!$fileId) throw new ZBMissingParameterException("fileId is required");
+        $this->requireProvided($fileId, "fileId is required");
 
         $response = new ZBFileStatusResponse();
         $this->request(self::BulkApiBaseUrl
@@ -520,8 +792,8 @@ class ZeroBounce
     {
         $this->checkValidApiKey();
 
-        if (!$fileId) throw new ZBMissingParameterException("fileId is required");
-        if (!$downloadPath) throw new ZBMissingParameterException("downloadPath is required");
+        $this->requireProvided($fileId, "fileId is required");
+        $this->requireProvided($downloadPath, "downloadPath is required");
 
         try {
             $query = array(
@@ -540,32 +812,10 @@ class ZeroBounce
             $path = ($scoring ? '/scoring' : '') . '/getfile';
             $url = self::BulkApiBaseUrl . $path . '?' . http_build_query($query);
 
-            $result = $this->getBulkFileHttp($url);
-            $body = $result['body'];
-            $headers = $result['headers'];
-            $code = self::parseHttpStatusFromHeaders($headers);
-            $contentType = self::parseContentTypeFromHeaders($headers);
-
-            if ($code > 299) {
-                throw new ZBException(self::formatGetFileErrorMessage($body));
+            if ($options instanceof ZBGetFileOptions && $options->stream) {
+                return $this->streamBulkDownload($url, $downloadPath);
             }
-
-            if (self::shouldTreatGetFileBodyAsError($body, $contentType)) {
-                throw new ZBException(self::formatGetFileErrorMessage($body));
-            }
-
-            $folder = dirname($downloadPath);
-            if ($folder !== '' && $folder !== '.' && !file_exists($folder)) {
-                mkdir($folder, 0777, true);
-            }
-
-            if (file_put_contents($downloadPath, $body) === false) {
-                throw new ZBException('Could not write file');
-            }
-
-            $response = new ZBGetFileResponse();
-            $response->localFilePath = $downloadPath;
-            return $response;
+            return $this->saveBulkDownload($this->getBulkFileHttp($url), $downloadPath);
         } catch (Exception $e) {
             throw new ZBException($this->redactApiKey($e->getMessage()));
         }
@@ -591,27 +841,11 @@ class ZeroBounce
      */
     protected function getBulkFileHttp($url)
     {
-        $context = stream_context_create(array(
-            'http' => array(
-                'ignore_errors' => true,
-                'timeout' => 120,
-            ),
-        ));
-        $body = @file_get_contents($url, false, $context);
-        if ($body === false) {
+        $result = $this->executeHttp('GET', $this->checkedUrl($url), array(), null, 120);
+        if ($result['body'] === '' && (int)$result['status'] === 0) {
             throw new ZBException('No response');
         }
-        $headers = array();
-        if (function_exists('http_get_last_response_headers')) {
-            // @see https://wiki.php.net/rfc/deprecations_php_8_5#deprecate_the_http_response_header_predefined_variable
-            $fromFn = http_get_last_response_headers();
-            if (is_array($fromFn)) {
-                $headers = $fromFn;
-            }
-        } elseif (\PHP_VERSION_ID < 80500) {
-            $headers = require __DIR__ . '/ZBLegacyHttpResponseHeaders.php';
-        }
-        return array('body' => $body, 'headers' => $headers);
+        return array('body' => $result['body'], 'headers' => $result['headers']);
     }
 
     /**
@@ -673,7 +907,7 @@ class ZeroBounce
                 return true;
             }
         }
-        foreach (array('message', 'error', 'error_message') as $k) {
+        foreach (array('message', 'error', 'error_message', 'detail') as $k) {
             if (!empty($o[$k])) {
                 if (is_string($o[$k]) && trim($o[$k]) !== '') {
                     return true;
@@ -708,9 +942,9 @@ class ZeroBounce
     {
         $o = json_decode($body, true);
         if (!is_array($o)) {
-            return $body !== '' ? $body : 'Invalid getfile response';
+            return ZBHttpError::message(0, $body);
         }
-        foreach (array('message', 'error', 'error_message') as $k) {
+        foreach (array('message', 'error', 'error_message', 'detail') as $k) {
             if (empty($o[$k])) {
                 continue;
             }
@@ -721,7 +955,7 @@ class ZeroBounce
                 return trim($o[$k][0]);
             }
         }
-        return $body;
+        return ZBHttpError::message(0, $body);
     }
 
 
@@ -758,7 +992,7 @@ class ZeroBounce
     {
         $this->checkValidApiKey();
 
-        if (!$fileId) throw new ZBMissingParameterException("fileId is required");
+        $this->requireProvided($fileId, "fileId is required");
 
         $response = new ZBDeleteFileResponse();
         $this->request(self::BulkApiBaseUrl
@@ -771,43 +1005,360 @@ class ZeroBounce
     }
 
     /**
+     * Lowest HTTP call. Tests override this and never touch the network.
+     *
+     * @param string $method
      * @param string $url
-     * @param ZBResponse $response
-     * @return int http statusCode
+     * @param string[] $headers
+     * @param string|null $body
+     * @param int $timeout
+     * @return array{status: int, headers: string[], body: string}
      * @throws ZBException
      */
+    protected function executeHttp($method, $url, array $headers = array(), $body = null, $timeout = 120)
+    {
+        // Every verb goes through curl. The http:// stream wrapper reports its
+        // status only through PHP's predefined response-header variable, which
+        // the engine exposes to the calling function alone and 8.5 deprecates;
+        // read from anywhere else it is always empty, so an error status was
+        // silently recorded as 0 and a 404 looked like a successful response.
+        $responseHeaders = array();
+        $curl = curl_init();
+        $curlOpts = array(
+            CURLOPT_URL => $url,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HEADER => false,
+            CURLOPT_TIMEOUT => $timeout,
+            CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_MAXREDIRS => 0,
+            CURLOPT_CUSTOMREQUEST => strtoupper($method),
+            CURLOPT_HEADERFUNCTION => function ($handle, $header) use (&$responseHeaders) {
+                $line = trim($header);
+                if ($line !== '') {
+                    $responseHeaders[] = $line;
+                }
+                return strlen($header);
+            },
+        );
+        if ($headers) {
+            $curlOpts[CURLOPT_HTTPHEADER] = $headers;
+        }
+        if ($body !== null) {
+            $curlOpts[CURLOPT_POSTFIELDS] = $body;
+        }
+        curl_setopt_array($curl, $curlOpts);
+        $raw = curl_exec($curl);
+        $status = (int)curl_getinfo($curl, CURLINFO_HTTP_CODE);
+        curl_close($curl);
+        if ($raw === false || $raw === null) {
+            return array('status' => $status, 'headers' => $responseHeaders, 'body' => '');
+        }
+        return array(
+            'status' => $status,
+            'headers' => $responseHeaders,
+            'body' => (string)$raw,
+        );
+    }
+
     protected function request($url, $response)
     {
         try {
-            $context = stream_context_create(array(
-                'http' => array(
-                    'ignore_errors' => true,
-                    'timeout' => 120,
-                )
-            ));
-
-            $json = @file_get_contents($url, false, $context);
-          
-            if (!$json) {
-                throw new ZBException("No response");
-            }
-
-            $responseHeaders = null;
-            if (function_exists('http_get_last_response_headers')) {
-                // @see https://wiki.php.net/rfc/deprecations_php_8_5#deprecate_the_http_response_header_predefined_variable
-                $responseHeaders = http_get_last_response_headers();
-            } elseif (\PHP_VERSION_ID < 80500) {
-                $responseHeaders = require __DIR__ . '/ZBLegacyHttpResponseHeaders.php';
-            }
-            if (!is_array($responseHeaders)) {
-                $responseHeaders = array();
-            }
-            $code = $this->getHttpCode($responseHeaders);
+            $result = $this->executeHttp('GET', $this->checkedUrl($url), array(), null, 120);
+            $json = $this->readJsonBody($result);
             $response->Deserialize($json);
-            return $code;
+            return (int)$result['status'];
+        } catch (ZBApiException $e) {
+            // Rebuilt rather than rethrown so the message is redacted, but the
+            // HTTP status survives for callers that switch on it.
+            throw new ZBApiException($this->redactApiKey($e->getMessage()), $e->getStatusCode());
         } catch (Exception $e) {
             throw new ZBException($this->redactApiKey($e->getMessage()));
         }
+    }
+
+    /**
+     * @param mixed $value
+     * @return bool
+     */
+    protected function isProvided($value)
+    {
+        return $value !== null && $value !== '';
+    }
+
+    /**
+     * @param mixed $value
+     * @param string $message
+     * @throws ZBMissingParameterException
+     */
+    protected function requireProvided($value, $message)
+    {
+        if (!$this->isProvided($value)) {
+            throw new ZBMissingParameterException($message);
+        }
+    }
+
+    /**
+     * @param int|string|null $timeout
+     * @param bool $batch
+     * @throws ZBException
+     */
+    protected function checkTimeout($timeout, $batch)
+    {
+        if ($timeout === null || $timeout === '') {
+            return;
+        }
+        $message = $batch
+            ? 'Invalid parameter: timeout (must be between 10 and 120 seconds)'
+            : 'Invalid parameter: timeout (must be between 3 and 60 seconds)';
+        if (!is_numeric($timeout)) {
+            throw new ZBException($message);
+        }
+        $timeout = (int)$timeout;
+        if ($batch) {
+            if ($timeout < 10 || $timeout > 120) {
+                throw new ZBException($message);
+            }
+            return;
+        }
+        if ($timeout < 3 || $timeout > 60) {
+            throw new ZBException($message);
+        }
+    }
+
+    /**
+     * @param array{status?: int, headers?: string[], body?: string} $result
+     * @return string
+     * @throws ZBException
+     */
+    private function readJsonBody(array $result)
+    {
+        $status = isset($result['status']) ? (int)$result['status'] : 0;
+        $body = isset($result['body']) ? (string)$result['body'] : '';
+        $headers = (isset($result['headers']) && is_array($result['headers'])) ? $result['headers'] : array();
+        if (trim($body) === '' || $status > 299 || ZBHttpError::isHtml($body, $headers)) {
+            throw new ZBException(ZBHttpError::message($status, $body, $headers));
+        }
+        $decoded = json_decode($body, true);
+        if (!is_array($decoded)) {
+            throw new ZBException('ZeroBounce returned a response that is not valid JSON.');
+        }
+        ZBHttpError::throwIfBareAccountError($decoded);
+        ZBHttpError::throwIfSuccessIsFalse($decoded, $status, $body, $headers);
+        return $body;
+    }
+
+    /**
+     * @param ZBBatchValidateResponse $response
+     * @throws ZBException
+     */
+    private function throwIfBatchAccountError(ZBBatchValidateResponse $response)
+    {
+        if (!is_array($response->errors)) {
+            return;
+        }
+        foreach ($response->errors as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $address = isset($item['email_address']) ? (string)$item['email_address'] : '';
+            if (strcasecmp($address, 'all') !== 0) {
+                continue;
+            }
+            $message = '';
+            if (isset($item['error']) && is_string($item['error'])) {
+                $message = ZBHttpError::stripPrefix($item['error']);
+            }
+            if ($message === '') {
+                $message = 'Invalid API Key or your account ran out of credits';
+            }
+            throw new ZBException($message);
+        }
+    }
+
+    /**
+     * @param array{body?: string, headers?: string[]} $result
+     * @param string $downloadPath
+     * @return ZBGetFileResponse
+     * @throws ZBException
+     */
+    private function saveBulkDownload(array $result, $downloadPath)
+    {
+        $body = isset($result['body']) ? (string)$result['body'] : '';
+        $headers = (isset($result['headers']) && is_array($result['headers'])) ? $result['headers'] : array();
+        $code = self::parseHttpStatusFromHeaders($headers);
+        $contentType = self::parseContentTypeFromHeaders($headers);
+        if (trim($body) === '' || $code > 299 || ZBHttpError::isHtml($body, $headers) || self::shouldTreatGetFileBodyAsError($body, $contentType)) {
+            throw new ZBException(ZBHttpError::message($code, $body, $headers));
+        }
+        $folder = dirname($downloadPath);
+        if ($folder !== '' && $folder !== '.' && !file_exists($folder)) {
+            mkdir($folder, 0777, true);
+        }
+        if (file_put_contents($downloadPath, $body) === false) {
+            throw new ZBException('Could not write file');
+        }
+        $response = new ZBGetFileResponse();
+        $response->localFilePath = $downloadPath;
+        return $response;
+    }
+
+    /**
+     * Stream a GET to $handle, keeping the first DownloadSniffBytes in memory
+     * so the caller can tell a result file from an error body. Separated like
+     * executeHttp so tests never touch the network.
+     *
+     * @param string $url
+     * @param resource $handle open for writing
+     * @return array{status: int, headers: string[], head: string, error: string}
+     * @throws ZBException
+     */
+    protected function streamHttpToHandle($url, $handle)
+    {
+        $head = '';
+        $headers = array();
+        $sniffing = true;
+        $curl = curl_init();
+        curl_setopt_array($curl, array(
+            CURLOPT_URL => $this->checkedUrl($url),
+            CURLOPT_TIMEOUT => 0,
+            CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_MAXREDIRS => 0,
+            CURLOPT_HEADERFUNCTION => function ($curlHandle, $header) use (&$headers) {
+                $line = trim($header);
+                if ($line !== '') {
+                    $headers[] = $line;
+                }
+                return strlen($header);
+            },
+            CURLOPT_WRITEFUNCTION => function ($curlHandle, $chunk) use (&$head, &$sniffing, $handle) {
+                if ($sniffing) {
+                    $head .= $chunk;
+                    if (strlen($head) >= self::DownloadSniffBytes) {
+                        $sniffing = false;
+                        fwrite($handle, $head);
+                    }
+                    return strlen($chunk);
+                }
+                fwrite($handle, $chunk);
+                return strlen($chunk);
+            },
+        ));
+        $ok = curl_exec($curl);
+        $status = (int)curl_getinfo($curl, CURLINFO_HTTP_CODE);
+        $error = curl_error($curl);
+        curl_close($curl);
+        if ($sniffing) {
+            // The whole body fit inside the sniff window and was never written.
+            fwrite($handle, $head);
+        }
+        return array(
+            'status' => $status,
+            'headers' => $headers,
+            'head' => $head,
+            'error' => $ok === false ? ($error === '' ? 'The download failed.' : $error) : '',
+        );
+    }
+
+    /** Sniff this much before deciding whether a download is really an error body. */
+    const DownloadSniffBytes = 65536;
+
+    /** An error body is short; reading more than this to quote it would defeat streaming. */
+    const DownloadMaxErrorBytes = 2097152;
+
+    /**
+     * GET a result file and write it to $downloadPath in chunks.
+     *
+     * The bytes go to a temporary file beside $downloadPath and are moved into
+     * place only once the transfer finishes, so a large file never has to fit
+     * in memory and a failed download leaves nothing at $downloadPath.
+     *
+     * @param string $url
+     * @param string $downloadPath
+     * @return ZBGetFileResponse
+     * @throws ZBException
+     */
+    protected function streamBulkDownload($url, $downloadPath)
+    {
+        $folder = dirname($downloadPath);
+        if ($folder === '' || $folder === '.') {
+            $folder = '.';
+        } elseif (!file_exists($folder)) {
+            mkdir($folder, 0777, true);
+        }
+        $partial = tempnam($folder, '.zb-download-');
+        if ($partial === false) {
+            throw new ZBException('Could not write file');
+        }
+        $handle = fopen($partial, 'wb');
+        if ($handle === false) {
+            @unlink($partial);
+            throw new ZBException('Could not write file');
+        }
+
+        $transfer = $this->streamHttpToHandle($url, $handle);
+        fclose($handle);
+        $head = (string)$transfer['head'];
+        $headers = (array)$transfer['headers'];
+        $status = (int)$transfer['status'];
+        $error = (string)$transfer['error'];
+
+        try {
+            if ($error !== '') {
+                // Rebuilt rather than wrapped: the original holds the URL.
+                throw new ZBException($this->redactApiKey($error));
+            }
+            $contentType = self::parseContentTypeFromHeaders($headers);
+            $sample = substr($head, 0, self::DownloadMaxErrorBytes);
+            if (trim($sample) === '' || $status > 299 || ZBHttpError::isHtml($sample, $headers)
+                || self::shouldTreatGetFileBodyAsError($sample, $contentType)) {
+                throw new ZBException($this->redactApiKey(ZBHttpError::message($status, $sample, $headers)));
+            }
+            if (!rename($partial, $downloadPath)) {
+                throw new ZBException('Could not write file');
+            }
+        } catch (Exception $e) {
+            @unlink($partial);
+            throw $e;
+        }
+
+        $response = new ZBGetFileResponse();
+        $response->localFilePath = $downloadPath;
+        return $response;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function multipartFileFields(
+        $emailAddressColumn, $returnUrl, $firstNameColumn, $lastNameColumn,
+        $genderColumn, $ipAddressColumn, $hasHeaderRow, $allowPhase2, $url)
+    {
+        $fields = array(
+            'api_key' => $this->apiKey,
+            'email_address_column' => $emailAddressColumn,
+        );
+        if ($returnUrl) {
+            $fields['return_url'] = $returnUrl;
+        }
+        if ($this->isProvided($firstNameColumn)) {
+            $fields['first_name_column'] = $firstNameColumn;
+        }
+        if ($this->isProvided($lastNameColumn)) {
+            $fields['last_name_column'] = $lastNameColumn;
+        }
+        if ($this->isProvided($genderColumn)) {
+            $fields['gender_column'] = $genderColumn;
+        }
+        if ($this->isProvided($ipAddressColumn)) {
+            $fields['ip_address_column'] = $ipAddressColumn;
+        }
+        if ($hasHeaderRow !== null) {
+            $fields['has_header_row'] = $hasHeaderRow ? 'true' : 'false';
+        }
+        if ($allowPhase2 !== null && strpos($url, '/scoring/') === false) {
+            $fields['allow_phase_2'] = $allowPhase2 ? 'true' : 'false';
+        }
+        return $fields;
     }
 
     /**
@@ -816,16 +1367,6 @@ class ZeroBounce
     private function checkValidApiKey()
     {
         if (!$this->apiKey) throw new ZBMissingApiKeyException("ZeroBounce SDK is not initialized. Please call ZeroBounce::Instance()->initialize(\"API_KEY\") first");
-    }
-
-    private function getHttpCode($httpResponseHeader)
-    {
-        if (is_array($httpResponseHeader) && !empty($httpResponseHeader)) {
-            $parts = explode(' ', $httpResponseHeader[0]);
-            if (count($parts) > 1) //HTTP/1.0 <code> <text>
-                return intval($parts[1]); //Get code
-        }
-        return 0;
     }
 
     private function build_data_files($boundary, $fields, $files)
@@ -887,7 +1428,7 @@ class ZeroBounce
 
         $query = http_build_query($args);
 
-        $this->request(self::$ApiBaseUrl . "/guessformat?$query", $response);
+        $this->request($this->apiBaseUrl . "/guessformat?$query", $response);
         return $response;
     }
 
@@ -904,7 +1445,8 @@ class ZeroBounce
      * @throws ZBMissingApiKeyException
      * @throws ZBMissingParameterException
      */
-    public function findEmail($domain, $firstName, $companyName = null, $middleName = null, $lastName = null)
+    public function findEmail(
+        $domain, $firstName, $companyName = null, $middleName = null, $lastName = null, $usePost = false)
     {
         $this->checkValidApiKey();
 
@@ -917,10 +1459,7 @@ class ZeroBounce
         }
 
         $response = new ZBFindEmailResponse();
-        $args = [
-            'api_key' => $this->apiKey,
-            'first_name' => $firstName,
-        ];
+        $args = ['first_name' => $firstName];
 
         // The API doesn't accept both
         if ($domain) {
@@ -932,9 +1471,7 @@ class ZeroBounce
         if ($middleName) $args['middle_name'] = $middleName;
         if ($lastName) $args['last_name'] = $lastName;
 
-        $query = http_build_query($args);
-
-        $this->request(self::$ApiBaseUrl . "/guessformat?$query", $response);
+        $this->getOrPostForm($this->apiBaseUrl . "/guessformat", $args, $response, $usePost);
         return $response;
     }
 
@@ -948,7 +1485,7 @@ class ZeroBounce
      * @throws ZBMissingApiKeyException
      * @throws ZBMissingParameterException
      */
-    public function findEmailFormat($domain, $companyName = null)
+    public function findEmailFormat($domain, $companyName = null, $usePost = false)
     {
         $this->checkValidApiKey();
 
@@ -957,9 +1494,7 @@ class ZeroBounce
         }
 
         $response = new ZBFindEmailFormatResponse();
-        $args = [
-            'api_key' => $this->apiKey,
-        ];
+        $args = [];
 
         // The API doesn't accept both
         if ($domain) {
@@ -968,9 +1503,7 @@ class ZeroBounce
             $args['company_name'] = $companyName;
         }
 
-        $query = http_build_query($args);
-
-        $this->request(self::$ApiBaseUrl . "/guessformat?$query", $response);
+        $this->getOrPostForm($this->apiBaseUrl . "/guessformat", $args, $response, $usePost);
         return $response;
     }
 }

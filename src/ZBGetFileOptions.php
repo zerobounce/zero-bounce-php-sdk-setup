@@ -17,4 +17,13 @@ class ZBGetFileOptions
      * @var bool|null When not null, sent as activity_data (validation bulk only).
      */
     public $activityData;
+
+    /**
+     * @var bool Write the result to disk in chunks instead of holding it in
+     * memory. The download lands in a temporary file beside $downloadPath and
+     * is moved into place only once it is complete, so a failed download
+     * leaves nothing behind. Off by default, because the non-streaming path
+     * returns the body the SDK already has.
+     */
+    public $stream = false;
 }
