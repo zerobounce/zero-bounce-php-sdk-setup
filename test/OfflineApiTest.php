@@ -5,6 +5,7 @@ namespace ZeroBounce\Tests;
 use DateTime;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
+use ZeroBounce\SDK\ZBApiException;
 use ZeroBounce\SDK\ZBBaseUrl;
 use ZeroBounce\SDK\ZBDownloadType;
 use ZeroBounce\SDK\ZBException;
@@ -146,7 +147,8 @@ class OfflineApiTest extends TestCase
         $options->verifyPlus = true;
         $client->validateBatch(array('a@example.com'), $options);
         $request = $this->only($api);
-        $this->assertStringContainsString('"timeout":30', $request['fields']['__json']);
+        // LIVE: the API requires timeout as a JSON string.
+        $this->assertStringContainsString('"timeout":"30"', $request['fields']['__json']);
         $this->assertStringContainsString('"activity_data":false', $request['fields']['__json']);
         $this->assertStringContainsString('"verify_plus":true', $request['fields']['__json']);
         $this->assertStringNotContainsString('"activity_data":"false"', $request['fields']['__json']);
@@ -436,13 +438,11 @@ class OfflineApiTest extends TestCase
         $this->assertSame('p3-key', $result['fields']['api_key']);
 
         $api->clear();
-        $client->sendEvaluatedFile($this->csv);
-        $this->assertSame('/v2/send-evaluated-file/', $this->only($api)['path']);
-        $api->clear();
-        $client->sendEvaluatedFileStream("a@b.com\n", 'evaluated.csv');
+        // LIVE: this takes the evaluator's file_id as a form field, not an upload.
+        $client->sendEvaluatedFile('eval-file-1');
         $evaluated = $this->only($api);
         $this->assertSame('/v2/send-evaluated-file/', $evaluated['path']);
-        $this->assertSame('evaluated.csv', $evaluated['fields']['__filename']);
+        $this->assertSame('eval-file-1', $evaluated['fields']['file_id']);
 
         $api->clear();
         $added = $client->addFilter('exclude', 'domain', '0');
@@ -964,7 +964,9 @@ return true;
         $this->assertSame('GET', $providers['method']);
         $this->assertSame('bulkapi.zerobounce.net', $providers['host']);
         $this->assertSame('/api/ipt/providers', $providers['path']);
-        $this->assertSame('ipt-key', $providers['fields']['api_key']);
+        // The documented auth for this API is a Bearer header, not a query key.
+        $this->assertSame('Bearer ipt-key', $providers['authorization']);
+        $this->assertArrayNotHasKey('api_key', $providers['fields']);
 
         $api->clear();
         $client->getInboxPlacementTestTypes();
@@ -1018,7 +1020,8 @@ return true;
         $client = $this->client($api, 'ipt-key');
 
         $client->listInboxPlacementTests();
-        $this->assertSame(array('api_key'), array_keys($this->only($api)['fields']));
+        // The key travels in the Bearer header, so an unfiltered list sends no query.
+        $this->assertSame(array(), array_keys($this->only($api)['fields']));
 
         $api->clear();
         $client->listInboxPlacementTests('finished', '2026-01-01', '2026-02-01', 2, 50);
@@ -1100,15 +1103,16 @@ return true;
         $api = new FakeApi();
         $client = $this->client($api, 'bulk-key');
 
-        $client->emailFinderS3File(array('file_name' => 'inbox.csv', 'has_header_row' => false));
+        $client->emailFinderS3File(array('file_name' => 'inbox.csv', 'has_header_row' => false, 'return_url' => 'https://example.com/done'));
         $finder = $this->only($api);
         $this->assertSame('POST', $finder['method']);
         $this->assertSame('bulkapi.zerobounce.net', $finder['host']);
         $this->assertSame('/emailFinderS3file', $finder['path']);
         $this->assertSame('inbox.csv', $finder['fields']['file_name']);
         $this->assertSame('false', $finder['fields']['has_header_row']);
+        // LIVE: return_url is required; remove_duplicates stays optional.
+        $this->assertSame('https://example.com/done', $finder['fields']['return_url']);
         $this->assertArrayNotHasKey('remove_duplicates', $finder['fields']);
-        $this->assertArrayNotHasKey('return_url', $finder['fields']);
 
         $api->clear();
         $client->domainSearchS3File(array(
@@ -1123,23 +1127,41 @@ return true;
         $this->assertSame('false', $search['fields']['remove_duplicates']);
         $this->assertSame('https://example.com/done', $search['fields']['return_url']);
 
-        // validateSFTPfile is the one job whose file_name the docs mark optional.
+        // LIVE: validateSFTPfile needs file_name too, although the docs mark it
+        // optional ("file_name: This field is required").
         $api->clear();
-        $client->validateSFTPFile(array('has_header_row' => true));
+        $client->validateSFTPFile(array(
+            'file_name' => 'my_file.txt',
+            'has_header_row' => true,
+            'return_url' => 'https://example.com/done',
+        ));
         $sftp = $this->only($api);
         $this->assertSame('/validateSFTPfile', $sftp['path']);
-        $this->assertArrayNotHasKey('file_name', $sftp['fields']);
+        $this->assertSame('my_file.txt', $sftp['fields']['file_name']);
+
+        // A job without file_name or return_url never reaches the API.
+        foreach (array(
+            array('has_header_row' => true, 'return_url' => 'https://example.com/done'),
+            array('file_name' => 'f.csv', 'has_header_row' => true),
+        ) as $incomplete) {
+            try {
+                $client->validateSFTPFile($incomplete);
+                $this->fail('expected a rejection');
+            } catch (ZBMissingParameterException $e) {
+                $this->assertNotSame('', $e->getMessage());
+            }
+        }
 
         $api->clear();
-        $client->scoreSFTPFile(array('file_name' => 'my_file.txt', 'has_header_row' => true));
+        $client->scoreSFTPFile(array('file_name' => 'my_file.txt', 'has_header_row' => true, 'return_url' => 'https://example.com/done'));
         $this->assertSame('/scoreSFTPfile', $this->only($api)['path']);
 
         $api->clear();
-        $client->emailFinderSFTPFile(array('file_name' => 'my_file.txt', 'has_header_row' => true));
+        $client->emailFinderSFTPFile(array('file_name' => 'my_file.txt', 'has_header_row' => true, 'return_url' => 'https://example.com/done'));
         $this->assertSame('/emailFinderSFTPfile', $this->only($api)['path']);
 
         $api->clear();
-        $client->domainSearchSFTPFile(array('file_name' => 'my_file.txt', 'has_header_row' => true));
+        $client->domainSearchSFTPFile(array('file_name' => 'my_file.txt', 'has_header_row' => true, 'return_url' => 'https://example.com/done'));
         $this->assertSame('/domainSearchSFTPfile', $this->only($api)['path']);
 
         // exportSFTPfile takes export_path, not the export_bucket exportS3File uses.
@@ -1161,9 +1183,9 @@ return true;
         $client = $this->client($api, 'bulk-key');
 
         $cases = array(
-            function () use ($client) { $client->emailFinderS3File(array('has_header_row' => true)); },
+            function () use ($client) { $client->emailFinderS3File(array('has_header_row' => true, 'return_url' => 'https://example.com/done')); },
             function () use ($client) { $client->domainSearchS3File(array('file_name' => 'f.csv')); },
-            function () use ($client) { $client->scoreSFTPFile(array('file_name' => '  ', 'has_header_row' => true)); },
+            function () use ($client) { $client->scoreSFTPFile(array('file_name' => '  ', 'has_header_row' => true, 'return_url' => 'https://example.com/done')); },
             function () use ($client) { $client->domainSearchSFTPFile(array('file_name' => 'f.csv')); },
             function () use ($client) { $client->exportSFTPFile(''); },
             function () use ($client) { $client->exportSFTPFile('fid', '  '); },
@@ -1178,6 +1200,20 @@ return true;
             $this->assertTrue($threw);
         }
         $this->assertSame(0, $api->count());
+    }
+
+    public function testSuccessFalseOnAnHttp200IsAnError()
+    {
+        // LIVE: the API answers an unknown file id, and an unknown
+        // list-evaluator id, with an HTTP 200 whose body says success: false.
+        $api = new FakeApi();
+        $client = $this->client($api, 'success-false-key');
+        $error = $this->capture(function () use ($client) {
+            $client->fileStatus('0d1b7a4e-1111-2222-3333-444455556666');
+        });
+        $this->assertSame('File cannot be found.', $error->getMessage());
+        $this->assertInstanceOf(ZBApiException::class, $error);
+        $this->assertSame(200, $error->getStatusCode());
     }
 
     private function client(FakeApi $api, $key)

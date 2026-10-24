@@ -43,6 +43,17 @@ class FakeApi
             $fields = array_merge($fields, $this->fieldsFromBody($body, $contentType));
         }
         $apiKey = isset($fields['api_key']) ? (string)$fields['api_key'] : '';
+        // The Inbox Placement Tester authenticates with a Bearer header rather
+        // than an api_key parameter, so the key can arrive either way.
+        $authorization = '';
+        foreach ($headers as $header) {
+            if (stripos($header, 'Authorization:') === 0) {
+                $authorization = trim(substr($header, strlen('Authorization:')));
+            }
+        }
+        if ($apiKey === '' && stripos($authorization, 'Bearer ') === 0) {
+            $apiKey = trim(substr($authorization, strlen('Bearer ')));
+        }
         $record = array(
             'method' => strtoupper($method),
             'url' => $url,
@@ -58,6 +69,7 @@ class FakeApi
                     : null
             ),
             'api_key' => $apiKey,
+            'authorization' => $authorization,
             'timeout' => $timeout,
         );
         $this->records[] = $record;
@@ -149,6 +161,15 @@ class FakeApi
             return $this->respond(200, 'application/json', $body);
         }
 
+        if (strpos($key, 'success-false-') === 0) {
+            // LIVE: an unknown file id comes back as an HTTP 200 whose body
+            // says the call failed.
+            return $this->respond(
+                200,
+                'application/json',
+                '{"success":false,"message":"File cannot be found."}'
+            );
+        }
         $quoted = json_encode($key);
         if (strpos($path, 'getfile') !== false) {
             return $this->respond(200, 'text/csv', "email\n" . $key . "@example.com\n");

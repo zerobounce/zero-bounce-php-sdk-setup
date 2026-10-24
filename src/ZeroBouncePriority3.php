@@ -119,14 +119,28 @@ trait ZeroBouncePriority3
         return $holder->data;
     }
 
-    public function sendEvaluatedFile($filepath)
+    /**
+     * Submit a finished evaluation for validation. POST /v2/send-evaluated-file/
+     *
+     * LIVE: this takes the list evaluator's file_id as a form field, not a file
+     * upload as the docs describe — an upload is rejected with
+     * "file_id: This field is required". It returns a new validation job's
+     * file_id, which answers "File cannot be found" for a short while after it
+     * is accepted.
+     *
+     * @param string $fileId the file_id returned by the list evaluator
+     * @return ZBSendFileResponse
+     * @throws ZBException
+     */
+    public function sendEvaluatedFile($fileId)
     {
-        return $this->sendBulkRootMultipartFile(self::BulkApiBaseUrl . '/send-evaluated-file/', $filepath, array());
-    }
-
-    public function sendEvaluatedFileStream($streamContent, $fileName)
-    {
-        return $this->sendBulkRootMultipartContent(self::BulkApiBaseUrl . '/send-evaluated-file/', $fileName, $streamContent, array());
+        if ($fileId === null || trim((string)$fileId) === '') {
+            throw new ZBMissingParameterException('file_id is required');
+        }
+        return $this->postBulkRootFormAt(
+            self::BulkApiBaseUrl . '/send-evaluated-file/',
+            array('file_id' => (string)$fileId)
+        );
     }
 
     /**
@@ -259,9 +273,23 @@ trait ZeroBouncePriority3
 
     private function postBulkRootForm($path, array $fields)
     {
+        return $this->postBulkRootFormAt(self::BulkApiRootUrl . $path, $fields);
+    }
+
+    /**
+     * Post a form to a fully built URL, for the endpoints that are not on the
+     * bulkapi root (send-evaluated-file is on the /v2 base).
+     *
+     * @param string $url
+     * @param array<string, mixed> $fields
+     * @return ZBSendFileResponse
+     * @throws ZBException
+     */
+    private function postBulkRootFormAt($url, array $fields)
+    {
         $this->checkValidApiKey();
         $rsp = new ZBSendFileResponse();
-        $this->formPost(self::BulkApiRootUrl . $path, $fields, $rsp);
+        $this->formPost($url, $fields, $rsp);
         return $rsp;
     }
 
@@ -274,36 +302,39 @@ trait ZeroBouncePriority3
 
     /**
      * Shared shape for the documented S3 and SFTP file jobs on the bulkapi root.
-     * Only fields the caller set are sent; booleans go as the strings true/false.
+     * Booleans go on the wire as the strings true/false.
      *
-     * @param bool $fileNameRequired false for validateSFTPfile, whose file_name is optional
+     * LIVE: file_name and return_url are required by every job, including
+     * validateSFTPfile, although the docs mark them optional. Without them the
+     * API answers "file_name: This field is required" and "Provided return URL
+     * is not permitted: None". Both are checked here, so no request goes out
+     * that the API would reject. remove_duplicates stays optional.
+     *
      * @return ZBSendFileResponse
      * @throws ZBException
      */
-    private function bulkRootFileJob($path, array $options, $fileNameRequired = true)
+    private function bulkRootFileJob($path, array $options)
     {
         $fileName = isset($options['file_name']) ? $options['file_name'] : null;
-        if ($fileNameRequired && ($fileName === null || trim((string)$fileName) === '')) {
-            throw new ZBMissingParameterException('file_name is required');
-        }
-        if ($fileName !== null && trim((string)$fileName) === '') {
+        if ($fileName === null || trim((string)$fileName) === '') {
             throw new ZBMissingParameterException('file_name is required');
         }
         if (!isset($options['has_header_row'])) {
             throw new ZBMissingParameterException('has_header_row is required');
         }
-
-        $fields = array();
-        if ($fileName !== null) {
-            $fields['file_name'] = $fileName;
+        $returnUrl = isset($options['return_url']) ? $options['return_url'] : null;
+        if ($returnUrl === null || trim((string)$returnUrl) === '') {
+            throw new ZBMissingParameterException(
+                'return_url is required: the API rejects a job without it'
+            );
         }
+
+        $fields = array('file_name' => $fileName);
         $this->appendOptionalBool($fields, 'has_header_row', $options['has_header_row']);
         if (isset($options['remove_duplicates'])) {
             $this->appendOptionalBool($fields, 'remove_duplicates', $options['remove_duplicates']);
         }
-        if (isset($options['return_url'])) {
-            $fields['return_url'] = $options['return_url'];
-        }
+        $fields['return_url'] = $returnUrl;
         return $this->postBulkRootForm($path, $fields);
     }
 
@@ -342,7 +373,7 @@ trait ZeroBouncePriority3
      */
     public function validateSFTPFile(array $options)
     {
-        return $this->bulkRootFileJob('/validateSFTPfile', $options, false);
+        return $this->bulkRootFileJob('/validateSFTPfile', $options);
     }
 
     /**

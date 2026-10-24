@@ -225,10 +225,14 @@ trait ZeroBounceInboxPlacement
     private function iptRequest($method, $path, array $query = array(), $body = null)
     {
         $this->checkValidApiKey();
-        $query = array_merge(array('api_key' => $this->apiKey), $query);
-        $url = $this->inboxPlacementBaseUrl . $path . '?' . http_build_query($query);
+        $url = $this->inboxPlacementBaseUrl . $path;
+        if (!empty($query)) {
+            $url .= '?' . http_build_query($query);
+        }
 
-        $headers = array();
+        // The documented auth for this API is a Bearer header, not an api_key
+        // query parameter.
+        $headers = array('Authorization: Bearer ' . $this->apiKey);
         $content = null;
         if ($body !== null) {
             $headers[] = 'Content-Type: application/json';

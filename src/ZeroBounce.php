@@ -199,7 +199,11 @@ class ZeroBounce
         $params = ['email_batch' => $params];
         if ($options instanceof ZBValidateOptions) {
             if ($options->timeout !== null) {
-                $params['timeout'] = $options->timeout;
+                // LIVE: the API requires timeout as a JSON string ("30"). As a
+                // number it rejects the whole batch with the account-level
+                // "Invalid API Key or your account ran out of credits" error.
+                // activity_data and verify_plus stay JSON booleans.
+                $params['timeout'] = (string)$options->timeout;
             }
             if ($options->activityData !== null) {
                 $params['activity_data'] = $options->activityData;
@@ -862,40 +866,28 @@ class ZeroBounce
      */
     protected function executeHttp($method, $url, array $headers = array(), $body = null, $timeout = 120)
     {
-        $method = strtoupper($method);
-        if ($method === 'GET' && $body === null) {
-            $contextOptions = array(
-                'method' => 'GET',
-                'ignore_errors' => true,
-                'timeout' => $timeout,
-                'follow_location' => 0,
-                'max_redirects' => 0,
-            );
-            if ($headers) {
-                $contextOptions['header'] = implode("\r\n", $headers);
-            }
-            $context = stream_context_create(array('http' => $contextOptions));
-            $responseBody = @file_get_contents($url, false, $context);
-            if ($responseBody === false) {
-                $responseBody = '';
-            }
-            $responseHeaders = $this->lastHttpHeaders();
-            return array(
-                'status' => (int)$this->getHttpCode($responseHeaders),
-                'headers' => is_array($responseHeaders) ? $responseHeaders : array(),
-                'body' => $responseBody,
-            );
-        }
-
+        // Every verb goes through curl. The http:// stream wrapper reports its
+        // status only through PHP's predefined response-header variable, which
+        // the engine exposes to the calling function alone and 8.5 deprecates;
+        // read from anywhere else it is always empty, so an error status was
+        // silently recorded as 0 and a 404 looked like a successful response.
+        $responseHeaders = array();
         $curl = curl_init();
         $curlOpts = array(
             CURLOPT_URL => $url,
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_HEADER => true,
+            CURLOPT_HEADER => false,
             CURLOPT_TIMEOUT => $timeout,
             CURLOPT_FOLLOWLOCATION => false,
             CURLOPT_MAXREDIRS => 0,
-            CURLOPT_CUSTOMREQUEST => $method,
+            CURLOPT_CUSTOMREQUEST => strtoupper($method),
+            CURLOPT_HEADERFUNCTION => function ($handle, $header) use (&$responseHeaders) {
+                $line = trim($header);
+                if ($line !== '') {
+                    $responseHeaders[] = $line;
+                }
+                return strlen($header);
+            },
         );
         if ($headers) {
             $curlOpts[CURLOPT_HTTPHEADER] = $headers;
@@ -906,42 +898,15 @@ class ZeroBounce
         curl_setopt_array($curl, $curlOpts);
         $raw = curl_exec($curl);
         $status = (int)curl_getinfo($curl, CURLINFO_HTTP_CODE);
-        $headerSize = (int)curl_getinfo($curl, CURLINFO_HEADER_SIZE);
         curl_close($curl);
         if ($raw === false || $raw === null) {
-            return array('status' => $status, 'headers' => array(), 'body' => '');
-        }
-        $rawHeaders = substr($raw, 0, $headerSize);
-        $responseBody = substr($raw, $headerSize);
-        $headerLines = preg_split("/\r\n|\n|\r/", trim((string)$rawHeaders));
-        if (!is_array($headerLines)) {
-            $headerLines = array();
+            return array('status' => $status, 'headers' => $responseHeaders, 'body' => '');
         }
         return array(
             'status' => $status,
-            'headers' => $headerLines,
-            'body' => $responseBody === false ? '' : $responseBody,
+            'headers' => $responseHeaders,
+            'body' => (string)$raw,
         );
-    }
-
-    /**
-     * @return string[]
-     */
-    private function lastHttpHeaders()
-    {
-        if (function_exists('http_get_last_response_headers')) {
-            // @see https://wiki.php.net/rfc/deprecations_php_8_5#deprecate_the_http_response_header_predefined_variable
-            $fromFn = http_get_last_response_headers();
-            if (is_array($fromFn)) {
-                return $fromFn;
-            }
-            return array();
-        }
-        if (\PHP_VERSION_ID < 80500) {
-            $headers = require __DIR__ . '/ZBLegacyHttpResponseHeaders.php';
-            return is_array($headers) ? $headers : array();
-        }
-        return array();
     }
 
     protected function request($url, $response)
@@ -951,6 +916,10 @@ class ZeroBounce
             $json = $this->readJsonBody($result);
             $response->Deserialize($json);
             return (int)$result['status'];
+        } catch (ZBApiException $e) {
+            // Rebuilt rather than rethrown so the message is redacted, but the
+            // HTTP status survives for callers that switch on it.
+            throw new ZBApiException($this->redactApiKey($e->getMessage()), $e->getStatusCode());
         } catch (Exception $e) {
             throw new ZBException($this->redactApiKey($e->getMessage()));
         }
@@ -1023,6 +992,7 @@ class ZeroBounce
             throw new ZBException('ZeroBounce returned a response that is not valid JSON.');
         }
         ZBHttpError::throwIfBareAccountError($decoded);
+        ZBHttpError::throwIfSuccessIsFalse($decoded, $status, $body, $headers);
         return $body;
     }
 
@@ -1122,16 +1092,6 @@ class ZeroBounce
     private function checkValidApiKey()
     {
         if (!$this->apiKey) throw new ZBMissingApiKeyException("ZeroBounce SDK is not initialized. Please call ZeroBounce::Instance()->initialize(\"API_KEY\") first");
-    }
-
-    private function getHttpCode($httpResponseHeader)
-    {
-        if (is_array($httpResponseHeader) && !empty($httpResponseHeader)) {
-            $parts = explode(' ', $httpResponseHeader[0]);
-            if (count($parts) > 1) //HTTP/1.0 <code> <text>
-                return intval($parts[1]); //Get code
-        }
-        return 0;
     }
 
     private function build_data_files($boundary, $fields, $files)
