@@ -10,8 +10,9 @@
   "license": "MIT",
   "scripts": {
     "dumpautoload": "composer dumpautoload -o",
-    "lint": "find src test -name '*.php' -exec php -l {} \\;",
-    "test": "phpunit --colors=always"
+    "lint": "find src test live -name '*.php' -exec php -l {} \\;",
+    "test": "phpunit --colors=always",
+    "test:live": "php live/live_api.php"
   },
   "authors": [
     {
