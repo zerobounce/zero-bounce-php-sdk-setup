@@ -106,6 +106,43 @@ class ZBHttpError
         throw new ZBException(self::stripPrefix(trim($decoded['error'])));
     }
 
+    /**
+     * {"success": false} on an HTTP 200 is a failure, not a result. The live
+     * API answers an unknown file id and an unknown list-evaluator id that way,
+     * with a 200.
+     *
+     * @param mixed $decoded the parsed body
+     * @param int $status
+     * @param string $body
+     * @param string[] $headers
+     * @throws ZBApiException
+     */
+    public static function throwIfSuccessIsFalse($decoded, $status, $body, array $headers = array())
+    {
+        if (!is_array($decoded) || self::isList($decoded) || !array_key_exists('success', $decoded)) {
+            return;
+        }
+        if (!self::isFalsySuccess($decoded['success'])) {
+            return;
+        }
+        throw new ZBApiException(self::message($status, $body, $headers), $status);
+    }
+
+    /**
+     * Whether a "success" field means failure. The API sends it as a JSON
+     * false, "false" or "False" depending on the endpoint.
+     *
+     * @param mixed $value
+     * @return bool
+     */
+    private static function isFalsySuccess($value)
+    {
+        if (is_bool($value)) {
+            return !$value;
+        }
+        return is_string($value) && strcasecmp(trim($value), 'false') === 0;
+    }
+
     public static function stripPrefix($message)
     {
         $message = trim((string)$message);
