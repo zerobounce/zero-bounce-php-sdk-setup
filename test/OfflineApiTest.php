@@ -1216,6 +1216,119 @@ return true;
         $this->assertSame(200, $error->getStatusCode());
     }
 
+    public function testEveryDocumentedEndpointAlsoWorksOverPost()
+    {
+        $api = new FakeApi();
+        $client = $this->client($api, 'post-key');
+        $calls = array(
+            'getcredits' => function () use ($client) { $client->getCredits(true); },
+            'getapiusage' => function () use ($client) {
+                $client->getApiUsage(new DateTime('2026-01-01'), new DateTime('2026-01-08'), true);
+            },
+            'activity' => function () use ($client) { $client->getActivity('a@b.com', true); },
+            'scoring' => function () use ($client) { $client->scoreEmail('a@b.com', true); },
+            'guessformat' => function () use ($client) {
+                $client->findEmailFormat('example.com', null, true);
+            },
+        );
+        foreach ($calls as $path => $call) {
+            $call();
+            $request = $this->only($api);
+            $this->assertSame('POST', $request['method'], $path);
+            $this->assertStringEndsWith('/' . $path, $request['path']);
+            $this->assertSame('application/x-www-form-urlencoded', $request['content_type']);
+            $this->assertSame('post-key', $request['fields']['api_key']);
+            // The key belongs in the body, not in a query string that gets logged.
+            $this->assertSame('', (string)parse_url($request['url'], PHP_URL_QUERY));
+        }
+
+        // The same calls over GET put everything in the query string.
+        $client->getCredits();
+        $this->assertSame('GET', $this->only($api)['method']);
+    }
+
+    public function testFindEmailOverPostSendsTheSameFields()
+    {
+        $api = new FakeApi();
+        $client = $this->client($api, 'post-key');
+        $client->findEmail('example.com', 'Ada', null, null, 'Lovelace', true);
+        $request = $this->only($api);
+        $this->assertSame('POST', $request['method']);
+        $this->assertSame('Ada', $request['fields']['first_name']);
+        $this->assertSame('Lovelace', $request['fields']['last_name']);
+        $this->assertSame('example.com', $request['fields']['domain']);
+    }
+
+    public function testGetApiUsageFormatsItsDatesForTheApi()
+    {
+        $api = new FakeApi();
+        $client = $this->client($api, 'usage-key');
+        // A DateTime cast to a string becomes the whole locale-formatted
+        // stamp, which the API rejects and Cloudflare can block outright.
+        $client->getApiUsage(new DateTime('2026-01-02 15:04:05'), '2026-01-09');
+        $fields = $this->only($api)['fields'];
+        $this->assertSame('2026-01-02', $fields['start_date']);
+        $this->assertSame('2026-01-09', $fields['end_date']);
+
+        $this->capture(function () use ($client) {
+            $client->getApiUsage('01/02/2026', '2026-01-09');
+        });
+        $this->assertSame(array(), $api->take());
+    }
+
+    public function testAKeyWithWhitespaceOrControlCharactersIsRejected()
+    {
+        foreach (array(' key ', "key\n", "key\tx", "key\x00") as $bad) {
+            $client = new OfflineClient(new FakeApi());
+            $error = $this->capture(function () use ($client, $bad) { $client->initialize($bad); });
+            $this->assertStringContainsString('whitespace', $error->getMessage());
+        }
+    }
+
+    public function testBaseUrlsMustBeHttps()
+    {
+        $client = new OfflineClient(new FakeApi());
+        $error = $this->capture(function () use ($client) {
+            $client->initialize('key', null, 'http://example.com/listevaluator');
+        });
+        $this->assertStringContainsString('https', $error->getMessage());
+    }
+
+    public function testPathIdsCannotTraverseOutOfTheirEndpoint()
+    {
+        $api = new FakeApi();
+        $client = $this->client($api, 'path-key');
+        foreach (array('.', '..', ' .. ') as $bad) {
+            $this->capture(function () use ($client, $bad) { $client->getListEvaluatorResult($bad); });
+            $this->capture(function () use ($client, $bad) { $client->getInboxPlacementTest($bad); });
+        }
+        $this->assertSame(array(), $api->take());
+    }
+
+    public function testARegionalBaseUrlWarnsOnceWhenItMeetsTheGlobalBulkHost()
+    {
+        $api = new FakeApi();
+        $client = new OfflineClient($api);
+        $client->initialize('eu-key', ZBBaseUrl::API_EU_URL);
+
+        $warnings = array();
+        set_error_handler(function ($level, $message) use (&$warnings) {
+            $warnings[] = $message;
+            return true;
+        }, E_USER_WARNING);
+        try {
+            $client->fileStatus('f1');
+            $client->fileStatus('f2');
+            $client->getCredits();
+        } finally {
+            restore_error_handler();
+        }
+
+        $this->assertCount(1, $warnings, 'the mismatch is reported once per client');
+        $this->assertStringContainsString('EU', $warnings[0]);
+        $this->assertStringContainsString('bulkapi.zerobounce.net', $warnings[0]);
+    }
+
     private function client(FakeApi $api, $key)
     {
         $client = new OfflineClient($api);

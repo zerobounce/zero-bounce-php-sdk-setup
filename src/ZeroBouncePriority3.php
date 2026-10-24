@@ -113,7 +113,8 @@ trait ZeroBouncePriority3
     {
         $this->checkValidApiKey();
         $this->requireProvided($fileId, 'fileId is required');
-        $url = $this->listEvaluatorBaseUrl . '/' . rawurlencode($fileId) . '/?api_key=' . urlencode($this->apiKey);
+        $url = $this->listEvaluatorBaseUrl . '/' . self::pathSegment($fileId, 'fileId')
+            . '/?api_key=' . urlencode($this->apiKey);
         $holder = new ZBRawJsonResponse();
         $this->request($url, $holder);
         return $holder->data;

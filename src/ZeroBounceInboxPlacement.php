@@ -208,10 +208,7 @@ trait ZeroBounceInboxPlacement
      */
     private function iptTestPath($testId)
     {
-        if ($testId === null || trim((string)$testId) === '') {
-            throw new ZBMissingParameterException("testId is required");
-        }
-        return rawurlencode(trim((string)$testId));
+        return self::pathSegment($testId, 'testId');
     }
 
     /**

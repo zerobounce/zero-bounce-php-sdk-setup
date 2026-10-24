@@ -163,6 +163,16 @@ function validationFree()
         }
     });
 
+    test('LIVE: the documented endpoints answer the same over POST as over GET', function () use ($client) {
+        // The API takes api_key and the parameters form-encoded in the body on
+        // these endpoints, which keeps the key out of request logs.
+        $end = new DateTime();
+        $start = (new DateTime())->modify('-7 days');
+        check((int)$client->getCredits(true)->credits >= -1, 'no credits over POST');
+        check($client->getApiUsage($start, $end, true)->total !== null, 'no usage total over POST');
+        check($client->findEmailFormat('example.com', null, true) !== null, 'no format over POST');
+    });
+
     test('an unknown file id is a short, clean error', function () use ($client) {
         $message = expectFailure(function () use ($client) {
             $client->fileStatus(UNKNOWN_ID);

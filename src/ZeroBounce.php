@@ -3,6 +3,7 @@
 namespace ZeroBounce\SDK;
 
 use DateTime;
+use DateTimeInterface;
 use Exception;
 
 /**
@@ -61,6 +62,15 @@ class ZeroBounce
     
     private $apiKey = null;
 
+    /** @var string|null "EU" or "US" when apiBaseUrl is a regional host. */
+    private $region = null;
+
+    /** @var bool The regional/bulk-host mismatch is reported once per client. */
+    private $bulkRegionWarned = false;
+
+    /** ZeroBounce documents no regional host for anything under this one. */
+    const BulkHost = 'bulkapi.zerobounce.net';
+
     /**
      * @param string $apiKey
      */
@@ -70,14 +80,107 @@ class ZeroBounce
         $listEvaluatorBaseUrl = null,
         $inboxPlacementBaseUrl = null
     ) {
-        $this->apiKey = $apiKey;
-        $this->apiBaseUrl = ZBBaseUrl::getByValue($baseUrl);
+        $this->apiKey = self::checkedApiKey($apiKey);
+        $this->apiBaseUrl = self::requireHttpsUrl(ZBBaseUrl::getByValue($baseUrl), 'baseUrl');
         if ($listEvaluatorBaseUrl !== null && $listEvaluatorBaseUrl !== '') {
-            $this->listEvaluatorBaseUrl = rtrim($listEvaluatorBaseUrl, '/');
+            $this->listEvaluatorBaseUrl = rtrim(
+                self::requireHttpsUrl($listEvaluatorBaseUrl, 'listEvaluatorBaseUrl'), '/'
+            );
         }
         if ($inboxPlacementBaseUrl !== null && $inboxPlacementBaseUrl !== '') {
-            $this->inboxPlacementBaseUrl = rtrim($inboxPlacementBaseUrl, '/');
+            $this->inboxPlacementBaseUrl = rtrim(
+                self::requireHttpsUrl($inboxPlacementBaseUrl, 'inboxPlacementBaseUrl'), '/'
+            );
         }
+        $host = strtolower((string)parse_url($this->apiBaseUrl, PHP_URL_HOST));
+        $regions = array('api-eu.zerobounce.net' => 'EU', 'api-us.zerobounce.net' => 'US');
+        $this->region = isset($regions[$host]) ? $regions[$host] : null;
+        $this->bulkRegionWarned = false;
+    }
+
+    /**
+     * The key, or a clear error. A key with surrounding whitespace or control
+     * characters would otherwise be quoted, unredacted, in a transport error.
+     *
+     * @param string $apiKey
+     * @return string
+     * @throws ZBException
+     */
+    protected static function checkedApiKey($apiKey)
+    {
+        // An empty key stays deferred to checkValidApiKey(), which names the
+        // call that initializes the client.
+        if ($apiKey === null || trim((string)$apiKey) === '') {
+            return $apiKey;
+        }
+        if ($apiKey !== trim($apiKey) || preg_match('/[\x00-\x1f\x7f]/', $apiKey)) {
+            throw new ZBMissingParameterException(
+                'api_key has surrounding whitespace or control characters'
+            );
+        }
+        return $apiKey;
+    }
+
+    /**
+     * @param string $url
+     * @param string $name
+     * @return string
+     * @throws ZBMissingParameterException
+     */
+    protected static function requireHttpsUrl($url, $name)
+    {
+        if (stripos((string)$url, 'https://') !== 0) {
+            throw new ZBMissingParameterException($name . ' must be an https:// URL');
+        }
+        return $url;
+    }
+
+    /**
+     * One path segment, or a clear error. A segment of "." or ".." would walk
+     * the request up out of the endpoint it was meant for.
+     *
+     * @param string|int $value
+     * @param string $name
+     * @return string url-encoded
+     * @throws ZBMissingParameterException
+     */
+    protected static function pathSegment($value, $name)
+    {
+        $trimmed = trim((string)$value);
+        if ($trimmed === '') {
+            throw new ZBMissingParameterException($name . ' is required');
+        }
+        // Everything else, slashes included, is percent-encoded and stays
+        // inside the segment; "." and ".." would walk the request elsewhere.
+        if ($trimmed === '.' || $trimmed === '..') {
+            throw new ZBMissingParameterException($name . ' is invalid');
+        }
+        return rawurlencode($trimmed);
+    }
+
+    /**
+     * The URL, after checking it is https and warning once when a regional
+     * base URL is paired with the single global bulk host.
+     *
+     * @param string $url
+     * @return string
+     * @throws ZBMissingParameterException
+     */
+    protected function checkedUrl($url)
+    {
+        self::requireHttpsUrl($url, 'url');
+        $host = strtolower((string)parse_url($url, PHP_URL_HOST));
+        if (!$this->bulkRegionWarned && $this->region !== null && $host === self::BulkHost) {
+            $this->bulkRegionWarned = true;
+            trigger_error(
+                'baseUrl is the ' . $this->region . ' API, but this request goes to ' . self::BulkHost
+                . ': ZeroBounce documents no regional host for bulk files, scoring files, email finder'
+                . ' and domain search files, the list evaluator, S3/SFTP or the Inbox Placement Tester.'
+                . ' Pass the matching base URLs to initialize() if ZeroBounce gave you regional ones.',
+                E_USER_WARNING
+            );
+        }
+        return $url;
     }
 
     /**
@@ -225,11 +328,11 @@ class ZeroBounce
      * @throws ZBMissingApiKeyException
      * @throws ZBException
      */
-    public function getCredits()
+    public function getCredits($usePost = false)
     {
         $this->checkValidApiKey();
         $response = new ZBGetCreditsResponse();
-        $this->request($this->apiBaseUrl . "/getcredits?api_key=" . urlencode($this->apiKey), $response);
+        $this->getOrPostForm($this->apiBaseUrl . "/getcredits", array(), $response, $usePost);
         return $response;
     }
 
@@ -240,7 +343,7 @@ class ZeroBounce
      * @throws ZBMissingApiKeyException
      * @throws ZBException
      */
-    public function getApiUsage($startDate, $endDate)
+    public function getApiUsage($startDate, $endDate, $usePost = false)
     {
         $this->checkValidApiKey();
 
@@ -248,12 +351,38 @@ class ZeroBounce
         if (!$endDate) throw new ZBMissingParameterException("endDate is required");
 
         $response = new ZBApiUsageResponse();
-        $format = "Y-m-d";
-        $this->request($this->apiBaseUrl . "/getapiusage?api_key=" . urlencode($this->apiKey)
-            . "&start_date=" . $startDate->format($format)
-            . "&end_date=" . $endDate->format($format),
-            $response);
+        $this->getOrPostForm(
+            $this->apiBaseUrl . "/getapiusage",
+            array(
+                'start_date' => self::apiDate($startDate, 'startDate'),
+                'end_date' => self::apiDate($endDate, 'endDate'),
+            ),
+            $response,
+            $usePost
+        );
         return $response;
+    }
+
+    /**
+     * A date for the API: a DateTime, or a YYYY-MM-DD string.
+     *
+     * A DateTime cast to a string becomes the whole locale-formatted stamp,
+     * which the API rejects and Cloudflare can block outright.
+     *
+     * @param DateTimeInterface|string $value
+     * @param string $name
+     * @return string
+     * @throws ZBMissingParameterException
+     */
+    protected static function apiDate($value, $name)
+    {
+        if ($value instanceof DateTimeInterface) {
+            return $value->format('Y-m-d');
+        }
+        if (is_string($value) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+            return $value;
+        }
+        throw new ZBMissingParameterException($name . ' must be a DateTime or a YYYY-MM-DD string');
     }
 
     /**
@@ -262,17 +391,16 @@ class ZeroBounce
      * @throws ZBMissingApiKeyException
      * @throws ZBException
      */
-    public function getActivity($email)
+    public function getActivity($email, $usePost = false)
     {
         $this->checkValidApiKey();
 
         if (!$email) throw new ZBMissingParameterException("email is required");
 
         $response = new ZBActivityResponse();
-        $format = "Y-m-d";
-        $this->request($this->apiBaseUrl . "/activity?api_key=" . urlencode($this->apiKey)
-            . "&email=" . urlencode($email),
-            $response);
+        $this->getOrPostForm(
+            $this->apiBaseUrl . "/activity", array('email' => $email), $response, $usePost
+        );
         return $response;
     }
 
@@ -283,15 +411,15 @@ class ZeroBounce
      * @throws ZBMissingApiKeyException
      * @throws ZBException
      */
-    public function scoreEmail($email)
+    public function scoreEmail($email, $usePost = false)
     {
         $this->checkValidApiKey();
         if (!$email) throw new ZBMissingParameterException("email is required");
 
         $response = new ZBScoreEmailResponse();
-        $this->request($this->apiBaseUrl . "/scoring?api_key=" . urlencode($this->apiKey)
-            . "&email=" . urlencode($email),
-            $response);
+        $this->getOrPostForm(
+            $this->apiBaseUrl . "/scoring", array('email' => $email), $response, $usePost
+        );
         return $response;
     }
 
@@ -497,7 +625,7 @@ class ZeroBounce
         $content = json_encode($data);
         $result = $this->executeHttp(
             'POST',
-            $url,
+            $this->checkedUrl($url),
             array('Content-Type: application/json'),
             $content,
             120
@@ -521,7 +649,7 @@ class ZeroBounce
         $content = http_build_query($data);
         $result = $this->executeHttp(
             'POST',
-            $url,
+            $this->checkedUrl($url),
             array('Content-Type: application/x-www-form-urlencoded'),
             $content,
             120
@@ -530,6 +658,26 @@ class ZeroBounce
         $json = $this->readJsonBody($result);
         $response->Deserialize($json);
         return (int)$result['status'];
+    }
+
+    /**
+     * GET with query parameters, or the documented form-encoded POST with the
+     * same parameters. Both are accepted by every endpoint that takes this.
+     *
+     * @param string $url without a query string
+     * @param array<string, mixed> $params without api_key
+     * @param ZBResponse $response
+     * @param bool $usePost
+     * @return int http statusCode
+     * @throws ZBException
+     */
+    protected function getOrPostForm($url, array $params, $response, $usePost)
+    {
+        if ($usePost) {
+            return $this->formPost($url, $params, $response);
+        }
+        $params['api_key'] = $this->apiKey;
+        return $this->request($url . '?' . http_build_query($params), $response);
     }
 
     /**
@@ -546,7 +694,7 @@ class ZeroBounce
         $post_data = $this->build_data_files($boundary, $fields, $files);
         $result = $this->executeHttp(
             'POST',
-            $url,
+            $this->checkedUrl($url),
             array(
                 "Content-Type: multipart/form-data; boundary=" . $delimiter,
                 "Content-Length: " . strlen($post_data),
@@ -690,7 +838,7 @@ class ZeroBounce
      */
     protected function getBulkFileHttp($url)
     {
-        $result = $this->executeHttp('GET', $url, array(), null, 120);
+        $result = $this->executeHttp('GET', $this->checkedUrl($url), array(), null, 120);
         if ($result['body'] === '' && (int)$result['status'] === 0) {
             throw new ZBException('No response');
         }
@@ -912,7 +1060,7 @@ class ZeroBounce
     protected function request($url, $response)
     {
         try {
-            $result = $this->executeHttp('GET', $url, array(), null, 120);
+            $result = $this->executeHttp('GET', $this->checkedUrl($url), array(), null, 120);
             $json = $this->readJsonBody($result);
             $response->Deserialize($json);
             return (int)$result['status'];
@@ -1170,7 +1318,8 @@ class ZeroBounce
      * @throws ZBMissingApiKeyException
      * @throws ZBMissingParameterException
      */
-    public function findEmail($domain, $firstName, $companyName = null, $middleName = null, $lastName = null)
+    public function findEmail(
+        $domain, $firstName, $companyName = null, $middleName = null, $lastName = null, $usePost = false)
     {
         $this->checkValidApiKey();
 
@@ -1183,10 +1332,7 @@ class ZeroBounce
         }
 
         $response = new ZBFindEmailResponse();
-        $args = [
-            'api_key' => $this->apiKey,
-            'first_name' => $firstName,
-        ];
+        $args = ['first_name' => $firstName];
 
         // The API doesn't accept both
         if ($domain) {
@@ -1198,9 +1344,7 @@ class ZeroBounce
         if ($middleName) $args['middle_name'] = $middleName;
         if ($lastName) $args['last_name'] = $lastName;
 
-        $query = http_build_query($args);
-
-        $this->request($this->apiBaseUrl . "/guessformat?$query", $response);
+        $this->getOrPostForm($this->apiBaseUrl . "/guessformat", $args, $response, $usePost);
         return $response;
     }
 
@@ -1214,7 +1358,7 @@ class ZeroBounce
      * @throws ZBMissingApiKeyException
      * @throws ZBMissingParameterException
      */
-    public function findEmailFormat($domain, $companyName = null)
+    public function findEmailFormat($domain, $companyName = null, $usePost = false)
     {
         $this->checkValidApiKey();
 
@@ -1223,9 +1367,7 @@ class ZeroBounce
         }
 
         $response = new ZBFindEmailFormatResponse();
-        $args = [
-            'api_key' => $this->apiKey,
-        ];
+        $args = [];
 
         // The API doesn't accept both
         if ($domain) {
@@ -1234,9 +1376,7 @@ class ZeroBounce
             $args['company_name'] = $companyName;
         }
 
-        $query = http_build_query($args);
-
-        $this->request($this->apiBaseUrl . "/guessformat?$query", $response);
+        $this->getOrPostForm($this->apiBaseUrl . "/guessformat", $args, $response, $usePost);
         return $response;
     }
 }
