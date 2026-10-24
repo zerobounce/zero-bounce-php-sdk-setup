@@ -50,6 +50,18 @@ class MockZeroBounce extends ZeroBounce
     public $lastJsonUrl;
 
     /**
+     * Last form POST URL passed to formPost().
+     * @var string|null
+     */
+    public $lastFormPostUrl;
+
+    /**
+     * Last GET URL passed to request().
+     * @var string|null
+     */
+    public $lastRequestUrl;
+
+    /**
      * Overwrites the HTTP JSON POST request made within the ZeroBounce class
      * @param string $url
      * @param array $data
@@ -76,10 +88,29 @@ class MockZeroBounce extends ZeroBounce
      */
     protected function request($url, $response)
     {
+        $this->lastRequestUrl = $url;
         try {
             $code = 200;
             $response->Deserialize($this->responseText);
             return $code;
+        } catch (Exception $e) {
+            throw new ZBException($e->getMessage());
+        }
+    }
+
+    /**
+     * @param string $url
+     * @param array $data
+     * @param ZBResponse $response
+     * @return int
+     * @throws ZBException
+     */
+    protected function formPost($url, $data, $response)
+    {
+        $this->lastFormPostUrl = $url;
+        try {
+            $response->Deserialize($this->responseText);
+            return 200;
         } catch (Exception $e) {
             throw new ZBException($e->getMessage());
         }
@@ -92,8 +123,14 @@ class MockZeroBounce extends ZeroBounce
      * @param array $files
      * @return string
      */
+    /**
+     * @var string|null
+     */
+    public $lastCurlUrl;
+
     protected function curl($url, $fields, $files)
     {
+        $this->lastCurlUrl = $url;
         $this->lastMultipartFields = $fields;
         return $this->responseText;
     }
