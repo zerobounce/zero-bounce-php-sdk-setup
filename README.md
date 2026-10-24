@@ -303,7 +303,16 @@ $options->activityData = true;
 $response = ZeroBounce::Instance()->getFile($fileId, $downloadPath, $options);
 ```
 
-If the API returns a non-success HTTP status or a JSON error body (including some HTTP 200 responses with `success: false`), the SDK throws `ZBException`. To inspect raw bodies yourself, use `ZeroBounce::getFileJsonIndicatesError($jsonString)`.
+Set `$options->stream = true` for a large result file. The download is written to disk in chunks instead of being held in memory: the bytes go to a temporary file beside `$downloadPath` and move into place only once the transfer finishes, so a failed download leaves nothing behind.
+
+```php
+$options = new ZBGetFileOptions();
+$options->stream = true;
+
+$response = ZeroBounce::Instance()->getFile($fileId, $downloadPath, $options);
+```
+
+If the API returns a non-success HTTP status or a JSON error body (including some HTTP 200 responses with `success: false`), the SDK throws `ZBApiException`, whose `getStatusCode()` gives the HTTP status. To inspect raw bodies yourself, use `ZeroBounce::getFileJsonIndicatesError($jsonString)`.
 
 - Deletes the file that was submitted using scoring sendfile API. File can be deleted only when its status is _`Complete`_
 ```php
@@ -367,11 +376,64 @@ $response = ZeroBounce::Instance()->findEmail(
 $email = $response->email;
 ```
 
+`getCredits`, `getApiUsage`, `getActivity`, `scoreEmail`, `findEmail` and `findEmailFormat` take a trailing `$usePost`. The API accepts the same parameters form-encoded, which keeps the key out of request logs:
+
+```php
+$response = ZeroBounce::Instance()->getCredits(true);
+```
+
 Guess the format of email addresses for a domain or company. Must provide either `domain` or `companyName`. If both are provided, only `domain` is used. If necessary, `domain` can be `null`.
 ```php
 $response = ZeroBounce::Instance()->findEmailFormat($domain, $companyName);
 $email = $response->format;
 ```
+
+## Warmup API
+
+The Warmup API is a separate product. It has its own host, its own team-scoped key, and its own client; your validation key will not work with it.
+
+```php
+use ZeroBounce\SDK\ZeroBounceWarmup;
+
+$warmup = new ZeroBounceWarmup("<YOUR_WARMUP_API_KEY>");
+
+$accounts = $warmup->listSendingAccounts();
+$progress = $warmup->getProgressToday();
+$csv      = $warmup->downloadSeeds();            // CSV text, columns seed,provider
+```
+
+Add a from-address you run yourself, with one of the five standard engagement rules (0 Default, 1 Slow Pace, 2 Repair, 3 Boost, 4 Protect):
+
+```php
+$warmup->addSendingAccount("sender@example.com", "self_managed", 0);
+```
+
+Or have ZeroBounce provision the mailbox. A 200 means the request was accepted; provisioning happens afterwards.
+
+```php
+$warmup->addSendingAccount(
+    "sender@example.com",
+    "zb_managed",
+    null,
+    null,
+    array("types_of_emails" => array("newsletter", "marketing")),
+    array("timezone_offset" => -5, "warmup_start_date" => new DateTime("2026-03-04"))
+);
+```
+
+A custom engagement rule can be changed only once every seven days; inside that window the API answers 429.
+
+```php
+$warmup->createCustomEngagement("sender@example.com", 20, 20, 35);  // reply, important, click %
+```
+
+`checkDomainDmarc` takes an **email address**, not a domain — the live API rejects a bare domain even though the docs describe one:
+
+```php
+$dmarc = $warmup->checkDomainDmarc("sender@example.com");
+```
+
+Every failure is a `ZBApiException`, whose `getStatusCode()` gives the HTTP status. Nothing is stored by `testSmtpConfiguration`, and the credentials you pass it are masked out of any error it raises.
 
 ## Development
 
@@ -399,6 +461,27 @@ Run tests
 ```bash
 ./vendor/bin/phpunit test
 ```
+
+### Live API suite
+
+`phpunit.xml` only includes `test/`, so neither `composer test` nor CI ever touches the network. The live suite is opt-in and needs real keys, which come from the environment and are never written anywhere:
+
+```bash
+export ZEROBOUNCE_API_KEY=...          # validation API
+export ZEROBOUNCE_WARMUP_API_KEY=...   # Warmup API
+composer run test:live
+```
+
+By default it only makes free calls: sandbox addresses, reads, and requests that are expected to fail but still prove the API accepts the payload. It checks that the credit balance did not move. Two flags opt in to more:
+
+| Flag | What it adds |
+| --- | --- |
+| `ZEROBOUNCE_LIVE_SPEND=1` | billable calls (scoring, activity, email finder) and a bulk round trip that deletes its own job |
+| `ZEROBOUNCE_LIVE_CHANGES=1` | reversible account changes — a test filter and a self-managed Warmup sending account — each undone in cleanup even when a test fails |
+
+It never creates an Inbox Placement test, sets the Inbox Placement webhook, or starts ZB-managed Warmup onboarding, because the API cannot undo any of those.
+
+Run it by hand before every release: the offline suite proves the SDK sends what we think it sends, and only the live suite proves the API accepts it.
 
 ## Publish
 

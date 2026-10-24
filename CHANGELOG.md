@@ -23,6 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ZBValidateResponse` carries `domainWebsiteExists`, `domainRegistrantCompanyName`, and `message`. `message` is read from the API's `Message` key, returned while greylist processing is still running.
 - Inbox Placement Tester on `https://bulkapi.zerobounce.net/api/ipt`: `getInboxPlacementProviders`, `getInboxPlacementTestTypes`, `createInboxPlacementTest`, `getInboxPlacementTest`, `listInboxPlacementTests`, `deleteInboxPlacementTest`, `getInboxPlacementWebhook`, `setInboxPlacementWebhook`.
 - `initialize` takes optional third and fourth arguments to override the list evaluator and Inbox Placement Tester base URLs.
+- `ZeroBounceWarmup`, a client for the Warmup API. It is a separate product with its own host (`https://warmup-api.zerobounce.net`), its own team-scoped key sent in an `API-Key` header, and all 26 documented endpoints, including the seed-list and statistics CSV downloads.
+- `getCredits`, `getApiUsage`, `getActivity`, `scoreEmail`, `findEmail` and `findEmailFormat` take a trailing `$usePost`. The API accepts the same parameters form-encoded, which keeps the key out of request logs.
+- `getApiUsage` accepts a `YYYY-MM-DD` string as well as a `DateTime`.
+- `ZBGetFileOptions::$stream` writes a result file to disk in chunks instead of holding it in memory. The bytes land in a temporary file beside the download path and move into place only once the transfer finishes.
+- `ZBApiException::getStatusCode()` returns the HTTP status of a failed response, so callers can tell a Cloudflare 403 from an API 400/404.
+- A regional `baseUrl` paired with the global bulk host raises an `E_USER_WARNING` once per client: ZeroBounce documents no regional host for bulk files, the list evaluator, S3/SFTP or the Inbox Placement Tester.
+- An opt-in live API suite (`composer run test:live`). It is excluded from `composer test` and from CI, needs keys in the environment, and only spends credits or changes the account behind `ZEROBOUNCE_LIVE_SPEND=1` and `ZEROBOUNCE_LIVE_CHANGES=1`.
 
 ### Changed
 
@@ -30,9 +37,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - API requests time out after 120 seconds.
 - Each `ZeroBounce` instance keeps its own API base URL.
+- `validateBatch` sends `timeout` as a JSON string. Sent as a number, the live API rejects the whole batch with an account-level error.
+- The Inbox Placement Tester authenticates with an `Authorization: Bearer` header instead of an `api_key` parameter, and `listInboxPlacementTests` calls `GET /tests`. `GET /test` answers "Method \"GET\" not allowed".
+- `sendEvaluatedFile($fileId)` posts the list evaluator's `file_id` as a form field. The endpoint rejects a file upload with "file_id: This field is required". `sendEvaluatedFileStream` is gone.
+- The S3 and SFTP/FTP jobs require `return_url`, and `file_name` is required on all of them. The API answers "This field is required" otherwise.
+- `getListEvaluatorResult` returns a `ZBListEvaluatorResponse` instead of a plain array. Everything the API sent is still available on `->data`.
+- Every HTTP call goes through cURL. The `http://` stream wrapper is no longer used.
 
 ### Fixed
 
+- The HTTP status of a `GET` is read correctly. It was always recorded as 0, because the stream wrapper reports it only through PHP's predefined response-header variable, which the engine makes visible to the function that called `file_get_contents` and to no one else; an error status therefore never reached the response check and a 404 from the list evaluator came back as a successful result.
+- `{"success": false}` on an HTTP 200 raises instead of being returned as a result. The API answers an unknown bulk file id that way.
+- `getApiUsage` formats its dates. A `DateTime` was interpolated whole, so the request carried a locale-formatted timestamp that the API rejects and Cloudflare can block.
 - `validateS3File`, `scoreS3File`, and `exportS3File` reject an empty API key before a request is sent.
 - An error body whose JSON carries a `detail` string (the Inbox Placement Tester, Django REST framework) raises with that text.
 
@@ -47,6 +63,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - API requests do not follow redirects, so a 3xx response cannot send the API key to another host.
 - Exception messages no longer include the raw HTML access-denied page.
+- Every base URL, and every URL a request is sent to, must be `https://`.
+- An API key with surrounding whitespace or control characters is rejected, because the transport would otherwise quote it unredacted in its own error.
+- A file or test id of `.` or `..` is rejected rather than walking the request out of its endpoint.
+- The Warmup SMTP test masks the username and password out of every error it raises.
 
 ## [2.1.10] - 2026-06-18
 
