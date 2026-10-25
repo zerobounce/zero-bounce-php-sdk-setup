@@ -24,7 +24,7 @@ use ZeroBounce\SDK\ZeroBounce;
 ZeroBounce::Instance()->initialize("<YOUR_API_KEY>");
 ```
 
-- _Optional: customize the base URL. Accepted values are `API_DEFAULT_URL`(default), `API_USA_URL` and `API_EU_URL`. Invalid values will fall back to the default one._
+- _Optional: customize the base URL. `API_DEFAULT_URL`(default), `API_USA_URL` and `API_EU_URL` are provided as constants, and any other `https://` URL is used as given, so you can point the client at a mock or test server. A URL that is not `https://` is rejected; nothing is silently replaced by the production host._
 ```php
 // you can use the provided constants
 use ZeroBounce\SDK\ZBBaseUrl;
@@ -76,9 +76,21 @@ echo $response->domainWebsiteExists;
 - S3 and SFTP/FTP bulk jobs:
 ```php
 // Amazon S3: https://www.zerobounce.net/docs/api-integrations/amazon-s3-bulk-api
+// Every file job needs file_name and return_url; the API rejects a job without
+// them. has_header_row and remove_duplicates are optional.
+ZeroBounce::Instance()->validateS3File(array(
+    'file_name' => 'lists/leads.csv',
+    'return_url' => 'https://example.com/zerobounce-done',
+    'has_header_row' => true,
+    'email_address_column' => 1,
+));
+ZeroBounce::Instance()->scoreS3File(array(
+    'file_name' => 'lists/leads.csv',
+    'return_url' => 'https://example.com/zerobounce-done',
+));
 ZeroBounce::Instance()->emailFinderS3File(array(
     'file_name' => 'lists/leads.csv',
-    'has_header_row' => true,
+    'return_url' => 'https://example.com/zerobounce-done',
 ));
 ZeroBounce::Instance()->domainSearchS3File(array(
     'file_name' => 'lists/leads.csv',
@@ -87,13 +99,20 @@ ZeroBounce::Instance()->domainSearchS3File(array(
     'return_url' => 'https://example.com/zerobounce-done',
 ));
 
+// exportS3File takes export_bucket. Omit it to use the bucket from your settings.
+ZeroBounce::Instance()->exportS3File('<FILE_ID>');
+ZeroBounce::Instance()->exportS3File('<FILE_ID>', 'my-output-bucket');
+
 // SFTP/FTP: https://www.zerobounce.net/docs/api-integrations/sftp_bulk_api
-// The server, path and protocol come from your ZeroBounce settings.
-// file_name is optional for validateSFTPFile only.
-ZeroBounce::Instance()->validateSFTPFile(array('has_header_row' => true));
-ZeroBounce::Instance()->scoreSFTPFile(array('file_name' => 'my_file.txt', 'has_header_row' => true));
-ZeroBounce::Instance()->emailFinderSFTPFile(array('file_name' => 'my_file.txt', 'has_header_row' => true));
-ZeroBounce::Instance()->domainSearchSFTPFile(array('file_name' => 'my_file.txt', 'has_header_row' => true));
+// The server, path and protocol come from your ZeroBounce settings, but
+// file_name and return_url are required here too.
+ZeroBounce::Instance()->validateSFTPFile(array(
+    'file_name' => 'my_file.txt',
+    'return_url' => 'https://example.com/zerobounce-done',
+));
+ZeroBounce::Instance()->scoreSFTPFile(array('file_name' => 'my_file.txt', 'return_url' => 'https://example.com/zerobounce-done'));
+ZeroBounce::Instance()->emailFinderSFTPFile(array('file_name' => 'my_file.txt', 'return_url' => 'https://example.com/zerobounce-done'));
+ZeroBounce::Instance()->domainSearchSFTPFile(array('file_name' => 'my_file.txt', 'return_url' => 'https://example.com/zerobounce-done'));
 
 // exportSFTPFile takes export_path, not export_bucket. Omit it to use your settings.
 ZeroBounce::Instance()->exportSFTPFile('<FILE_ID>', '/exports');
@@ -135,6 +154,17 @@ ZeroBounce::Instance()->initialize(
     null,                                                   // main API base URL
     "https://bulkapi.zerobounce.net/v2/listevaluator",      // list evaluator
     "https://bulkapi.zerobounce.net/api/ipt"                // Inbox Placement Tester
+);
+
+// The fifth argument moves every bulkapi host at once: bulk files, scoring,
+// email finder, domain search, S3/SFTP, the list evaluator and the Inbox
+// Placement Tester. Useful to point the client at a test server.
+ZeroBounce::Instance()->initialize(
+    "<YOUR_API_KEY>",
+    null,                                                   // main API base URL
+    null,                                                   // list evaluator
+    null,                                                   // Inbox Placement Tester
+    "https://bulkapi.zerobounce.net"                        // bulk base URL
 );
 ```
 
@@ -291,7 +321,7 @@ $success = $response->success;      // True / False
 ```
 
 ###### Email Finder API
-Guess an email address. The required arguments are `firstName` and either `domain` or `companyName`. If both are provided, only `domain` is used. If necessary, `domain` can be `null`.
+Guess an email address. The required argument is either `domain` or `companyName`; if both are provided, only `domain` is used, and `domain` can be `null`. `firstName` is optional: without it the API answers with the domain's format rather than one address.
 ```php
 $response = ZeroBounce::Instance()->findEmail(
     $domain, $firstName, $companyName, $middleName, $lastName

@@ -771,7 +771,7 @@ class ZeroBounceTest extends TestCase
         $path = sys_get_temp_dir() . '/zb_finder_p3.csv';
         file_put_contents($path, "domain,name\nacme.com,Jane");
         try {
-            ZeroBounce::Instance()->sendEmailFinderFile($path, 1);
+            ZeroBounce::Instance()->sendEmailFinderFile($path, 1, 2);
             $this->assertStringContainsString('bulkapi.zerobounce.net/email-finder/sendfile', ZeroBounce::Instance()->lastCurlUrl);
         } finally {
             if (file_exists($path)) {
@@ -787,7 +787,10 @@ class ZeroBounceTest extends TestCase
             "file_id": "s3-job",
             "message": "File Accepted"
         }';
-        ZeroBounce::Instance()->validateS3File(array('file_name' => 'bucket/key.csv'));
+        ZeroBounce::Instance()->validateS3File(array(
+            'file_name' => 'bucket/key.csv',
+            'return_url' => 'https://example.com/done',
+        ));
         $this->assertStringContainsString('bulkapi.zerobounce.net/validateS3file', ZeroBounce::Instance()->lastFormPostUrl);
     }
 

@@ -13,6 +13,33 @@ trait ZeroBouncePriority3
     private const EmailFinderBulkBaseUrl = 'https://bulkapi.zerobounce.net/email-finder';
     private const DomainSearchBulkBaseUrl = 'https://bulkapi.zerobounce.net/domain-search';
 
+    /** @var string Overridable per instance; defaults to BulkApiRootUrl. */
+    protected $bulkApiRootUrl = self::BulkApiRootUrl;
+
+    /** @var string Overridable per instance; defaults to EmailFinderBulkBaseUrl. */
+    protected $emailFinderBulkBaseUrl = self::EmailFinderBulkBaseUrl;
+
+    /** @var string Overridable per instance; defaults to DomainSearchBulkBaseUrl. */
+    protected $domainSearchBulkBaseUrl = self::DomainSearchBulkBaseUrl;
+
+    /**
+     * Point every bulkapi host at $root. initialize() calls this with the
+     * documented root, or with the bulk base URL the caller passed, so a test
+     * server can answer for all of them.
+     *
+     * @param string $root no trailing slash
+     * @return void
+     */
+    private function setBulkBaseUrls($root)
+    {
+        $this->bulkApiRootUrl = $root;
+        $this->bulkApiBaseUrl = $root . '/v2';
+        $this->emailFinderBulkBaseUrl = $root . '/email-finder';
+        $this->domainSearchBulkBaseUrl = $root . '/domain-search';
+        $this->listEvaluatorBaseUrl = $root . '/v2/listevaluator';
+        $this->inboxPlacementBaseUrl = $root . '/api/ipt';
+    }
+
     public function sendEmailFinderFile(
         $filepath,
         $domainColumn,
@@ -24,7 +51,7 @@ trait ZeroBouncePriority3
     ) {
         $this->requireProvided($domainColumn, 'domainColumn is required');
         $fields = $this->buildEmailFinderFields($domainColumn, $firstNameColumn, $lastNameColumn, $middleNameColumn, $fullNameColumn, $hasHeaderRow);
-        return $this->sendBulkRootMultipartFile(self::EmailFinderBulkBaseUrl . '/sendfile', $filepath, $fields);
+        return $this->sendBulkRootMultipartFile($this->emailFinderBulkBaseUrl . '/sendfile', $filepath, $fields);
     }
 
     public function sendEmailFinderFileStream(
@@ -39,22 +66,22 @@ trait ZeroBouncePriority3
     ) {
         $this->requireProvided($domainColumn, 'domainColumn is required');
         $fields = $this->buildEmailFinderFields($domainColumn, $firstNameColumn, $lastNameColumn, $middleNameColumn, $fullNameColumn, $hasHeaderRow);
-        return $this->sendBulkRootMultipartContent(self::EmailFinderBulkBaseUrl . '/sendfile', $fileName, $streamContent, $fields);
+        return $this->sendBulkRootMultipartContent($this->emailFinderBulkBaseUrl . '/sendfile', $fileName, $streamContent, $fields);
     }
 
     public function emailFinderFileStatus($fileId)
     {
-        return $this->bulkRootFileStatus(self::EmailFinderBulkBaseUrl, $fileId);
+        return $this->bulkRootFileStatus($this->emailFinderBulkBaseUrl, $fileId);
     }
 
     public function emailFinderGetFile($fileId, $downloadPath)
     {
-        return $this->bulkRootGetFile(self::EmailFinderBulkBaseUrl, $fileId, $downloadPath);
+        return $this->bulkRootGetFile($this->emailFinderBulkBaseUrl, $fileId, $downloadPath);
     }
 
     public function emailFinderDeleteFile($fileId)
     {
-        return $this->bulkRootDeleteFile(self::EmailFinderBulkBaseUrl, $fileId);
+        return $this->bulkRootDeleteFile($this->emailFinderBulkBaseUrl, $fileId);
     }
 
     public function sendDomainSearchFile($filepath, $domainColumn, $hasHeaderRow = null)
@@ -64,7 +91,7 @@ trait ZeroBouncePriority3
         if ($hasHeaderRow !== null) {
             $fields['has_header_row'] = $hasHeaderRow ? 'true' : 'false';
         }
-        return $this->sendBulkRootMultipartFile(self::DomainSearchBulkBaseUrl . '/sendfile', $filepath, $fields);
+        return $this->sendBulkRootMultipartFile($this->domainSearchBulkBaseUrl . '/sendfile', $filepath, $fields);
     }
 
     public function sendDomainSearchFileStream($streamContent, $fileName, $domainColumn, $hasHeaderRow = null)
@@ -74,22 +101,22 @@ trait ZeroBouncePriority3
         if ($hasHeaderRow !== null) {
             $fields['has_header_row'] = $hasHeaderRow ? 'true' : 'false';
         }
-        return $this->sendBulkRootMultipartContent(self::DomainSearchBulkBaseUrl . '/sendfile', $fileName, $streamContent, $fields);
+        return $this->sendBulkRootMultipartContent($this->domainSearchBulkBaseUrl . '/sendfile', $fileName, $streamContent, $fields);
     }
 
     public function domainSearchFileStatus($fileId)
     {
-        return $this->bulkRootFileStatus(self::DomainSearchBulkBaseUrl, $fileId);
+        return $this->bulkRootFileStatus($this->domainSearchBulkBaseUrl, $fileId);
     }
 
     public function domainSearchGetFile($fileId, $downloadPath)
     {
-        return $this->bulkRootGetFile(self::DomainSearchBulkBaseUrl, $fileId, $downloadPath);
+        return $this->bulkRootGetFile($this->domainSearchBulkBaseUrl, $fileId, $downloadPath);
     }
 
     public function domainSearchDeleteFile($fileId)
     {
-        return $this->bulkRootDeleteFile(self::DomainSearchBulkBaseUrl, $fileId);
+        return $this->bulkRootDeleteFile($this->domainSearchBulkBaseUrl, $fileId);
     }
 
     public function sendListEvaluatorFile($filepath, $emailAddressColumn)
@@ -146,7 +173,7 @@ trait ZeroBouncePriority3
             throw new ZBMissingParameterException('file_id is required');
         }
         return $this->postBulkRootFormAt(
-            self::BulkApiBaseUrl . '/send-evaluated-file/',
+            $this->bulkApiBaseUrl . '/send-evaluated-file/',
             array('file_id' => (string)$fileId)
         );
     }
@@ -160,7 +187,7 @@ trait ZeroBouncePriority3
     public function listS3Files($bucket = null, $search = null)
     {
         $this->checkValidApiKey();
-        $url = self::BulkApiRootUrl . '/listS3files?api_key=' . urlencode($this->apiKey);
+        $url = $this->bulkApiRootUrl . '/listS3files?api_key=' . urlencode($this->apiKey);
         if ($bucket !== null && $bucket !== '') {
             $url .= '&bucket=' . urlencode($bucket);
         }
@@ -172,37 +199,61 @@ trait ZeroBouncePriority3
         return $holder->data;
     }
 
+    /**
+     * Validate a file in your Amazon S3 bucket. POST /validateS3file
+     *
+     * $options takes file_name and return_url, both required, plus the
+     * optional has_header_row, remove_duplicates, remove_duplicate,
+     * email_address_column, first_name_column, last_name_column,
+     * gender_column, ip_address_column and allow_phase_2.
+     *
+     * @param array<string, mixed> $options
+     * @return ZBSendFileResponse
+     * @throws ZBException
+     */
     public function validateS3File(array $options)
     {
-        if (!isset($options['file_name']) || !$this->isProvided($options['file_name'])) {
-            throw new ZBMissingParameterException('file_name is required');
-        }
-        return $this->postBulkRootForm('/validateS3file', $this->buildValidateS3Fields($options));
+        return $this->bulkRootFileJob('/validateS3file', $options, $this->buildValidateS3Fields($options));
     }
 
+    /**
+     * Score a file in your Amazon S3 bucket. POST /scoreS3file
+     *
+     * $options takes file_name and return_url, both required, plus the
+     * optional has_header_row, remove_duplicates, remove_duplicate and
+     * email_address_column.
+     *
+     * @param array<string, mixed> $options
+     * @return ZBSendFileResponse
+     * @throws ZBException
+     */
     public function scoreS3File(array $options)
     {
-        if (!isset($options['file_name']) || !$this->isProvided($options['file_name'])) {
-            throw new ZBMissingParameterException('file_name is required');
-        }
-        $fields = array('file_name' => $options['file_name']);
-        $this->appendOptionalBool($fields, 'has_header_row', isset($options['has_header_row']) ? $options['has_header_row'] : null);
-        $this->appendOptionalBool($fields, 'remove_duplicates', isset($options['remove_duplicates']) ? $options['remove_duplicates'] : null);
-        $this->appendOptionalBool($fields, 'remove_duplicate', isset($options['remove_duplicate']) ? $options['remove_duplicate'] : null);
-        if (isset($options['email_address_column'])) {
-            $fields['email_address_column'] = $options['email_address_column'];
-        }
-        return $this->postBulkRootForm('/scoreS3file', $fields);
+        return $this->bulkRootFileJob('/scoreS3file', $options, $this->buildScoreS3Fields($options));
     }
 
-    public function exportS3File($fileId, $exportBucket)
+    /**
+     * Export a validated or scored file back to Amazon S3. POST /exportS3file
+     *
+     * Without $exportBucket the output bucket from your ZeroBounce settings is
+     * used, the same way exportSFTPFile falls back to the configured path.
+     *
+     * @param string $fileId
+     * @param string|null $exportBucket
+     * @return ZBSendFileResponse
+     * @throws ZBException
+     */
+    public function exportS3File($fileId, $exportBucket = null)
     {
         $this->requireProvided($fileId, 'fileId is required');
-        $this->requireProvided($exportBucket, 'exportBucket is required');
-        return $this->postBulkRootForm('/exportS3file', array(
-            'file_id' => $fileId,
-            'export_bucket' => $exportBucket,
-        ));
+        if ($exportBucket !== null && trim((string)$exportBucket) === '') {
+            throw new ZBMissingParameterException('exportBucket is required');
+        }
+        $fields = array('file_id' => $fileId);
+        if ($exportBucket !== null) {
+            $fields['export_bucket'] = $exportBucket;
+        }
+        return $this->postBulkRootForm('/exportS3file', $fields);
     }
 
     public function addFilter($rule, $target, $value)
@@ -249,18 +300,15 @@ trait ZeroBouncePriority3
         ));
     }
 
+    /**
+     * The fields validateS3file takes on top of the shared file job shape.
+     *
+     * @param array<string, mixed> $options
+     * @return array<string, mixed>
+     */
     private function buildValidateS3Fields(array $options)
     {
-        $fields = array('file_name' => $options['file_name']);
-        $this->appendOptionalBool($fields, 'has_header_row', isset($options['has_header_row']) ? $options['has_header_row'] : null);
-        $this->appendOptionalBool($fields, 'remove_duplicates', isset($options['remove_duplicates']) ? $options['remove_duplicates'] : null);
-        $this->appendOptionalBool($fields, 'remove_duplicate', isset($options['remove_duplicate']) ? $options['remove_duplicate'] : null);
-        if (isset($options['email_address_column'])) {
-            $fields['email_address_column'] = $options['email_address_column'];
-        }
-        if (!empty($options['return_url'])) {
-            $fields['return_url'] = $options['return_url'];
-        }
+        $fields = $this->buildScoreS3Fields($options);
         if (isset($options['first_name_column']) && $this->isProvided($options['first_name_column'])) {
             $fields['first_name_column'] = $options['first_name_column'];
         }
@@ -279,9 +327,26 @@ trait ZeroBouncePriority3
         return $fields;
     }
 
+    /**
+     * The fields scoreS3file takes on top of the shared file job shape.
+     * remove_duplicate (singular) is the S3 spelling of the flag.
+     *
+     * @param array<string, mixed> $options
+     * @return array<string, mixed>
+     */
+    private function buildScoreS3Fields(array $options)
+    {
+        $fields = array();
+        $this->appendOptionalBool($fields, 'remove_duplicate', isset($options['remove_duplicate']) ? $options['remove_duplicate'] : null);
+        if (isset($options['email_address_column'])) {
+            $fields['email_address_column'] = $options['email_address_column'];
+        }
+        return $fields;
+    }
+
     private function postBulkRootForm($path, array $fields)
     {
-        return $this->postBulkRootFormAt(self::BulkApiRootUrl . $path, $fields);
+        return $this->postBulkRootFormAt($this->bulkApiRootUrl . $path, $fields);
     }
 
     /**
@@ -316,19 +381,20 @@ trait ZeroBouncePriority3
      * validateSFTPfile, although the docs mark them optional. Without them the
      * API answers "file_name: This field is required" and "Provided return URL
      * is not permitted: None". Both are checked here, so no request goes out
-     * that the API would reject. remove_duplicates stays optional.
+     * that the API would reject. has_header_row and remove_duplicates are
+     * optional, as the docs describe: the API takes a job without them.
      *
+     * @param string $path
+     * @param array<string, mixed> $options
+     * @param array<string, mixed> $extraFields fields only one endpoint takes
      * @return ZBSendFileResponse
      * @throws ZBException
      */
-    private function bulkRootFileJob($path, array $options)
+    private function bulkRootFileJob($path, array $options, array $extraFields = array())
     {
         $fileName = isset($options['file_name']) ? $options['file_name'] : null;
         if ($fileName === null || trim((string)$fileName) === '') {
             throw new ZBMissingParameterException('file_name is required');
-        }
-        if (!isset($options['has_header_row'])) {
-            throw new ZBMissingParameterException('has_header_row is required');
         }
         $returnUrl = isset($options['return_url']) ? $options['return_url'] : null;
         if ($returnUrl === null || trim((string)$returnUrl) === '') {
@@ -338,9 +404,10 @@ trait ZeroBouncePriority3
         }
 
         $fields = array('file_name' => $fileName);
-        $this->appendOptionalBool($fields, 'has_header_row', $options['has_header_row']);
-        if (isset($options['remove_duplicates'])) {
-            $this->appendOptionalBool($fields, 'remove_duplicates', $options['remove_duplicates']);
+        $this->appendOptionalBool($fields, 'has_header_row', isset($options['has_header_row']) ? $options['has_header_row'] : null);
+        $this->appendOptionalBool($fields, 'remove_duplicates', isset($options['remove_duplicates']) ? $options['remove_duplicates'] : null);
+        foreach ($extraFields as $key => $value) {
+            $fields[$key] = $value;
         }
         $fields['return_url'] = $returnUrl;
         return $this->postBulkRootForm($path, $fields);
@@ -373,8 +440,9 @@ trait ZeroBouncePriority3
     /**
      * Validate a file from your SFTP/FTP server. POST /validateSFTPfile
      *
-     * The docs list file_name as optional here; leave it out to use the input
-     * bucket configured in your settings.
+     * The docs list file_name as optional here, but the live API rejects a job
+     * without it, so it is required. The server, path and protocol still come
+     * from your ZeroBounce settings.
      *
      * @return ZBSendFileResponse
      * @throws ZBException
@@ -441,6 +509,11 @@ trait ZeroBouncePriority3
 
     private function buildEmailFinderFields($domainColumn, $firstNameColumn, $lastNameColumn, $middleNameColumn, $fullNameColumn, $hasHeaderRow)
     {
+        // The endpoint needs a name to search for: either the split first name
+        // column or the full name column.
+        if (!$this->isProvided($firstNameColumn) && !$this->isProvided($fullNameColumn)) {
+            throw new ZBMissingParameterException('firstNameColumn or fullNameColumn is required');
+        }
         $fields = array('domain_column' => $domainColumn);
         if ($hasHeaderRow !== null) {
             $fields['has_header_row'] = $hasHeaderRow ? 'true' : 'false';

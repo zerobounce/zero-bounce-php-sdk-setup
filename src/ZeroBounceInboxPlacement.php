@@ -5,9 +5,9 @@ namespace ZeroBounce\SDK;
 /**
  * Inbox Placement Tester (bulkapi.zerobounce.net/api/ipt).
  *
- * The API key goes on the query string rather than in the body, and bodies are
- * JSON with camelCase fields. Only fields the caller set are sent. Uses the
- * account's inbox-test credits.
+ * The API key goes in an "Authorization: Bearer" header, never on the query
+ * string or in the body, and bodies are JSON with camelCase fields. Only
+ * fields the caller set are sent. Uses the account's inbox-test credits.
  */
 trait ZeroBounceInboxPlacement
 {

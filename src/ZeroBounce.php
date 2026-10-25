@@ -50,6 +50,9 @@ class ZeroBounce
     protected $apiBaseUrl;
     const BulkApiBaseUrl = "https://bulkapi.zerobounce.net/v2";
 
+    /** @var string Overridable per instance; defaults to BulkApiBaseUrl. */
+    protected $bulkApiBaseUrl = self::BulkApiBaseUrl;
+
     /** The list evaluator and the Inbox Placement Tester are not under the bulk /v2 path. */
     const ListEvaluatorBaseUrl = "https://bulkapi.zerobounce.net/v2/listevaluator";
     const InboxPlacementBaseUrl = "https://bulkapi.zerobounce.net/api/ipt";
@@ -73,15 +76,34 @@ class ZeroBounce
 
     /**
      * @param string $apiKey
+     * @param string|null $baseUrl the main API host. Any https:// URL is used
+     *     as given; null selects ZBBaseUrl::API_DEFAULT_URL.
+     * @param string|null $listEvaluatorBaseUrl
+     * @param string|null $inboxPlacementBaseUrl
+     * @param string|null $bulkBaseUrl the bulkapi root. Moves bulk files,
+     *     scoring, email finder, domain search, S3/SFTP, and, unless they are
+     *     given above, the list evaluator and Inbox Placement Tester.
+     * @return void
+     * @throws ZBException
      */
     public function initialize(
         $apiKey,
         $baseUrl = null,
         $listEvaluatorBaseUrl = null,
-        $inboxPlacementBaseUrl = null
+        $inboxPlacementBaseUrl = null,
+        $bulkBaseUrl = null
     ) {
         $this->apiKey = self::checkedApiKey($apiKey);
-        $this->apiBaseUrl = self::requireHttpsUrl(ZBBaseUrl::getByValue($baseUrl), 'baseUrl');
+        $this->apiBaseUrl = self::resolvedBaseUrl($baseUrl);
+        // Every bulkapi.zerobounce.net path hangs off one root, so a single
+        // override points bulk files, scoring, email finder, domain search,
+        // S3/SFTP, the list evaluator and the Inbox Placement Tester at a test
+        // server. The two arguments before it still override their own host.
+        $this->setBulkBaseUrls(
+            $bulkBaseUrl === null || $bulkBaseUrl === ''
+                ? self::BulkApiRootUrl
+                : rtrim(self::requireHttpsUrl($bulkBaseUrl, 'bulkBaseUrl'), '/')
+        );
         if ($listEvaluatorBaseUrl !== null && $listEvaluatorBaseUrl !== '') {
             $this->listEvaluatorBaseUrl = rtrim(
                 self::requireHttpsUrl($listEvaluatorBaseUrl, 'listEvaluatorBaseUrl'), '/'
@@ -119,6 +141,25 @@ class ZeroBounce
             );
         }
         return $apiKey;
+    }
+
+    /**
+     * The base URL to use, without guessing. An unknown host used to be
+     * replaced by ZBBaseUrl::getByValue with the production default, so a
+     * custom or mock base URL was silently swapped for api.zerobounce.net and
+     * live traffic went out of a test run. Any https URL is now taken as
+     * given, and anything else raises.
+     *
+     * @param string|null $baseUrl null or '' selects the default host
+     * @return string
+     * @throws ZBMissingParameterException
+     */
+    protected static function resolvedBaseUrl($baseUrl)
+    {
+        if ($baseUrl === null || $baseUrl === '') {
+            return ZBBaseUrl::API_DEFAULT_URL;
+        }
+        return rtrim(self::requireHttpsUrl($baseUrl, 'baseUrl'), '/');
     }
 
     /**
@@ -459,7 +500,7 @@ class ZeroBounce
         $filepath, $emailAddressColumn, $returnUrl = NULL, $firstNameColumn = NULL, $lastNameColumn = NULL,
         $genderColumn = NULL, $ipAddressColumn = NULL, $hasHeaderRow = NULL, $allowPhase2 = null)
     {
-        return $this->_sendFile(self::BulkApiBaseUrl . "/sendfile", $filepath, $emailAddressColumn,
+        return $this->_sendFile($this->bulkApiBaseUrl . "/sendfile", $filepath, $emailAddressColumn,
             $returnUrl, $firstNameColumn, $lastNameColumn,
             $genderColumn, $ipAddressColumn, $hasHeaderRow, $allowPhase2);
     }
@@ -477,7 +518,7 @@ class ZeroBounce
     public function scoringSendFile(
         $filepath, $emailAddressColumn, $returnUrl = NULL, $hasHeaderRow = NULL)
     {
-        return $this->_sendFile(self::BulkApiBaseUrl . "/scoring/sendfile", $filepath, $emailAddressColumn,
+        return $this->_sendFile($this->bulkApiBaseUrl . "/scoring/sendfile", $filepath, $emailAddressColumn,
             $returnUrl, NULL, NULL,
             NULL, NULL, $hasHeaderRow, null);
     }
@@ -502,7 +543,7 @@ class ZeroBounce
         $allowPhase2 = null)
     {
         return $this->_sendFileWithContent(
-            self::BulkApiBaseUrl . "/sendfile",
+            $this->bulkApiBaseUrl . "/sendfile",
             $fileName, $streamContent, $emailAddressColumn,
             $returnUrl, $firstNameColumn, $lastNameColumn, $genderColumn, $ipAddressColumn, $hasHeaderRow,
             $allowPhase2
@@ -522,7 +563,7 @@ class ZeroBounce
         $streamContent, $fileName, $emailAddressColumn, $returnUrl = NULL, $hasHeaderRow = NULL)
     {
         return $this->_sendFileWithContent(
-            self::BulkApiBaseUrl . "/scoring/sendfile",
+            $this->bulkApiBaseUrl . "/scoring/sendfile",
             $fileName, $streamContent, $emailAddressColumn,
             $returnUrl, NULL, NULL, NULL, NULL, $hasHeaderRow, null
         );
@@ -742,7 +783,7 @@ class ZeroBounce
         $this->requireProvided($fileId, "fileId is required");
 
         $response = new ZBFileStatusResponse();
-        $this->request(self::BulkApiBaseUrl
+        $this->request($this->bulkApiBaseUrl
             . ($scoring ? "/scoring" : "")
             . "/filestatus?api_key=" . urlencode($this->apiKey)
             . "&file_id=" . urlencode($fileId),
@@ -810,7 +851,7 @@ class ZeroBounce
             }
 
             $path = ($scoring ? '/scoring' : '') . '/getfile';
-            $url = self::BulkApiBaseUrl . $path . '?' . http_build_query($query);
+            $url = $this->bulkApiBaseUrl . $path . '?' . http_build_query($query);
 
             if ($options instanceof ZBGetFileOptions && $options->stream) {
                 return $this->streamBulkDownload($url, $downloadPath);
@@ -988,14 +1029,14 @@ class ZeroBounce
      * @throws ZBException
      * @throws ZBMissingApiKeyException
      */
-    public function _deleteFile($scoring, $fileId)
+    private function _deleteFile($scoring, $fileId)
     {
         $this->checkValidApiKey();
 
         $this->requireProvided($fileId, "fileId is required");
 
         $response = new ZBDeleteFileResponse();
-        $this->request(self::BulkApiBaseUrl
+        $this->request($this->bulkApiBaseUrl
             . ($scoring ? "/scoring" : "")
             . "/deletefile?api_key=" . urlencode($this->apiKey)
             . "&file_id=" . urlencode($fileId),
@@ -1436,7 +1477,7 @@ class ZeroBounce
      * Search for new business email addresses
      * 
      * @param string|null $domain
-     * @param string $firstName
+     * @param string|null $firstName Optional: the API returns the domain's format without it.
      * @param string|null $companyName
      * @param string|null $middleName
      * @param string|null $lastName
@@ -1454,12 +1495,9 @@ class ZeroBounce
             throw new ZBMissingParameterException('domain or companyName is required');
         }
 
-        if (!$firstName) {
-            throw new ZBMissingParameterException('firstName is required');
-        }
-
         $response = new ZBFindEmailResponse();
-        $args = ['first_name' => $firstName];
+        $args = [];
+        if ($firstName) $args['first_name'] = $firstName;
 
         // The API doesn't accept both
         if ($domain) {

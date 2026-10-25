@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ZBValidateResponse` carries `domainWebsiteExists`, `domainRegistrantCompanyName`, and `message`. `message` is read from the API's `Message` key, returned while greylist processing is still running.
 - Inbox Placement Tester on `https://bulkapi.zerobounce.net/api/ipt`: `getInboxPlacementProviders`, `getInboxPlacementTestTypes`, `createInboxPlacementTest`, `getInboxPlacementTest`, `listInboxPlacementTests`, `deleteInboxPlacementTest`, `getInboxPlacementWebhook`, `setInboxPlacementWebhook`.
 - `initialize` takes optional third and fourth arguments to override the list evaluator and Inbox Placement Tester base URLs.
+- `initialize` takes an optional fifth argument, the bulk base URL. It moves every `bulkapi.zerobounce.net` host at once -- bulk files, scoring, bulk email finder, domain search, S3/SFTP, the list evaluator and the Inbox Placement Tester -- so the client can be pointed at a test server. The third and fourth arguments still override their own host.
 - `ZeroBounceWarmup`, a client for the Warmup API. It is a separate product with its own host (`https://warmup-api.zerobounce.net`), its own team-scoped key sent in an `API-Key` header, and all 26 documented endpoints, including the seed-list and statistics CSV downloads.
 - `getCredits`, `getApiUsage`, `getActivity`, `scoreEmail`, `findEmail` and `findEmailFormat` take a trailing `$usePost`. The API accepts the same parameters form-encoded, which keeps the key out of request logs.
 - `getApiUsage` accepts a `YYYY-MM-DD` string as well as a `DateTime`.
@@ -40,7 +41,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `validateBatch` sends `timeout` as a JSON string. Sent as a number, the live API rejects the whole batch with an account-level error.
 - The Inbox Placement Tester authenticates with an `Authorization: Bearer` header instead of an `api_key` parameter, and `listInboxPlacementTests` calls `GET /tests`. `GET /test` answers "Method \"GET\" not allowed".
 - `sendEvaluatedFile($fileId)` posts the list evaluator's `file_id` as a form field. The endpoint rejects a file upload with "file_id: This field is required". `sendEvaluatedFileStream` is gone.
-- The S3 and SFTP/FTP jobs require `return_url`, and `file_name` is required on all of them. The API answers "This field is required" otherwise.
+- The S3 and SFTP/FTP jobs require `return_url`, and `file_name` is required on all of them. The API answers "This field is required" otherwise. That now includes `validateS3File` and `scoreS3File`, which share the same checks as the other six jobs.
+- `has_header_row` is optional on every S3 and SFTP/FTP job. `emailFinderS3File`, `domainSearchS3File`, `validateSFTPFile`, `scoreSFTPFile`, `emailFinderSFTPFile` and `domainSearchSFTPFile` used to refuse a job without it, which the API accepts.
+- `exportS3File`'s `$exportBucket` is optional. Left out, the API exports to the bucket in your ZeroBounce settings, the way `exportSFTPFile` falls back to the configured path.
+- `findEmail`'s `$firstName` is optional. Only `domain` or `companyName` is required; without a first name the API answers with the domain's format. `findEmailFormat` and the deprecated `guessFormat` are unchanged.
+- `sendEmailFinderFile` and `sendEmailFinderFileStream` require `firstNameColumn` or `fullNameColumn`. The endpoint needs a name to search for, and only `domainColumn` was checked.
+- `_deleteFile` is private. It is the internal helper behind `deleteFile` and `scoringDeleteFile`, which are unchanged.
 - `getListEvaluatorResult` returns a `ZBListEvaluatorResponse` instead of a plain array. Everything the API sent is still available on `->data`.
 - Every HTTP call goes through cURL. The `http://` stream wrapper is no longer used.
 
@@ -53,7 +59,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `{"success": false}` on an HTTP 200 raises instead of being returned as a result. The API answers an unknown bulk file id that way.
 - `getApiUsage` formats its dates. A `DateTime` was interpolated whole, so the request carried a locale-formatted timestamp that the API rejects and Cloudflare can block.
 - `validateS3File`, `scoreS3File`, and `exportS3File` reject an empty API key before a request is sent.
+- `scoreS3File` sends `return_url`. It was never added to the form, so a caller's `return_url` was dropped and the API refused the job with "Provided return URL is not permitted: None".
+- A custom `baseUrl` is used as given. Any URL that was not one of the three production constants was silently replaced with `https://api.zerobounce.net/v2`, so a client aimed at a mock or regional host talked to production instead. A base URL that is not `https://` now throws.
 - An error body whose JSON carries a `detail` string (the Inbox Placement Tester, Django REST framework) raises with that text.
+- The Inbox Placement Tester's documentation says the key goes in an `Authorization: Bearer` header, which is what the code sends. It claimed the key went on the query string.
+- `validateSFTPFile`'s documentation no longer says `file_name` can be left out. The API requires it.
 
 - A 403 HTML "Access denied" page is a short `ZBException`. An HTML page with status 200 is an error as well, including `getFile`, `emailFinderGetFile`, and `domainSearchGetFile`, instead of a saved CSV.
 - Empty and non-JSON bodies are a short error. A repeated `Error:` / `[Error]:` prefix is removed.
