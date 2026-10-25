@@ -161,6 +161,15 @@ class FakeApi
             return $this->respond(200, 'application/json', $body);
         }
 
+        if (strpos($key, 's3-400-') === 0) {
+            // LIVE: an S3/SFTP job the API refuses answers 400 with
+            // error_message, e.g. a job sent without return_url.
+            return $this->respond(
+                400,
+                'application/json',
+                '{"error_message":"Provided return URL is not permitted: None"}'
+            );
+        }
         if (strpos($key, 'success-false-') === 0) {
             // LIVE: an unknown file id comes back as an HTTP 200 whose body
             // says the call failed.

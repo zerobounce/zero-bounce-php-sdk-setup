@@ -379,7 +379,7 @@ class OfflineApiTest extends TestCase
         $this->assertSame('p3-key', $sent['fields']['api_key']);
 
         $api->clear();
-        $client->sendEmailFinderFileStream("acme.com\n", 'finder.csv', 1, null, null, null, null, null);
+        $client->sendEmailFinderFileStream("acme.com\n", 'finder.csv', 1, null, null, null, 2, null);
         $finderStream = $this->only($api);
         $this->assertSame('/email-finder/sendfile', $finderStream['path']);
         $this->assertArrayNotHasKey('has_header_row', $finderStream['fields']);
@@ -477,6 +477,7 @@ class OfflineApiTest extends TestCase
             'has_header_row' => false,
             'remove_duplicate' => true,
             'first_name_column' => 0,
+            'return_url' => 'https://example.com/done',
         ));
         $validated = $this->only($api);
         $this->assertSame('POST', $validated['method']);
@@ -491,7 +492,7 @@ class OfflineApiTest extends TestCase
         $this->assertArrayNotHasKey('allow_phase_2', $validated['fields']);
 
         $api->clear();
-        $client->scoreS3File(array('file_name' => 'inbox.csv'));
+        $client->scoreS3File(array('file_name' => 'inbox.csv', 'return_url' => 'https://example.com/done'));
         $scored = $this->only($api);
         $this->assertSame('/scoreS3file', $scored['path']);
         $this->assertArrayNotHasKey('email_address_column', $scored['fields']);
@@ -544,16 +545,22 @@ class OfflineApiTest extends TestCase
                 $client->sendDomainSearchFile($this->csv, 1);
             },
             function () use ($client) {
-                $client->validateS3File(array('file_name' => 'inbox.csv'));
+                $client->validateS3File(array(
+                    'file_name' => 'inbox.csv',
+                    'return_url' => 'https://example.com/done',
+                ));
             },
             function () use ($client) {
-                $client->scoreS3File(array('file_name' => 'inbox.csv'));
+                $client->scoreS3File(array(
+                    'file_name' => 'inbox.csv',
+                    'return_url' => 'https://example.com/done',
+                ));
             },
             function () use ($client) {
                 $client->exportS3File('fid', 'bucket');
             },
             function () use ($client) {
-                $client->sendEmailFinderFile($this->csv, 1);
+                $client->sendEmailFinderFile($this->csv, 1, 2);
             },
             function () use ($client) {
                 $client->addFilter('exclude', 'domain', 'example.com');
@@ -587,7 +594,7 @@ class OfflineApiTest extends TestCase
             $keyed->validateBatch(array());
         }, 'emails');
         $this->assertRejected(function () use ($keyed) {
-            $keyed->sendEmailFinderFile($this->csv, null);
+            $keyed->sendEmailFinderFile($this->csv, null, 2);
         }, 'domainColumn');
         $this->assertRejected(function () use ($keyed) {
             $keyed->sendDomainSearchFile($this->csv, '');
@@ -1372,6 +1379,346 @@ return true;
             }
             @rmdir($folder);
         }
+    }
+
+    public function testScoreS3FileSendsReturnUrl()
+    {
+        $api = new FakeApi();
+        $client = $this->client($api, 'score-s3-key');
+        // LIVE: the API refuses the job without return_url, and the caller's
+        // return_url used to be dropped on the floor here.
+        $response = $client->scoreS3File(array(
+            'file_name' => 'inbox.csv',
+            'has_header_row' => true,
+            'remove_duplicate' => true,
+            'email_address_column' => 0,
+            'return_url' => 'https://example.com/done',
+        ));
+        $this->assertSame('score-s3-key', $response->fileId);
+        $request = $this->only($api);
+        $this->assertSame('POST', $request['method']);
+        $this->assertSame('https://bulkapi.zerobounce.net/scoreS3file', $request['url']);
+        $this->assertSame('application/x-www-form-urlencoded', $request['content_type']);
+        $this->assertSame('score-s3-key', $request['fields']['api_key']);
+        $this->assertSame('', $request['authorization']);
+        $this->assertSame('inbox.csv', $request['fields']['file_name']);
+        $this->assertSame('https://example.com/done', $request['fields']['return_url']);
+        $this->assertSame('true', $request['fields']['has_header_row']);
+        $this->assertSame('true', $request['fields']['remove_duplicate']);
+        $this->assertSame('0', (string)$request['fields']['email_address_column']);
+
+        // has_header_row is optional: the docs do not require it and neither
+        // does the API.
+        $api->clear();
+        $client->scoreS3File(array('file_name' => 'inbox.csv', 'return_url' => 'https://example.com/done'));
+        $minimal = $this->only($api);
+        $this->assertSame('/scoreS3file', $minimal['path']);
+        $this->assertArrayNotHasKey('has_header_row', $minimal['fields']);
+        $this->assertArrayNotHasKey('remove_duplicates', $minimal['fields']);
+        $this->assertSame('https://example.com/done', $minimal['fields']['return_url']);
+
+        $this->assertRejected(function () use ($client) {
+            $client->scoreS3File(array('file_name' => 'inbox.csv'));
+        }, 'return_url');
+        $this->assertRejected(function () use ($client) {
+            $client->scoreS3File(array('file_name' => 'inbox.csv', 'return_url' => '  '));
+        }, 'return_url');
+        $this->assertRejected(function () use ($client) {
+            $client->scoreS3File(array('return_url' => 'https://example.com/done'));
+        }, 'file_name');
+        $this->assertSame(0, $api->count());
+    }
+
+    public function testValidateS3FileRequiresReturnUrlAndKeepsItsOwnFields()
+    {
+        $api = new FakeApi();
+        $client = $this->client($api, 'validate-s3-key');
+        $response = $client->validateS3File(array(
+            'file_name' => 'inbox.csv',
+            'return_url' => 'https://example.com/done',
+            'remove_duplicates' => false,
+            'first_name_column' => 0,
+            'last_name_column' => 3,
+            'gender_column' => 4,
+            'ip_address_column' => 5,
+            'allow_phase_2' => true,
+        ));
+        $this->assertSame('validate-s3-key', $response->fileId);
+        $request = $this->only($api);
+        $this->assertSame('POST', $request['method']);
+        $this->assertSame('https://bulkapi.zerobounce.net/validateS3file', $request['url']);
+        $this->assertSame('validate-s3-key', $request['fields']['api_key']);
+        $this->assertSame('https://example.com/done', $request['fields']['return_url']);
+        $this->assertSame('false', $request['fields']['remove_duplicates']);
+        $this->assertSame('0', (string)$request['fields']['first_name_column']);
+        $this->assertSame('3', (string)$request['fields']['last_name_column']);
+        $this->assertSame('4', (string)$request['fields']['gender_column']);
+        $this->assertSame('5', (string)$request['fields']['ip_address_column']);
+        $this->assertSame('true', $request['fields']['allow_phase_2']);
+        $this->assertArrayNotHasKey('has_header_row', $request['fields']);
+
+        $this->assertRejected(function () use ($client) {
+            $client->validateS3File(array('file_name' => 'inbox.csv'));
+        }, 'return_url');
+        $this->assertSame(0, $api->count());
+    }
+
+    public function testS3AndSftpJobsAcceptAJobWithoutHasHeaderRow()
+    {
+        $api = new FakeApi();
+        $client = $this->client($api, 'header-optional-key');
+        $paths = array(
+            '/validateS3file' => function ($client, $options) { return $client->validateS3File($options); },
+            '/scoreS3file' => function ($client, $options) { return $client->scoreS3File($options); },
+            '/emailFinderS3file' => function ($client, $options) { return $client->emailFinderS3File($options); },
+            '/domainSearchS3file' => function ($client, $options) { return $client->domainSearchS3File($options); },
+            '/validateSFTPfile' => function ($client, $options) { return $client->validateSFTPFile($options); },
+            '/scoreSFTPfile' => function ($client, $options) { return $client->scoreSFTPFile($options); },
+            '/emailFinderSFTPfile' => function ($client, $options) { return $client->emailFinderSFTPFile($options); },
+            '/domainSearchSFTPfile' => function ($client, $options) { return $client->domainSearchSFTPFile($options); },
+        );
+        foreach ($paths as $path => $call) {
+            $api->clear();
+            // The docs do not require has_header_row, so a job without it must
+            // reach the API rather than be refused here.
+            $response = $call($client, array(
+                'file_name' => 'inbox.csv',
+                'return_url' => 'https://example.com/done',
+            ));
+            $this->assertSame('header-optional-key', $response->fileId);
+            $request = $this->only($api);
+            $this->assertSame('POST', $request['method']);
+            $this->assertSame('bulkapi.zerobounce.net', $request['host']);
+            $this->assertSame($path, $request['path']);
+            $this->assertSame('header-optional-key', $request['fields']['api_key']);
+            $this->assertSame('inbox.csv', $request['fields']['file_name']);
+            $this->assertSame('https://example.com/done', $request['fields']['return_url']);
+            $this->assertArrayNotHasKey('has_header_row', $request['fields']);
+        }
+    }
+
+    public function testS3JobErrorBodyRaisesWithTheApiMessage()
+    {
+        $api = new FakeApi();
+        $client = $this->client($api, 's3-400-key');
+        $error = $this->capture(function () use ($client) {
+            $client->scoreS3File(array(
+                'file_name' => 'inbox.csv',
+                'return_url' => 'https://example.com/done',
+            ));
+        });
+        // The API's own error_message is what the caller sees, not the raw body.
+        $this->assertStringContainsString('Provided return URL is not permitted', $error->getMessage());
+        $this->assertStringNotContainsString('error_message', $error->getMessage());
+        $this->assertSame('/scoreS3file', $this->only($api)['path']);
+    }
+
+    public function testExportS3FileFallsBackToTheConfiguredBucket()
+    {
+        $api = new FakeApi();
+        $client = $this->client($api, 'export-key');
+        // The docs mark export_bucket optional: without it the API uses the
+        // bucket from the account's S3 settings.
+        $response = $client->exportS3File('fid');
+        $this->assertSame('export-key', $response->fileId);
+        $request = $this->only($api);
+        $this->assertSame('POST', $request['method']);
+        $this->assertSame('https://bulkapi.zerobounce.net/exportS3file', $request['url']);
+        $this->assertSame('export-key', $request['fields']['api_key']);
+        $this->assertSame('fid', $request['fields']['file_id']);
+        $this->assertArrayNotHasKey('export_bucket', $request['fields']);
+
+        $api->clear();
+        $client->exportS3File('fid', 'bucket-out');
+        $this->assertSame('bucket-out', $this->only($api)['fields']['export_bucket']);
+
+        $this->assertRejected(function () use ($client) {
+            $client->exportS3File('');
+        }, 'fileId');
+        $this->assertRejected(function () use ($client) {
+            $client->exportS3File('fid', '  ');
+        }, 'exportBucket');
+        $this->assertSame(0, $api->count());
+    }
+
+    public function testFindEmailWithoutAFirstName()
+    {
+        $api = new FakeApi();
+        $client = $this->client($api, 'find-key');
+        // first_name is optional on GET /guessformat: without it the API
+        // answers with the domain's format.
+        $response = $client->findEmail('example.com', null);
+        $this->assertSame('find-key', $response->email);
+        $request = $this->only($api);
+        $this->assertSame('GET', $request['method']);
+        $this->assertSame('api.zerobounce.net', $request['host']);
+        $this->assertSame('/v2/guessformat', $request['path']);
+        $this->assertSame('find-key', $request['fields']['api_key']);
+        $this->assertSame('example.com', $request['fields']['domain']);
+        $this->assertArrayNotHasKey('first_name', $request['fields']);
+
+        $api->clear();
+        $client->findEmail(null, '', 'ZeroBounce', null, 'Lovelace', true);
+        $byCompany = $this->only($api);
+        $this->assertSame('POST', $byCompany['method']);
+        $this->assertSame('application/x-www-form-urlencoded', $byCompany['content_type']);
+        $this->assertSame('ZeroBounce', $byCompany['fields']['company_name']);
+        $this->assertSame('Lovelace', $byCompany['fields']['last_name']);
+        $this->assertArrayNotHasKey('first_name', $byCompany['fields']);
+
+        $api->clear();
+        $client->findEmail('example.com', 'Ada');
+        $this->assertSame('Ada', $this->only($api)['fields']['first_name']);
+
+        // findEmailFormat (find domain) and the deprecated guessFormat are
+        // unchanged: domain or companyName is still required.
+        $this->assertRejected(function () use ($client) {
+            $client->findEmail(null, 'Ada');
+        }, 'domain or companyName');
+        $this->assertRejected(function () use ($client) {
+            $client->findEmailFormat(null, null);
+        }, 'domain or companyName');
+        $this->assertSame(0, $api->count());
+    }
+
+    public function testEmailFinderFileNeedsAFirstNameOrFullNameColumn()
+    {
+        $api = new FakeApi();
+        $client = $this->client($api, 'finder-key');
+        $client->sendEmailFinderFile($this->csv, 1, null, null, null, 4, true);
+        $request = $this->only($api);
+        $this->assertSame('POST', $request['method']);
+        $this->assertSame('https://bulkapi.zerobounce.net/email-finder/sendfile', $request['url']);
+        $this->assertStringContainsString('multipart/form-data', $request['content_type']);
+        $this->assertSame('finder-key', $request['fields']['api_key']);
+        $this->assertSame('4', (string)$request['fields']['full_name_column']);
+        $this->assertArrayNotHasKey('first_name_column', $request['fields']);
+
+        // Column 0 is a column, not a missing value.
+        $api->clear();
+        $client->sendEmailFinderFileStream("acme.com\n", 'finder.csv', 1, 0);
+        $stream = $this->only($api);
+        $this->assertSame('0', (string)$stream['fields']['first_name_column']);
+        $this->assertSame('finder.csv', $stream['fields']['__filename']);
+
+        // The API needs a name to search for, so neither column is a job the
+        // SDK should send.
+        $this->assertRejected(function () use ($client) {
+            $client->sendEmailFinderFile($this->csv, 1);
+        }, 'firstNameColumn or fullNameColumn');
+        $this->assertRejected(function () use ($client) {
+            $client->sendEmailFinderFileStream("acme.com\n", 'finder.csv', 1, '', null, null, '');
+        }, 'firstNameColumn or fullNameColumn');
+        $this->assertSame(0, $api->count());
+    }
+
+    public function testACustomBaseUrlIsNeverReplacedByProduction()
+    {
+        $api = new FakeApi();
+        $client = new OfflineClient($api);
+        // An unrecognised host used to be swapped for api.zerobounce.net, so a
+        // test run quietly talked to production.
+        $client->initialize('mock-key', 'https://mock.test/v2/');
+        $client->getCredits();
+        $request = $this->only($api);
+        $this->assertSame('https://mock.test/v2/getcredits?api_key=mock-key', $request['url']);
+        $this->assertSame('mock.test', $request['host']);
+
+        $regional = new OfflineClient($api);
+        $regional->initialize('eu-key', ZBBaseUrl::API_EU_URL);
+        $regional->getCredits();
+        $this->assertSame('api-eu.zerobounce.net', $this->only($api)['host']);
+
+        $default = new OfflineClient($api);
+        $default->initialize('default-key');
+        $default->getCredits();
+        $this->assertSame('api.zerobounce.net', $this->only($api)['host']);
+
+        // Anything that is not an https URL is refused out loud.
+        foreach (array('http://mock.test/v2', 'mock.test', 'ftp://mock.test') as $rejected) {
+            $client = new OfflineClient($api);
+            $this->assertRejected(function () use ($client, $rejected) {
+                $client->initialize('key', $rejected);
+            }, 'https://');
+        }
+        $this->assertSame(0, $api->count());
+    }
+
+    public function testBulkBaseUrlOverridePointsEveryBulkHostAtOneServer()
+    {
+        $api = new FakeApi();
+        $client = new OfflineClient($api);
+        $client->initialize('bulk-key', null, null, null, 'https://bulk.mock.test/');
+
+        $calls = array(
+            '/v2/filestatus' => function ($client) { return $client->fileStatus('fid'); },
+            '/v2/scoring/filestatus' => function ($client) { return $client->scoringFileStatus('fid'); },
+            '/v2/deletefile' => function ($client) { return $client->deleteFile('fid'); },
+            '/v2/send-evaluated-file/' => function ($client) { return $client->sendEvaluatedFile('fid'); },
+            '/scoreS3file' => function ($client) {
+                return $client->scoreS3File(array(
+                    'file_name' => 'inbox.csv',
+                    'return_url' => 'https://example.com/done',
+                ));
+            },
+            '/listS3files' => function ($client) { return $client->listS3Files(); },
+            '/email-finder/filestatus' => function ($client) { return $client->emailFinderFileStatus('fid'); },
+            '/domain-search/filestatus' => function ($client) { return $client->domainSearchFileStatus('fid'); },
+            '/v2/listevaluator/fid/' => function ($client) { return $client->getListEvaluatorResult('fid'); },
+            '/api/ipt/providers' => function ($client) { return $client->getInboxPlacementProviders(); },
+        );
+        foreach ($calls as $path => $call) {
+            $api->clear();
+            $call($client);
+            $request = $this->only($api);
+            $this->assertSame('bulk.mock.test', $request['host']);
+            $this->assertSame($path, $request['path']);
+        }
+
+        // The single-call host is independent of the bulk one.
+        $api->clear();
+        $client->getCredits();
+        $this->assertSame('api.zerobounce.net', $this->only($api)['host']);
+
+        // The list evaluator and Inbox Placement arguments still win.
+        $explicit = new OfflineClient($api);
+        $explicit->initialize(
+            'bulk-key',
+            null,
+            'https://evaluator.mock.test/v2/listevaluator',
+            'https://ipt.mock.test/api/ipt',
+            'https://bulk.mock.test'
+        );
+        $api->clear();
+        $explicit->getListEvaluatorResult('fid');
+        $this->assertSame('evaluator.mock.test', $this->only($api)['host']);
+        $api->clear();
+        $explicit->getInboxPlacementProviders();
+        $this->assertSame('ipt.mock.test', $this->only($api)['host']);
+
+        $rejecting = new OfflineClient($api);
+        $this->assertRejected(function () use ($rejecting) {
+            $rejecting->initialize('key', null, null, null, 'http://bulk.mock.test');
+        }, 'bulkBaseUrl');
+        $this->assertSame(0, $api->count());
+    }
+
+    public function testDeleteFileHelperIsInternalAndTheBulkPathsAreUnchanged()
+    {
+        $api = new FakeApi();
+        $client = $this->client($api, 'delete-key');
+        $client->deleteFile('fid');
+        $deleted = $this->only($api);
+        $this->assertSame('GET', $deleted['method']);
+        $this->assertSame('https://bulkapi.zerobounce.net/v2/deletefile?api_key=delete-key&file_id=fid', $deleted['url']);
+
+        $api->clear();
+        $client->scoringDeleteFile('fid');
+        $this->assertSame('/v2/scoring/deletefile', $this->only($api)['path']);
+
+        // _deleteFile is the shared helper behind those two, not public API.
+        $method = new \ReflectionMethod(ZeroBounce::class, '_deleteFile');
+        $this->assertTrue($method->isPrivate());
     }
 
     private function client(FakeApi $api, $key)
