@@ -11,13 +11,15 @@
  *   composer run test:live
  *
  * By default only free calls run: sandbox addresses (no credits), reads, and
- * requests expected to fail (unknown file IDs, S3/SFTP without an integration)
+ * requests expected to fail (unknown file IDs, an S3 job without return_url)
  * that still prove the API accepts the payload. The free tier checks that the
  * credit balance did not change. Two flags opt in to more:
  *
  *   ZEROBOUNCE_LIVE_SPEND=1     spends credits: scoring, activity, email
  *                               finder, and bulk round trips (every job is
- *                               deleted again)
+ *                               deleted again); also a complete S3 email
+ *                               finder job, which starts real work on an
+ *                               account with an S3 integration
  *   ZEROBOUNCE_LIVE_CHANGES=1   reversible account changes, each undone in
  *                               cleanup even when a test fails: a test filter,
  *                               and a self-managed Warmup sending account
@@ -197,23 +199,6 @@ function validationFree()
         check(strpos($message, 'return_url') !== false, 'unexpected message: ' . $message);
     });
 
-    test('LIVE: a complete S3 job payload is accepted by the API', function () use ($client) {
-        // Without an S3 integration this fails on the integration, not the payload.
-        try {
-            $client->emailFinderS3File(array(
-                'file_name' => 'f.csv',
-                'has_header_row' => true,
-                'return_url' => CALLBACK,
-            ));
-        } catch (\Throwable $e) {
-            $message = redact($e->getMessage());
-            check(
-                !preg_match('/return URL is not permitted|This field is required/i', $message),
-                'payload rejected: ' . $message
-            );
-        }
-    });
-
     test('filters list', function () use ($client) {
         $client->listFilters();
     });
@@ -295,6 +280,25 @@ function validationSpend()
 
     test('domain search', function () use ($client) {
         check($client->findEmailFormat('example.com') !== null, 'no response');
+    });
+
+    // Not a free call: on an account with an S3 integration this complete
+    // payload starts a real email finder job.
+    test('LIVE: a complete S3 job payload is accepted by the API', function () use ($client) {
+        // Without an S3 integration this fails on the integration, not the payload.
+        try {
+            $client->emailFinderS3File(array(
+                'file_name' => 'f.csv',
+                'has_header_row' => true,
+                'return_url' => CALLBACK,
+            ));
+        } catch (\Throwable $e) {
+            $message = redact($e->getMessage());
+            check(
+                !preg_match('/return URL is not permitted|This field is required/i', $message),
+                'payload rejected: ' . $message
+            );
+        }
     });
 
     $fileId = null;

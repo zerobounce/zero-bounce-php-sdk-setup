@@ -9,7 +9,7 @@ sudo apt install -y composer
 
 To install the SDK with composer, run:
 ```bash
-composer install zero-bounce/sdk
+composer require zero-bounce/sdk
 ```
 
 #### Usage
@@ -170,22 +170,20 @@ ZeroBounce::Instance()->initialize(
 
 - Verify a batch of email addresses:
 ```php
-/** @var response ZeroBounce\SDK\ZBBatchValidateResponse */
+/** @var $response ZeroBounce\SDK\ZBBatchValidateResponse */
 $response = ZeroBounce::Instance()->validateBatch([
-		"EMAIL_ADDRESS_1", 		// Email address that needs to be validated
-		"EMAIL_ADDRESS_2", 
-		"EMAIL_ADDRESS_3",
-	...
-	]);
+    "<EMAIL_ADDRESS_1>",    // Email addresses that need to be validated
+    "<EMAIL_ADDRESS_2>",
+    "<EMAIL_ADDRESS_3>",    // ...up to the API's batch limit
+]);
 // or
 $response = ZeroBounce::Instance()->validateBatch([
-		["EMAIL_ADDRESS_1", "IP_ADDRESS_1"],	// Email and IP address that need to be validated
-		["EMAIL_ADDRESS_2", "IP_ADDRESS_2"],
-		["EMAIL_ADDRESS_3", "IP_ADDRESS_3"],
-		...
-	]);
-// => 
-$response->emailBatch 	// array of ZBValidateReponse type objects
+    ["<EMAIL_ADDRESS_1>", "<IP_ADDRESS_1>"],    // Email and IP address that need to be validated
+    ["<EMAIL_ADDRESS_2>", "<IP_ADDRESS_2>"],
+    ["<EMAIL_ADDRESS_3>", "<IP_ADDRESS_3>"],
+]);
+
+$results = $response->emailBatch;   // array of ZBValidateResponse objects
 ```
 
 - Check how many credits you have left on your account
@@ -265,7 +263,7 @@ $options->activityData = true;
 $response = ZeroBounce::Instance()->getFile($fileId, $downloadPath, $options);
 ```
 
-If the API returns a non-success HTTP status or a JSON error body (including some HTTP 200 responses with `success: false`), the SDK throws `ZBException`. To inspect raw bodies yourself, use `ZeroBounce::getFileJsonIndicatesError($jsonString)`.
+If the API returns a non-success HTTP status or a JSON error body (including some HTTP 200 responses with `success: false`), the SDK throws `ZBApiException`, whose `getStatusCode()` gives the HTTP status. It extends `ZBException`. To inspect raw bodies yourself, use `ZeroBounce::getFileJsonIndicatesError($jsonString)`.
 
 - Deletes the file that was submitted using scoring sendfile API. File can be deleted only when its status is _`Complete`_
 ```php
@@ -321,18 +319,24 @@ $success = $response->success;      // True / False
 ```
 
 ###### Email Finder API
-Guess an email address. The required argument is either `domain` or `companyName`; if both are provided, only `domain` is used, and `domain` can be `null`. `firstName` is optional: without it the API answers with the domain's format rather than one address.
+Guess an email address. The required argument is either `domain` or `companyName`; if both are provided, only `domain` is used, and `domain` can be `null`. `firstName` is optional: pass `null` and the API answers with the domain's format rather than one address. The argument itself is positional, so pass `null` rather than leaving it out.
 ```php
 $response = ZeroBounce::Instance()->findEmail(
-    $domain, $firstName, $companyName, $middleName, $lastName
+    "example.com",   // domain, or null to search by company name
+    "John",          // first name, or null for the domain's format only
+    null,            // company name, used only when domain is null
+    null,            // middle name (optional)
+    "Doe"            // last name (optional)
 );
 $email = $response->email;
 ```
 
 Guess the format of email addresses for a domain or company. Must provide either `domain` or `companyName`. If both are provided, only `domain` is used. If necessary, `domain` can be `null`.
 ```php
-$response = ZeroBounce::Instance()->findEmailFormat($domain, $companyName);
-$email = $response->format;
+$response = ZeroBounce::Instance()->findEmailFormat("example.com");
+// or, by company name
+$response = ZeroBounce::Instance()->findEmailFormat(null, "Example Inc");
+$format = $response->format;
 ```
 
 #### Development
@@ -361,7 +365,7 @@ sudo apt install -y php-curl php-dom php-xml php-xmlwriter
 Install development dependencies:
 
 ```bash
-composer install --dev
+composer install
 ```
 
 Run tests:

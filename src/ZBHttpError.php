@@ -91,7 +91,16 @@ class ZBHttpError
         if (!is_array($decoded) || self::isList($decoded)) {
             return;
         }
-        if (!isset($decoded['error']) || !is_string($decoded['error']) || trim($decoded['error']) === '') {
+        // LIVE: the filters spell it "Error": an invalid or drained key answers
+        // them with {"Error": "Invalid API key or your account ran out of credits"}.
+        $errorKey = null;
+        foreach (array('error', 'Error') as $key) {
+            if (isset($decoded[$key]) && is_string($decoded[$key]) && trim($decoded[$key]) !== '') {
+                $errorKey = $key;
+                break;
+            }
+        }
+        if ($errorKey === null) {
             return;
         }
         $payloadKeys = array(
@@ -103,7 +112,40 @@ class ZBHttpError
                 return;
             }
         }
-        throw new ZBException(self::stripPrefix(trim($decoded['error'])));
+        throw new ZBException(self::stripPrefix(trim($decoded[$errorKey])));
+    }
+
+    /**
+     * For a call whose result is never a bare message - the email finder and
+     * domain search - a body made only of message fields is a failure: an
+     * object with no "success" field whose keys are all message keys, at least
+     * one a non-empty string. LIVE: guessformat answers an invalid or drained
+     * key with an HTTP 200 and
+     * {"Message": "Invalid API key or your account ran out of credits"}.
+     * Not for validate: a repeated greylist_processing request answers
+     * {"Message": "Greylist validation still in progress..."}, a result.
+     *
+     * @param mixed $decoded the parsed body
+     * @throws ZBException
+     */
+    public static function throwIfMessageOnly($decoded)
+    {
+        if (!is_array($decoded) || self::isList($decoded) || array_key_exists('success', $decoded)) {
+            return;
+        }
+        $messageKeys = array('error', 'message', 'error_message', 'Message', 'Error', 'detail');
+        $text = '';
+        foreach ($decoded as $key => $value) {
+            if (!in_array((string)$key, $messageKeys, true)) {
+                return;
+            }
+            if ($text === '' && is_string($value) && trim($value) !== '') {
+                $text = trim($value);
+            }
+        }
+        if ($text !== '') {
+            throw new ZBException(self::stripPrefix($text));
+        }
     }
 
     /**
@@ -191,7 +233,7 @@ class ZBHttpError
 
     private static function stringField(array $decoded)
     {
-        foreach (array('message', 'error', 'error_message', 'detail') as $key) {
+        foreach (array('message', 'error', 'error_message', 'Message', 'Error', 'detail') as $key) {
             if (!isset($decoded[$key]) || $decoded[$key] === '' || $decoded[$key] === null || $decoded[$key] === array()) {
                 continue;
             }

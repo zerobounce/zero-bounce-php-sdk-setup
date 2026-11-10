@@ -728,6 +728,57 @@ class OfflineApiTest extends TestCase
         $this->assertSame('api_key is invalid', $error->getMessage());
     }
 
+    public function testADeadKeyIsAnErrorOnEveryCall()
+    {
+        $api = new FakeApi();
+        $client = $this->client($api, 'dead-key-user');
+        $drained = 'Invalid API key or your account ran out of credits';
+        $calls = array(
+            'validate' => array(function () use ($client) { return $client->validate('a@example.com', ''); }, $drained),
+            'validate POST' => array(function () use ($client) {
+                $options = new ZBValidateOptions();
+                $options->usePost = true;
+                return $client->validate('a@example.com', '', $options);
+            }, $drained),
+            'getActivity' => array(function () use ($client) { return $client->getActivity('a@example.com'); }, $drained),
+            'getApiUsage' => array(function () use ($client) {
+                return $client->getApiUsage(new \DateTime('2026-10-01'), new \DateTime('2026-10-02'));
+            }, 'Invalid API key'),
+            'findEmail' => array(function () use ($client) { return $client->findEmail('example.com', 'john'); }, $drained),
+            'findEmail POST' => array(function () use ($client) {
+                return $client->findEmail('example.com', 'john', null, null, null, true);
+            }, $drained),
+            'findEmailFormat' => array(function () use ($client) { return $client->findEmailFormat('example.com'); }, $drained),
+            'addFilter' => array(function () use ($client) { return $client->addFilter('allow', 'email', 'x@example.com'); }, $drained),
+            'deleteFilter' => array(function () use ($client) { return $client->deleteFilter('allow', 'email', 'x@example.com'); }, $drained),
+            'listFilters' => array(function () use ($client) { return $client->listFilters(); }, $drained),
+            'listFilters POST' => array(function () use ($client) { return $client->listFilters(true); }, $drained),
+        );
+        foreach ($calls as $name => $call) {
+            $result = null;
+            $error = null;
+            try {
+                $result = $call[0]();
+            } catch (\Exception $e) {
+                $error = $e;
+            }
+            $this->assertNotNull($error, $name . ' returned a result: ' . json_encode($result));
+            $this->assertSame($call[1], $error->getMessage(), $name);
+        }
+        // -1 is the documented credit balance of an invalid key, not an error.
+        $this->assertSame(-1, (int)$client->getCredits()->credits);
+    }
+
+    public function testABareMessageIsStillAResultWhereTheApiMeansOne()
+    {
+        $api = new FakeApi();
+        $pending = $this->client($api, 'greylist-pending-user')->validate('a@example.com', '');
+        $this->assertSame('Greylist validation still in progress. Please try again later.', $pending->message);
+
+        $added = $this->client($api, 'filter-message-user')->addFilter('allow', 'email', 'x@example.com');
+        $this->assertSame('Filter has been added.', $added['Message']);
+    }
+
     public function testBatchAccountErrorIsNotASuccess()
     {
         $api = new FakeApi();
@@ -1221,6 +1272,94 @@ return true;
         $this->assertSame('File cannot be found.', $error->getMessage());
         $this->assertInstanceOf(ZBApiException::class, $error);
         $this->assertSame(200, $error->getStatusCode());
+    }
+
+    public function testAnHttpErrorIsAZBApiExceptionCarryingTheStatus()
+    {
+        // Every request path: GET, JSON POST, form POST, multipart upload,
+        // getFile (buffered and streamed) and the Inbox Placement Tester.
+        $csv = $this->csv;
+        $cases = array(
+            array('cf-json-key', 403, function ($c) { $c->validate('a@example.com'); }),
+            array('cf-json-key', 403, function ($c) { $c->getCredits(); }),
+            array('cf-json-key', 403, function ($c) { $c->getCredits(true); }),
+            array('html-403-key', 403, function ($c) { $c->getApiUsage('2026-01-01', '2026-01-02'); }),
+            array('double-error-key', 400, function ($c) { $c->validateBatch(array('a@example.com')); }),
+            array('s3-400-key', 400, function ($c) {
+                $c->validateS3File(array('file_name' => 'f.csv', 'return_url' => 'https://example.com/done'));
+            }),
+            array('s3-400-key', 400, function ($c) use ($csv) { $c->sendFile($csv, 1); }),
+            array('s3-400-key', 400, function ($c) { $c->sendFileStream("email\na@example.com\n", 'a.csv', 1); }),
+            array('s3-400-key', 400, function ($c) use ($csv) { $c->sendEmailFinderFile($csv, 1, 2); }),
+            array('html-403-key', 403, function ($c) { $c->fileStatus('f1'); }),
+            array('html-403-key', 403, function ($c) { $c->getFile('f1', $this->tempPath('http-error.csv')); }),
+            array('html-403-key', 403, function ($c) {
+                $options = new ZBGetFileOptions();
+                $options->stream = true;
+                $c->getFile('f1', $this->tempPath('http-error-stream.csv'), $options);
+            }),
+            array('html-403-key', 403, function ($c) { $c->emailFinderGetFile('f1', $this->tempPath('http-error-ef.csv')); }),
+            array('html-200-key', 200, function ($c) { $c->getCredits(); }),
+            array('empty-key', 200, function ($c) { $c->getCredits(); }),
+            array('ipt-detail-key', 404, function ($c) { $c->getInboxPlacementProviders(); }),
+        );
+        foreach ($cases as $i => $case) {
+            list($key, $status, $call) = $case;
+            $client = $this->client(new FakeApi(), $key);
+            $error = $this->capture(function () use ($call, $client) { $call($client); });
+            $this->assertInstanceOf(ZBApiException::class, $error, 'case ' . $i . ': ' . $error->getMessage());
+            // Still a ZBException, so existing catch blocks keep working.
+            $this->assertInstanceOf(ZBException::class, $error);
+            $this->assertSame($status, $error->getStatusCode(), 'case ' . $i);
+            $this->assertStringNotContainsString($key, $error->getMessage(), 'case ' . $i);
+        }
+    }
+
+    public function testAnAccountErrorOnAnHttp200IsAPlainZBException()
+    {
+        // The dead-key body carries no HTTP error, so it is not a ZBApiException.
+        $client = $this->client(new FakeApi(), 'dead-key-1');
+        $error = $this->capture(function () use ($client) { $client->validate('a@example.com'); });
+        $this->assertNotInstanceOf(ZBApiException::class, $error);
+        $this->assertSame('Invalid API key or your account ran out of credits', $error->getMessage());
+    }
+
+    public function testTheInboxPlacementTesterTriggersTheRegionalBulkHostWarning()
+    {
+        $api = new FakeApi();
+        $client = new OfflineClient($api);
+        $client->initialize('eu-key', ZBBaseUrl::API_EU_URL);
+
+        $warnings = array();
+        set_error_handler(function ($level, $message) use (&$warnings) {
+            $warnings[] = $message;
+            return true;
+        }, E_USER_WARNING);
+        try {
+            $client->getInboxPlacementProviders();
+            $client->getInboxPlacementTestTypes();
+        } finally {
+            restore_error_handler();
+        }
+
+        $this->assertCount(1, $warnings, 'the Inbox Placement Tester is on the global bulk host');
+        $this->assertStringContainsString('EU', $warnings[0]);
+        $this->assertStringContainsString('Inbox Placement Tester', $warnings[0]);
+    }
+
+    public function testTheInboxPlacementTesterRefusesANonHttpsUrl()
+    {
+        // initialize() checks the base URL; checkedUrl() checks the URL actually sent.
+        $api = new FakeApi();
+        $client = $this->client($api, 'ipt-key');
+        $ref = new ReflectionClass($client);
+        $prop = $ref->getProperty('inboxPlacementBaseUrl');
+        if (\PHP_VERSION_ID < 80100) {
+            $prop->setAccessible(true);
+        }
+        $prop->setValue($client, 'http://bulkapi.zerobounce.net/api/ipt');
+        $this->assertRejected(function () use ($client) { $client->getInboxPlacementProviders(); }, 'https://');
+        $this->assertSame(0, $api->count());
     }
 
     public function testEveryDocumentedEndpointAlsoWorksOverPost()

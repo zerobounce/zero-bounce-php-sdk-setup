@@ -7,75 +7,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-11-11
+
+This release has breaking changes. Read the **Breaking** entries under Changed before you upgrade from 2.1.x.
+
 ### Added
 
 - `ZeroBounce::create()` returns a new client. `Instance()` stays a process-wide singleton.
-- `validate` and `validateBatch` take `ZBValidateOptions`: `timeout`, `activityData`, `verifyPlus`, and `usePost` (form-encoded `POST /validate`). Single `timeout` is 3–60 seconds. Batch `timeout` is 10–120.
+- `validate` and `validateBatch` take `ZBValidateOptions` with `timeout`, `activityData` and `verifyPlus`. `validate` also takes `usePost` (form-encoded `POST /validate`). A single `timeout` must be 3–60 seconds and a batch `timeout` 10–120. Both ranges are checked before a request is sent. `validateBatch` sends `timeout` as a JSON string, because the live API rejects a number.
 - `ZBValidateResponse` reads `active_in_days` and `active_first_seen`.
+- `ZBValidateSubStatus::AiAgentMailbox` (`ai_agent_mailbox`).
 - `scoreEmail` (`GET /v2/scoring`) and `scoreEmailPost` (form-encoded `POST /v2/scoring`).
-- Bulk email finder (`sendEmailFinderFile`, `emailFinderFileStatus`, `emailFinderGetFile`, `emailFinderDeleteFile`, plus stream upload).
-- Bulk domain search (`sendDomainSearchFile`, `domainSearchFileStatus`, `domainSearchGetFile`, `domainSearchDeleteFile`, plus stream upload).
-- List evaluator (`sendListEvaluatorFile`, `getListEvaluatorResult`, `sendEvaluatedFile`, plus stream uploads).
-- Filters (`addFilter`, `listFilters`, `deleteFilter`).
-- S3 bulk (`validateS3File`, `scoreS3File`, `exportS3File`, `listS3Files`, `emailFinderS3File`, `domainSearchS3File`).
-- SFTP/FTP bulk (`validateSFTPFile`, `scoreSFTPFile`, `emailFinderSFTPFile`, `domainSearchSFTPFile`, `exportSFTPFile`). The server, path and protocol come from your ZeroBounce settings. `validateSFTPFile`'s `file_name` is optional; `exportSFTPFile` takes `export_path` rather than `export_bucket`.
-- `validate` accepts `domainInfo`, `greylistProcessing`, and `callbackUrl` on `ZBValidateOptions`. `callbackUrl` needs `greylistProcessing = true` and is rejected without it, and when blank, before a request is sent.
-- `ZBValidateResponse` carries `domainWebsiteExists`, `domainRegistrantCompanyName`, and `message`. `message` is read from the API's `Message` key, returned while greylist processing is still running.
-- Inbox Placement Tester on `https://bulkapi.zerobounce.net/api/ipt`: `getInboxPlacementProviders`, `getInboxPlacementTestTypes`, `createInboxPlacementTest`, `getInboxPlacementTest`, `listInboxPlacementTests`, `deleteInboxPlacementTest`, `getInboxPlacementWebhook`, `setInboxPlacementWebhook`.
+- Bulk email finder: `sendEmailFinderFile`, `sendEmailFinderFileStream`, `emailFinderFileStatus`, `emailFinderGetFile` and `emailFinderDeleteFile`. An upload needs `domainColumn` and either `firstNameColumn` or `fullNameColumn`.
+- Bulk domain search: `sendDomainSearchFile`, `sendDomainSearchFileStream`, `domainSearchFileStatus`, `domainSearchGetFile` and `domainSearchDeleteFile`.
+- List evaluator on its own base URL, `https://bulkapi.zerobounce.net/v2/listevaluator`: `sendListEvaluatorFile`, `sendListEvaluatorFileStream` and `getListEvaluatorResult`. The file id is URL-encoded as one path segment. `getListEvaluatorResult` returns a `ZBListEvaluatorResponse`, and everything the API sent is on `->data`. `sendEvaluatedFile($fileId)` submits a finished evaluation for validation. It posts the list evaluator's `file_id` as a form field to `/v2/send-evaluated-file/` on the bulk host.
+- Filters: `addFilter`, `listFilters` and `deleteFilter`.
+- S3 bulk: `validateS3File`, `scoreS3File`, `exportS3File`, `listS3Files`, `emailFinderS3File` and `domainSearchS3File`.
+- SFTP/FTP bulk: `validateSFTPFile`, `scoreSFTPFile`, `emailFinderSFTPFile`, `domainSearchSFTPFile` and `exportSFTPFile`. The server, path and protocol come from your ZeroBounce settings.
+- Every S3 and SFTP/FTP file job (validate, score, email finder, domain search) requires `file_name` and `return_url`. A job without them is refused before it is sent. `has_header_row` and `remove_duplicates` are optional. `exportS3File` takes an optional `$exportBucket` and `exportSFTPFile` an optional `$exportPath`. Without them, the API uses the bucket or path in your ZeroBounce settings.
+- `validate` accepts `domainInfo`, `greylistProcessing` and `callbackUrl` on `ZBValidateOptions`. `callbackUrl` needs `greylistProcessing = true` and must not be blank. Either problem is rejected before a request is sent.
+- `ZBValidateResponse` carries `domainWebsiteExists`, `domainRegistrantCompanyName` and `message`. `message` is read from the API's `Message` key, which the API returns while greylist processing is still running.
+- Inbox Placement Tester on `https://bulkapi.zerobounce.net/api/ipt`: `getInboxPlacementProviders`, `getInboxPlacementTestTypes`, `createInboxPlacementTest`, `getInboxPlacementTest`, `listInboxPlacementTests` (`GET /tests`), `deleteInboxPlacementTest`, `getInboxPlacementWebhook` and `setInboxPlacementWebhook`. The key goes in an `Authorization: Bearer` header, never in an `api_key` parameter. An error body's `detail` text becomes the exception message.
 - `initialize` takes optional third and fourth arguments to override the list evaluator and Inbox Placement Tester base URLs.
-- `initialize` takes an optional fifth argument, the bulk base URL. It moves every `bulkapi.zerobounce.net` host at once -- bulk files, scoring, bulk email finder, domain search, S3/SFTP, the list evaluator and the Inbox Placement Tester -- so the client can be pointed at a test server. The third and fourth arguments still override their own host.
-- `ZeroBounceWarmup`, a client for the Warmup API. It is a separate product with its own host (`https://warmup-api.zerobounce.net`), its own team-scoped key sent in an `API-Key` header, and all 26 documented endpoints, including the seed-list and statistics CSV downloads.
+- `initialize` takes an optional fifth argument, the bulk base URL. It moves every `bulkapi.zerobounce.net` host at once, so the client can be pointed at a test server. That covers bulk files, scoring, bulk email finder, domain search, S3/SFTP, the list evaluator and the Inbox Placement Tester. The third and fourth arguments still override their own host.
+- `ZeroBounceWarmup`, a client for the Warmup API. It is a separate product with its own host (`https://warmup-api.zerobounce.net`) and its own team-scoped key, sent in an `API-Key` header. The client covers all 26 documented endpoints, including the seed-list and statistics CSV downloads.
 - `getCredits`, `getApiUsage`, `getActivity`, `scoreEmail`, `findEmail` and `findEmailFormat` take a trailing `$usePost`. The API accepts the same parameters form-encoded, which keeps the key out of request logs.
 - `getApiUsage` accepts a `YYYY-MM-DD` string as well as a `DateTime`.
 - `ZBGetFileOptions::$stream` writes a result file to disk in chunks instead of holding it in memory. The bytes land in a temporary file beside the download path and move into place only once the transfer finishes.
-- `ZBApiException::getStatusCode()` returns the HTTP status of a failed response, so callers can tell a Cloudflare 403 from an API 400/404.
-- A regional `baseUrl` paired with the global bulk host raises an `E_USER_WARNING` once per client: ZeroBounce documents no regional host for bulk files, the list evaluator, S3/SFTP or the Inbox Placement Tester.
-- An opt-in live API suite (`composer run test:live`). It is excluded from `composer test` and from CI, needs keys in the environment, and only spends credits or changes the account behind `ZEROBOUNCE_LIVE_SPEND=1` and `ZEROBOUNCE_LIVE_CHANGES=1`.
+- `ZBApiException::getStatusCode()` returns the HTTP status of a failed response, so callers can tell a Cloudflare 403 from an API 400/404. The SDK throws a `ZBApiException` for an HTTP status above 299 and for an empty, HTML or non-JSON body. It also throws one for `{"success": false}`, a JSON error on `getFile`, and every failed Warmup request. `ZBApiException` extends `ZBException`, so existing `catch (ZBException $e)` blocks still catch it.
+- A regional `baseUrl` paired with the global bulk host raises an `E_USER_WARNING` once per client. ZeroBounce documents no regional host for bulk files, the list evaluator, S3/SFTP or the Inbox Placement Tester.
+- An opt-in live API suite (`composer run test:live`). It is excluded from `composer test` and from CI and needs keys in the environment. By default it only reads, validates sandbox addresses and sends requests that are expected to fail. Spending credits needs `ZEROBOUNCE_LIVE_SPEND=1`, which also gates a complete S3 job that would start real work on an account with an S3 integration. Changing the account needs `ZEROBOUNCE_LIVE_CHANGES=1`.
 
 ### Changed
 
-- List evaluator requests use their own base URL (`https://bulkapi.zerobounce.net/v2/listevaluator`) instead of building the path from the bulk base, and the file id is URL-encoded as one path segment. `sendEvaluatedFile` stays on the bulk base.
+- **Breaking:** API errors now throw instead of coming back as a result. In 2.1.11 every call except `getFile` deserialized a JSON error body into the response, whatever its HTTP status. `validate` came back with `->error` set. `getActivity`, `getApiUsage`, `findEmail` and `findEmailFormat` came back with every field `null`. Now:
+  - Every HTTP status above 299 throws a `ZBApiException`.
+  - `{"success": false}` on an HTTP 200 throws a `ZBApiException`. That is the API's answer to an unknown bulk file id.
+  - A bare `error` or `Error` body on an HTTP 200 throws a `ZBException`. That is how the API answers an invalid or drained key on most calls, for example `{"error": "Invalid API key or your account ran out of credits"}`. `findEmail` and `findEmailFormat` also throw for a body made only of `Message`, which is what they get for a dead key.
+  - `validateBatch` throws when the API reports an account-level error for address `all`. An error for a single address stays on the result.
 
-- API requests time out after 120 seconds.
-- Each `ZeroBounce` instance keeps its own API base URL.
-- `validateBatch` sends `timeout` as a JSON string. Sent as a number, the live API rejects the whole batch with an account-level error.
-- The Inbox Placement Tester authenticates with an `Authorization: Bearer` header instead of an `api_key` parameter, and `listInboxPlacementTests` calls `GET /tests`. `GET /test` answers "Method \"GET\" not allowed".
-- `sendEvaluatedFile($fileId)` posts the list evaluator's `file_id` as a form field. The endpoint rejects a file upload with "file_id: This field is required". `sendEvaluatedFileStream` is gone.
-- The S3 and SFTP/FTP jobs require `return_url`, and `file_name` is required on all of them. The API answers "This field is required" otherwise. That now includes `validateS3File` and `scoreS3File`, which share the same checks as the other six jobs.
-- `has_header_row` is optional on every S3 and SFTP/FTP job. `emailFinderS3File`, `domainSearchS3File`, `validateSFTPFile`, `scoreSFTPFile`, `emailFinderSFTPFile` and `domainSearchSFTPFile` used to refuse a job without it, which the API accepts.
-- `exportS3File`'s `$exportBucket` is optional. Left out, the API exports to the bucket in your ZeroBounce settings, the way `exportSFTPFile` falls back to the configured path.
-- `findEmail`'s `$firstName` is optional. Only `domain` or `companyName` is required; without a first name the API answers with the domain's format. `findEmailFormat` and the deprecated `guessFormat` are unchanged.
-- `sendEmailFinderFile` and `sendEmailFinderFileStream` require `firstNameColumn` or `fullNameColumn`. The endpoint needs a name to search for, and only `domainColumn` was checked.
-- `_deleteFile` is private. It is the internal helper behind `deleteFile` and `scoringDeleteFile`, which are unchanged.
-- `getListEvaluatorResult` returns a `ZBListEvaluatorResponse` instead of a plain array. Everything the API sent is still available on `->data`.
+  `getCredits` still returns `-1` for an invalid key. A bare `Message` is still a result where it is one. A repeated `greylist_processing` validate answers `{"Message": "Greylist validation still in progress. Please try again later."}`.
+
+  To migrate, wrap calls in `try { ... } catch (ZBException $e) { ... }` instead of checking `$response->error` or for empty fields. `$e->getMessage()` is the error text the API sent, with any `Error:` prefix removed. To read the HTTP status, catch `ZBApiException` first and call `getStatusCode()`.
+- **Breaking:** `protected static $ApiBaseUrl` is gone. Each `ZeroBounce` instance keeps its own base URL in the protected instance property `$apiBaseUrl`. A subclass that read or wrote `self::$ApiBaseUrl` or `static::$ApiBaseUrl` must use `$this->apiBaseUrl`.
+- **Breaking:** `_deleteFile` is private. It was public in 2.1.11. Call `deleteFile` or `scoringDeleteFile`, which are unchanged.
+- **Breaking:** the constructor is now `ZBApiException::__construct($message = '', $statusCode = 0)`. The second argument is the HTTP status, not `Exception`'s `$code`, and there is no `$previous`. This only affects code that constructs a `ZBApiException` itself.
+- `findEmail` no longer requires a first name. With `null` as `$firstName`, only `domain` or `companyName` is required, and the API answers with the domain's format. The parameter is still positional: call `findEmail('example.com', null)`. `findEmail('example.com')` alone throws an `ArgumentCountError`. `findEmailFormat` and the deprecated `guessFormat` are unchanged.
 - Every HTTP call goes through cURL. The `http://` stream wrapper is no longer used.
+- Request time limits changed. Every request now has a 120-second total limit, except a streamed download (`ZBGetFileOptions::$stream`), which has no overall limit. The limit includes a non-streamed `getFile`, so use `stream` for a result file that can take longer than 120 seconds to download. In 2.1.11, file uploads stopped at 30 seconds, `validateBatch` had no limit, and the other calls were bounded only by PHP's `default_socket_timeout`.
+
+### Removed
+
+- `src/ZBLegacyHttpResponseHeaders.php`, an internal file that read `$http_response_header` for the stream wrapper.
 
 ### Fixed
 
-- Four `ZBApiUsageResponse` counters were never populated and stayed `null` for every caller. The base class converts `snake_case` to `camelCase`, which turns `sub_status_antispam_system`, `sub_status_greylisted`, `sub_status_unroutable_ip_address` and `sub_status_mail_server_did_not_respond` into names that do not match the declared properties (`$subStatusAntiSpamSystem`, `$subStatusGreyListed`, `$subStatusUnRoutableIpAddress`, `$subStatusMailServerDidNotResponse`). The four are now mapped explicitly; the property names are unchanged, so no caller breaks.
+- On PHP 8.0–8.3, the HTTP status of a `GET` was lost. 2.1.11 read `$http_response_header` from an included file. That works on PHP 7, and PHP 8.4 and later used `http_get_last_response_headers()` instead. On 8.0–8.3 the included file never saw the variable. The protected `request()` returned 0, and `getFile` and `scoringGetFile` could not see an error status, so they saved any non-JSON error body as the result file. cURL reports the status on every PHP version.
+- Four `ZBApiUsageResponse` counters were never populated and stayed `null` for every caller. The base class converts `snake_case` to `camelCase`. That turned `sub_status_antispam_system`, `sub_status_greylisted`, `sub_status_unroutable_ip_address` and `sub_status_mail_server_did_not_respond` into names that do not match the declared properties (`$subStatusAntiSpamSystem`, `$subStatusGreyListed`, `$subStatusUnRoutableIpAddress`, `$subStatusMailServerDidNotResponse`). The four are now mapped explicitly. The property names are unchanged, so no caller breaks.
 - `ZBApiUsageResponse` gained `$subStatusLeadingPeriodRemoved` and `$subStatusAliasAddress`, two counters the API returns that were silently discarded.
-
-- The HTTP status of a `GET` is read correctly. It was always recorded as 0, because the stream wrapper reports it only through PHP's predefined response-header variable, which the engine makes visible to the function that called `file_get_contents` and to no one else; an error status therefore never reached the response check and a 404 from the list evaluator came back as a successful result.
-- `{"success": false}` on an HTTP 200 raises instead of being returned as a result. The API answers an unknown bulk file id that way.
-- `getApiUsage` formats its dates. A `DateTime` was interpolated whole, so the request carried a locale-formatted timestamp that the API rejects and Cloudflare can block.
-- `validateS3File`, `scoreS3File`, and `exportS3File` reject an empty API key before a request is sent.
-- `scoreS3File` sends `return_url`. It was never added to the form, so a caller's `return_url` was dropped and the API refused the job with "Provided return URL is not permitted: None".
-- A custom `baseUrl` is used as given. Any URL that was not one of the three production constants was silently replaced with `https://api.zerobounce.net/v2`, so a client aimed at a mock or regional host talked to production instead. A base URL that is not `https://` now throws.
-- An error body whose JSON carries a `detail` string (the Inbox Placement Tester, Django REST framework) raises with that text.
-- The Inbox Placement Tester's documentation says the key goes in an `Authorization: Bearer` header, which is what the code sends. It claimed the key went on the query string.
-- `validateSFTPFile`'s documentation no longer says `file_name` can be left out. The API requires it.
-
-- A 403 HTML "Access denied" page is a short `ZBException`. An HTML page with status 200 is an error as well, including `getFile`, `emailFinderGetFile`, and `domainSearchGetFile`, instead of a saved CSV.
-- Empty and non-JSON bodies are a short error. A repeated `Error:` / `[Error]:` prefix is removed.
-- `validateBatch` throws when the API returns an account-level error for address `all` (invalid API key or no credits). An error for one address stays on the successful result.
-- `has_header_row` is sent as `false` when the caller sets it to false, on `sendFile`, `scoringSendFile`, bulk email finder, and domain search.
-- Column `0` is sent. That includes the required email and domain columns and optional name, gender, and IP columns. `null` still omits an optional column. `validate` sends IP address `0`. A filter `value` of `0` is sent.
-- `validate` rejects a timeout outside 3–60 seconds, and `validateBatch` rejects a timeout outside 10–120 seconds, before a request is sent.
+- A custom `baseUrl` is used as given. In 2.1.11, any URL that was not one of the three production constants was silently replaced with `https://api.zerobounce.net/v2`. A client aimed at a mock or regional host talked to production instead. A base URL that is not `https://` now throws.
+- A 403 HTML "Access denied" page is a short exception message. An HTML page with status 200 is an error as well, including on `getFile`, which used to save it as the result file.
+- Empty and non-JSON bodies give a short error message. A repeated `Error:` / `[Error]:` prefix is removed.
+- `has_header_row` is sent as `false` when the caller sets it to false, on `sendFile`, `sendFileStream`, `scoringSendFile` and `scoringSendFileStream`. 2.1.11 left it out.
+- `sendFile` and `sendFileStream` accept an email column of `0`, and send optional name, gender and IP columns of `0`. `null` still omits an optional column. `validate` sends an IP address of `0`.
 
 ### Security
 
 - API requests do not follow redirects, so a 3xx response cannot send the API key to another host.
 - Exception messages no longer include the raw HTML access-denied page.
+- The API key is replaced with `***` in exception messages from GET calls such as `validate` and `fileStatus`, and from the validation and scoring `sendFile` and `getFile` calls.
+- A file name containing `"`, CR or LF is percent-encoded in a multipart upload. It can no longer break out of the `Content-Disposition` header.
 - Every base URL, and every URL a request is sent to, must be `https://`.
 - An API key with surrounding whitespace or control characters is rejected, because the transport would otherwise quote it unredacted in its own error.
 - A file or test id of `.` or `..` is rejected rather than walking the request out of its endpoint.
@@ -234,7 +235,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release: `getCredits`, `getApiUsage`, `validate`, and the bulk file methods.
 
-[Unreleased]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v2.1.11...HEAD
+[Unreleased]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v2.1.11...v2.2.0
 [2.1.10]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v2.1.9...v2.1.10
 [2.1.9]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v2.1.8...v2.1.9
 [2.1.8]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v2.1.6...v2.1.8

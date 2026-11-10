@@ -57,6 +57,11 @@ class ZeroBounce
     const ListEvaluatorBaseUrl = "https://bulkapi.zerobounce.net/v2/listevaluator";
     const InboxPlacementBaseUrl = "https://bulkapi.zerobounce.net/api/ipt";
 
+    /** Bulk host root and the two bulk APIs that are not under /v2. */
+    const BulkApiRootUrl = "https://bulkapi.zerobounce.net";
+    const EmailFinderBulkBaseUrl = "https://bulkapi.zerobounce.net/email-finder";
+    const DomainSearchBulkBaseUrl = "https://bulkapi.zerobounce.net/domain-search";
+
     /** @var string Overridable per instance; defaults to ListEvaluatorBaseUrl. */
     protected $listEvaluatorBaseUrl = self::ListEvaluatorBaseUrl;
 
@@ -70,6 +75,9 @@ class ZeroBounce
 
     /** @var bool The regional/bulk-host mismatch is reported once per client. */
     private $bulkRegionWarned = false;
+
+    /** Set only for the duration of an email finder or domain search call. */
+    private $messageOnlyIsFailure = false;
 
     /** ZeroBounce documents no regional host for anything under this one. */
     const BulkHost = 'bulkapi.zerobounce.net';
@@ -609,7 +617,7 @@ class ZeroBounce
             $rsp->Deserialize($response);
             return $rsp;
         } catch (Exception $e) {
-            throw new ZBException($this->redactApiKey($e->getMessage()));
+            throw $this->redactedException($e);
         }
     }
 
@@ -650,7 +658,7 @@ class ZeroBounce
             $rsp->Deserialize($response);
             return $rsp;
         } catch (Exception $e) {
-            throw new ZBException($this->redactApiKey($e->getMessage()));
+            throw $this->redactedException($e);
         }
     }
 
@@ -719,6 +727,28 @@ class ZeroBounce
         }
         $params['api_key'] = $this->apiKey;
         return $this->request($url . '?' . http_build_query($params), $response);
+    }
+
+    /**
+     * getOrPostForm for the email finder and domain search, whose result is
+     * never a bare message: see ZBHttpError::throwIfMessageOnly. A flag rather
+     * than a parameter, so the protected request methods keep the signatures
+     * subclasses override.
+     *
+     * @param string $url without a query string
+     * @param array<string, mixed> $params without api_key
+     * @param ZBResponse $response
+     * @param bool $usePost
+     * @return int http statusCode
+     */
+    private function getOrPostFinder($url, array $params, $response, $usePost)
+    {
+        $this->messageOnlyIsFailure = true;
+        try {
+            return $this->getOrPostForm($url, $params, $response, $usePost);
+        } finally {
+            $this->messageOnlyIsFailure = false;
+        }
     }
 
     /**
@@ -858,7 +888,7 @@ class ZeroBounce
             }
             return $this->saveBulkDownload($this->getBulkFileHttp($url), $downloadPath);
         } catch (Exception $e) {
-            throw new ZBException($this->redactApiKey($e->getMessage()));
+            throw $this->redactedException($e);
         }
     }
 
@@ -1108,13 +1138,26 @@ class ZeroBounce
             $json = $this->readJsonBody($result);
             $response->Deserialize($json);
             return (int)$result['status'];
-        } catch (ZBApiException $e) {
-            // Rebuilt rather than rethrown so the message is redacted, but the
-            // HTTP status survives for callers that switch on it.
-            throw new ZBApiException($this->redactApiKey($e->getMessage()), $e->getStatusCode());
         } catch (Exception $e) {
-            throw new ZBException($this->redactApiKey($e->getMessage()));
+            throw $this->redactedException($e);
         }
+    }
+
+    /**
+     * $e rebuilt with the API key masked out of its message. Rebuilt rather
+     * than rethrown so the message is redacted, but a ZBApiException stays one
+     * and keeps its HTTP status for callers that switch on it.
+     *
+     * @param Exception $e
+     * @return ZBException
+     */
+    private function redactedException(Exception $e)
+    {
+        $message = $this->redactApiKey($e->getMessage());
+        if ($e instanceof ZBApiException) {
+            return new ZBApiException($message, $e->getStatusCode());
+        }
+        return new ZBException($message);
     }
 
     /**
@@ -1169,7 +1212,9 @@ class ZeroBounce
     /**
      * @param array{status?: int, headers?: string[], body?: string} $result
      * @return string
-     * @throws ZBException
+     * @throws ZBApiException an HTTP error status, an empty, HTML or non-JSON
+     *     body, or {"success": false}; getStatusCode() is the HTTP status
+     * @throws ZBException a bare account-level error (invalid key, no credits)
      */
     private function readJsonBody(array $result)
     {
@@ -1177,14 +1222,19 @@ class ZeroBounce
         $body = isset($result['body']) ? (string)$result['body'] : '';
         $headers = (isset($result['headers']) && is_array($result['headers'])) ? $result['headers'] : array();
         if (trim($body) === '' || $status > 299 || ZBHttpError::isHtml($body, $headers)) {
-            throw new ZBException(ZBHttpError::message($status, $body, $headers));
+            // A ZBApiException, so callers can tell a Cloudflare 403 from an
+            // API 400/404; it is still a ZBException.
+            throw new ZBApiException(ZBHttpError::message($status, $body, $headers), $status);
         }
         $decoded = json_decode($body, true);
         if (!is_array($decoded)) {
-            throw new ZBException('ZeroBounce returned a response that is not valid JSON.');
+            throw new ZBApiException('ZeroBounce returned a response that is not valid JSON.', $status);
         }
         ZBHttpError::throwIfBareAccountError($decoded);
         ZBHttpError::throwIfSuccessIsFalse($decoded, $status, $body, $headers);
+        if ($this->messageOnlyIsFailure) {
+            ZBHttpError::throwIfMessageOnly($decoded);
+        }
         return $body;
     }
 
@@ -1229,7 +1279,7 @@ class ZeroBounce
         $code = self::parseHttpStatusFromHeaders($headers);
         $contentType = self::parseContentTypeFromHeaders($headers);
         if (trim($body) === '' || $code > 299 || ZBHttpError::isHtml($body, $headers) || self::shouldTreatGetFileBodyAsError($body, $contentType)) {
-            throw new ZBException(ZBHttpError::message($code, $body, $headers));
+            throw new ZBApiException(ZBHttpError::message($code, $body, $headers), $code);
         }
         $folder = dirname($downloadPath);
         if ($folder !== '' && $folder !== '.' && !file_exists($folder)) {
@@ -1352,7 +1402,10 @@ class ZeroBounce
             $sample = substr($head, 0, self::DownloadMaxErrorBytes);
             if (trim($sample) === '' || $status > 299 || ZBHttpError::isHtml($sample, $headers)
                 || self::shouldTreatGetFileBodyAsError($sample, $contentType)) {
-                throw new ZBException($this->redactApiKey(ZBHttpError::message($status, $sample, $headers)));
+                throw new ZBApiException(
+                    $this->redactApiKey(ZBHttpError::message($status, $sample, $headers)),
+                    $status
+                );
             }
             if (!rename($partial, $downloadPath)) {
                 throw new ZBException('Could not write file');
@@ -1509,7 +1562,7 @@ class ZeroBounce
         if ($middleName) $args['middle_name'] = $middleName;
         if ($lastName) $args['last_name'] = $lastName;
 
-        $this->getOrPostForm($this->apiBaseUrl . "/guessformat", $args, $response, $usePost);
+        $this->getOrPostFinder($this->apiBaseUrl . "/guessformat", $args, $response, $usePost);
         return $response;
     }
 
@@ -1541,7 +1594,7 @@ class ZeroBounce
             $args['company_name'] = $companyName;
         }
 
-        $this->getOrPostForm($this->apiBaseUrl . "/guessformat", $args, $response, $usePost);
+        $this->getOrPostFinder($this->apiBaseUrl . "/guessformat", $args, $response, $usePost);
         return $response;
     }
 }

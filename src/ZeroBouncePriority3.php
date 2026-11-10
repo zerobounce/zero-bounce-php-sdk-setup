@@ -9,9 +9,10 @@ use Exception;
  */
 trait ZeroBouncePriority3
 {
-    private const BulkApiRootUrl = 'https://bulkapi.zerobounce.net';
-    private const EmailFinderBulkBaseUrl = 'https://bulkapi.zerobounce.net/email-finder';
-    private const DomainSearchBulkBaseUrl = 'https://bulkapi.zerobounce.net/domain-search';
+    // The defaults below read BulkApiRootUrl, EmailFinderBulkBaseUrl and
+    // DomainSearchBulkBaseUrl from the class that uses this trait. They live on
+    // ZeroBounce, not here: a trait may only declare constants from PHP 8.2, and
+    // this package supports PHP 7.0.
 
     /** @var string Overridable per instance; defaults to BulkApiRootUrl. */
     protected $bulkApiRootUrl = self::BulkApiRootUrl;

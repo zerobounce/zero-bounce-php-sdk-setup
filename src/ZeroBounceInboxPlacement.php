@@ -236,7 +236,9 @@ trait ZeroBounceInboxPlacement
             $content = json_encode($body);
         }
 
-        $result = $this->executeHttp($method, $url, $headers, $content, 120);
+        // checkedUrl, like every other request: it enforces https and raises
+        // the one-time warning when a regional baseUrl meets the global bulk host.
+        $result = $this->executeHttp($method, $this->checkedUrl($url), $headers, $content, 120);
         $response = new ZBRawJsonResponse();
         $response->Deserialize($this->readJsonBody($result));
         return $response;

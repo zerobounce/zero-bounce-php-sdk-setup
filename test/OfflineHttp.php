@@ -130,6 +130,30 @@ class FakeApi
         if (strpos($key, 'double-error-') === 0) {
             return $this->respond(400, 'text/plain', 'Error: Error: api_key is invalid');
         }
+        // LIVE (2026-11-11): what an invalid or drained key gets back, each with
+        // an HTTP 200 and no "success" field.
+        if (strpos($key, 'dead-key-') === 0) {
+            $body = '{"error":"Invalid API key or your account ran out of credits"}';
+            if (strpos($path, 'guessformat') !== false) {
+                $body = '{"Message":"Invalid API key or your account ran out of credits"}';
+            } elseif (strpos($path, 'filters') !== false) {
+                $body = '{  "Error": "Invalid API key or your account ran out of credits"}';
+            } elseif (strpos($path, 'getapiusage') !== false) {
+                $body = '{"error":"Invalid API key"}';
+            } elseif (strpos($path, 'getcredits') !== false) {
+                $body = '{"Credits":"-1"}';
+            }
+            return $this->respond(200, 'application/json', $body);
+        }
+        // The documented answer to a repeated greylist_processing validate: a
+        // result whose only field is Message, not an error.
+        if (strpos($key, 'greylist-pending-') === 0 && substr($path, -9) === '/validate') {
+            return $this->respond(200, 'application/json',
+                '{"Message":"Greylist validation still in progress. Please try again later."}');
+        }
+        if (strpos($key, 'filter-message-') === 0 && strpos($path, 'filters') !== false) {
+            return $this->respond(200, 'application/json', '{"Message":"Filter has been added."}');
+        }
         if (strpos($key, 'account-invalid-') === 0 || strpos($key, 'account-nocredits-') === 0) {
             $message = strpos($key, 'account-nocredits-') === 0
                 ? 'Your account ran out of credits'

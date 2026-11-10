@@ -6,7 +6,7 @@
 
 - Keep API keys on a trusted server. Do not embed them in mobile apps or browser JavaScript that untrusted users can inspect.
 - Custom API base URLs (when supported) must use `https://`. Do not pass end-user-controlled hosts into those settings.
-- Request URLs include `api_key` as a query parameter (ZeroBounce API contract). Do not log full request URLs or enable payload debug logging in production.
+- Most calls send `api_key` as a query parameter (ZeroBounce API contract), so do not log full request URLs or enable payload debug logging in production. Some calls keep the key out of the URL. With `$usePost` (or `ZBValidateOptions::$usePost`), the key goes in a form-encoded body. `validateBatch`, file uploads, S3/SFTP jobs and filter changes also send it in the request body. The Inbox Placement Tester sends it in an `Authorization: Bearer` header. The Warmup client sends its own key in an `API-Key` header.
 
 This SDK contains methods for interacting easily with ZeroBounce API. 
 More information about ZeroBounce can be find in the [official documentation](https://www.zerobounce.net/docs/).
@@ -22,8 +22,6 @@ sudo apt install -y composer
 
 To install the SDK with composer, run:
 ```bash
-composer install zero-bounce/sdk
-#or
 composer require zero-bounce/sdk
 ```
 
@@ -31,7 +29,7 @@ composer require zero-bounce/sdk
 This package is Laravel compatible as is:
 ```bash
 composer create-project laravel/laravel laravel-zero-bounce-test
-laravel-zero-bounce-test
+cd laravel-zero-bounce-test
 composer require zero-bounce/sdk
 php artisan make:command ZeroBounceTest
 ```
@@ -238,22 +236,20 @@ ZeroBounce::Instance()->initialize(
 
 - Verify a batch of email addresses:
 ```php
-/** @var response ZeroBounce\SDK\ZBBatchValidateResponse */
+/** @var $response ZeroBounce\SDK\ZBBatchValidateResponse */
 $response = ZeroBounce::Instance()->validateBatch([
-		"EMAIL_ADDRESS_1", 		// Email address that needs to be validated
-		"EMAIL_ADDRESS_2", 
-		"EMAIL_ADDRESS_3",
-	...
-	]);
+    "<EMAIL_ADDRESS_1>",    // Email addresses that need to be validated
+    "<EMAIL_ADDRESS_2>",
+    "<EMAIL_ADDRESS_3>",    // ...up to the API's batch limit
+]);
 // or
 $response = ZeroBounce::Instance()->validateBatch([
-		["EMAIL_ADDRESS_1", "IP_ADDRESS_1"],	// Email and IP address that need to be validated
-		["EMAIL_ADDRESS_2", "IP_ADDRESS_2"],
-		["EMAIL_ADDRESS_3", "IP_ADDRESS_3"],
-		...
-	]);
-// => 
-$response->emailBatch 	// array of ZBValidateReponse type objects
+    ["<EMAIL_ADDRESS_1>", "<IP_ADDRESS_1>"],    // Email and IP address that need to be validated
+    ["<EMAIL_ADDRESS_2>", "<IP_ADDRESS_2>"],
+    ["<EMAIL_ADDRESS_3>", "<IP_ADDRESS_3>"],
+]);
+
+$results = $response->emailBatch;   // array of ZBValidateResponse objects
 ```
 
 - Check how many credits you have left on your account
@@ -398,10 +394,14 @@ $success = $response->success;      // True / False
 ```
 
 #### Email Finder API
-Guess an email address. The required argument is either `domain` or `companyName`; if both are provided, only `domain` is used, and `domain` can be `null`. `firstName` is optional: without it the API answers with the domain's format rather than one address.
+Guess an email address. The required argument is either `domain` or `companyName`; if both are provided, only `domain` is used, and `domain` can be `null`. `firstName` is optional: pass `null` and the API answers with the domain's format rather than one address. The argument itself is positional, so pass `null` rather than leaving it out.
 ```php
 $response = ZeroBounce::Instance()->findEmail(
-    $domain, $firstName, $companyName, $middleName, $lastName
+    "example.com",   // domain, or null to search by company name
+    "John",          // first name, or null for the domain's format only
+    null,            // company name, used only when domain is null
+    null,            // middle name (optional)
+    "Doe"            // last name (optional)
 );
 $email = $response->email;
 ```
@@ -414,8 +414,10 @@ $response = ZeroBounce::Instance()->getCredits(true);
 
 Guess the format of email addresses for a domain or company. Must provide either `domain` or `companyName`. If both are provided, only `domain` is used. If necessary, `domain` can be `null`.
 ```php
-$response = ZeroBounce::Instance()->findEmailFormat($domain, $companyName);
-$email = $response->format;
+$response = ZeroBounce::Instance()->findEmailFormat("example.com");
+// or, by company name
+$response = ZeroBounce::Instance()->findEmailFormat(null, "Example Inc");
+$format = $response->format;
 ```
 
 ## Warmup API
@@ -463,7 +465,7 @@ $warmup->createCustomEngagement("sender@example.com", 20, 20, 35);  // reply, im
 $dmarc = $warmup->checkDomainDmarc("sender@example.com");
 ```
 
-Every failure is a `ZBApiException`, whose `getStatusCode()` gives the HTTP status. Nothing is stored by `testSmtpConfiguration`, and the credentials you pass it are masked out of any error it raises.
+Every failed request is a `ZBApiException`, whose `getStatusCode()` gives the HTTP status (0 when no response arrived). An invalid argument is rejected with a `ZBMissingParameterException` before anything is sent. Nothing is stored by `testSmtpConfiguration`, and the credentials you pass it are masked out of any error it raises.
 
 ## Development
 
@@ -484,7 +486,7 @@ sudo apt install -y php-curl php-dom php-xml php-xmlwriter
 
 Install development dependencies
 ```bash
-composer install --dev
+composer install
 ```
 
 Run tests 
@@ -506,7 +508,7 @@ By default it only makes free calls: sandbox addresses, reads, and requests that
 
 | Flag | What it adds |
 | --- | --- |
-| `ZEROBOUNCE_LIVE_SPEND=1` | billable calls (scoring, activity, email finder) and a bulk round trip that deletes its own job |
+| `ZEROBOUNCE_LIVE_SPEND=1` | billable calls (scoring, activity, email finder), a bulk round trip that deletes its own job, and a complete S3 email finder job, which starts real work on an account with an S3 integration |
 | `ZEROBOUNCE_LIVE_CHANGES=1` | reversible account changes — a test filter and a self-managed Warmup sending account — each undone in cleanup even when a test fails |
 
 It never creates an Inbox Placement test, sets the Inbox Placement webhook, or starts ZB-managed Warmup onboarding, because the API cannot undo any of those.
