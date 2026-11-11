@@ -50,6 +50,11 @@ class ZBListEvaluatorResponse extends ZBResponse
         $this->data = is_array($decoded) ? $decoded : array();
     }
 
+    protected function boolFields()
+    {
+        return array('abuse', 'doNotMail', 'spamTrap');
+    }
+
     public function __toString()
     {
         return "ZBListEvaluatorResponse{fileId=" . $this->stringField($this->fileId)

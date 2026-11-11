@@ -281,6 +281,28 @@ scenario('error bodies', function () use ($tmp) {
     check($spaced !== null, 'key with whitespace rejected');
 });
 
+scenario('standard parity', function () {
+    $response = new \ZeroBounce\SDK\ZBValidateResponse();
+    $response->Deserialize('{"mx_found":"false","catchall_domain":"unknown","free_email":"TRUE","status":"brand_new"}');
+    check($response->mxFound === false, 'mxFound "false" is false');
+    check($response->catchallDomain === null, 'catchallDomain "unknown" is null');
+    check($response->freeEmail === true, 'freeEmail "TRUE" is true');
+    check($response->status === 'brand_new', 'unknown status kept');
+
+    $api = new FakeApi();
+    $options = new ZBValidateOptions();
+    $options->activityData = 'false';
+    client($api, 'bool-key')->validate('a@example.com', null, $options);
+    check(only($api)['fields']['activity_data'] === 'false', 'activityData "false" sent as false');
+    $options->activityData = 'yes';
+    $junk = rejected(function () use ($api, $options) { client($api, 'bool-key')->validate('a@example.com', null, $options); });
+    check($junk !== null && strpos($junk->getMessage(), 'must be true or false') !== false, 'junk boolean rejected');
+    check($api->count() === 0, 'junk boolean: nothing sent');
+
+    $client = client($api, 'secret-debug-key');
+    check(strpos(print_r($client, true), 'secret-debug-key') === false, 'print_r hides the key');
+});
+
 echo 'PHP ' . PHP_VERSION . ': ' . $checks . ' checks, ' . count($deprecations) . " expected deprecation(s)\n";
 if ($failures) {
     echo count($failures) . " failure(s):\n  - " . implode("\n  - ", $failures) . "\n";

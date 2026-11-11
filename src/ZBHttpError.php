@@ -42,6 +42,11 @@ class ZBHttpError
 
     public static function message($status, $body, array $headers = array())
     {
+        // Redirects are never followed (the key must not travel on to another
+        // host), so say so instead of reporting the 3xx's usually empty body.
+        if ((int)$status >= 300 && (int)$status < 400) {
+            return 'ZeroBounce answered with a redirect (HTTP ' . (int)$status . '), which is not followed';
+        }
         $trimmed = trim((string)$body);
         if ($trimmed === '') {
             return self::emptyMessage($status);
@@ -86,7 +91,15 @@ class ZBHttpError
         return $message;
     }
 
-    public static function throwIfBareAccountError($decoded)
+    /**
+     * A dead or invalid key on a 2xx: a non-empty "error", "Error" or
+     * "error_message" string in a body that carries no result.
+     *
+     * @param mixed $decoded the parsed body
+     * @param int $status the HTTP status, carried by the exception
+     * @throws ZBApiException
+     */
+    public static function throwIfBareAccountError($decoded, $status = 200)
     {
         if (!is_array($decoded) || self::isList($decoded)) {
             return;
@@ -94,7 +107,7 @@ class ZBHttpError
         // LIVE: the filters spell it "Error": an invalid or drained key answers
         // them with {"Error": "Invalid API key or your account ran out of credits"}.
         $errorKey = null;
-        foreach (array('error', 'Error') as $key) {
+        foreach (array('error', 'Error', 'error_message') as $key) {
             if (isset($decoded[$key]) && is_string($decoded[$key]) && trim($decoded[$key]) !== '') {
                 $errorKey = $key;
                 break;
@@ -112,7 +125,7 @@ class ZBHttpError
                 return;
             }
         }
-        throw new ZBException(self::stripPrefix(trim($decoded[$errorKey])));
+        throw new ZBApiException(self::stripPrefix(trim($decoded[$errorKey])), $status);
     }
 
     /**
@@ -126,9 +139,10 @@ class ZBHttpError
      * {"Message": "Greylist validation still in progress..."}, a result.
      *
      * @param mixed $decoded the parsed body
-     * @throws ZBException
+     * @param int $status the HTTP status, carried by the exception
+     * @throws ZBApiException
      */
-    public static function throwIfMessageOnly($decoded)
+    public static function throwIfMessageOnly($decoded, $status = 200)
     {
         if (!is_array($decoded) || self::isList($decoded) || array_key_exists('success', $decoded)) {
             return;
@@ -144,7 +158,7 @@ class ZBHttpError
             }
         }
         if ($text !== '') {
-            throw new ZBException(self::stripPrefix($text));
+            throw new ZBApiException(self::stripPrefix($text), $status);
         }
     }
 

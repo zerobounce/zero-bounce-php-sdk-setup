@@ -39,7 +39,61 @@ class ZBResponse
 
     public function getValue($classKey, $value)
     {
+        if (in_array($classKey, $this->boolFields(), true)) {
+            return self::parseBool($value);
+        }
         return $value;
+    }
+
+    /**
+     * The properties documented as bool|null. The API sends some flags as JSON
+     * booleans and others as "true"/"false" strings; kept as strings, "false"
+     * would read as true.
+     *
+     * @return string[]
+     */
+    protected function boolFields()
+    {
+        return array();
+    }
+
+    /**
+     * A flag from the API as a bool: true/false, "true"/"false" in any case,
+     * or 1/0. Anything else (null, "unknown", "") is null.
+     *
+     * @param mixed $value
+     * @return bool|null
+     */
+    public static function parseBool($value)
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+        if ($value === 1 || $value === 0) {
+            return $value === 1;
+        }
+        if (is_string($value)) {
+            $text = strtolower(trim($value));
+            if ($text === 'true' || $text === '1') {
+                return true;
+            }
+            if ($text === 'false' || $text === '0') {
+                return false;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * @param bool|null $value
+     * @return string "true", "false" or "NULL"
+     */
+    public function boolField($value)
+    {
+        if ($value === null) {
+            return "NULL";
+        }
+        return $value ? "true" : "false";
     }
 
     protected final static function underlinesToCamelCase($string, $capitalizeFirstCharacter = false)

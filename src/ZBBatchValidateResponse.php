@@ -52,11 +52,11 @@ class ZBBatchValidateResponse extends ZBResponse
             "domain=" . $this->stringField($email->domain) . ", " .
             "didYouMean=" . $this->stringField($email->didYouMean) . ", " .
             "domainAgeDays=" . $this->stringField($email->domainAgeDays) . ", " .
-            "freeEmail=" . $email->freeEmail . ", " .
-            "mxFound=" . $email->mxFound . ", " .
+            "freeEmail=" . $this->boolField($email->freeEmail) . ", " .
+            "mxFound=" . $this->boolField($email->mxFound) . ", " .
             "mxRecord=" . $this->stringField($email->mxRecord) . ", " .
             "smtpProvider=" . $this->stringField($email->smtpProvider) . ", " .
-            "catchallDomain=" . $email->catchallDomain . ", " .
+            "catchallDomain=" . $this->boolField($email->catchallDomain) . ", " .
             "firstName=" . $this->stringField($email->firstName) . ", " .
             "lastName=" . $this->stringField($email->lastName) . ", " .
             "gender=" . $this->stringField($email->gender) . ", " .

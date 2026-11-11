@@ -180,13 +180,26 @@ class ZBValidateResponse extends ZBResponse
 
     public function getValue($classKey, $value)
     {
+        // A value this SDK version does not know is kept as the API sent it,
+        // so a new status is not lost; null becomes the empty default.
         if ($classKey === "status") {
-            return ZBValidateStatus::getByValue($value) ?? ZBValidateStatus::__default;
+            if ($value === null) {
+                return ZBValidateStatus::__default;
+            }
+            return ZBValidateStatus::getByValue($value) ?? (string)$value;
         }
-        if ($classKey === "sub_status") {
-            return ZBValidateSubStatus::getByValue($value) ?? ZBValidateSubStatus::__default;
+        if ($classKey === "subStatus") {
+            if ($value === null) {
+                return ZBValidateSubStatus::__default;
+            }
+            return ZBValidateSubStatus::getByValue($value) ?? (string)$value;
         }
         return parent::getValue($classKey, $value);
+    }
+
+    protected function boolFields()
+    {
+        return array('freeEmail', 'mxFound', 'catchallDomain');
     }
 
     public function __toString()
@@ -198,12 +211,14 @@ class ZBValidateResponse extends ZBResponse
             "account=" . $this->stringField($this->account) . ", " .
             "domain=" . $this->stringField($this->domain) . ", " .
             "didYouMean=" . $this->stringField($this->didYouMean) . ", " .
+            "activeInDays=" . $this->stringField($this->activeInDays) . ", " .
+            "activeFirstSeen=" . $this->stringField($this->activeFirstSeen) . ", " .
             "domainAgeDays=" . $this->stringField($this->domainAgeDays) . ", " .
-            "freeEmail=" . $this->freeEmail . ", " .
-            "mxFound=" . $this->mxFound . ", " .
+            "freeEmail=" . $this->boolField($this->freeEmail) . ", " .
+            "mxFound=" . $this->boolField($this->mxFound) . ", " .
             "mxRecord=" . $this->stringField($this->mxRecord) . ", " .
             "smtpProvider=" . $this->stringField($this->smtpProvider) . ", " .
-            "catchallDomain=" . $this->catchallDomain . ", " .
+            "catchallDomain=" . $this->boolField($this->catchallDomain) . ", " .
             "firstName=" . $this->stringField($this->firstName) . ", " .
             "lastName=" . $this->stringField($this->lastName) . ", " .
             "gender=" . $this->stringField($this->gender) . ", " .

@@ -90,7 +90,7 @@ trait ZeroBouncePriority3
         $this->requireProvided($domainColumn, 'domainColumn is required');
         $fields = array('domain_column' => $domainColumn);
         if ($hasHeaderRow !== null) {
-            $fields['has_header_row'] = $hasHeaderRow ? 'true' : 'false';
+            $fields['has_header_row'] = self::wireBool($hasHeaderRow, 'has_header_row');
         }
         return $this->sendBulkRootMultipartFile($this->domainSearchBulkBaseUrl . '/sendfile', $filepath, $fields);
     }
@@ -100,7 +100,7 @@ trait ZeroBouncePriority3
         $this->requireProvided($domainColumn, 'domainColumn is required');
         $fields = array('domain_column' => $domainColumn);
         if ($hasHeaderRow !== null) {
-            $fields['has_header_row'] = $hasHeaderRow ? 'true' : 'false';
+            $fields['has_header_row'] = self::wireBool($hasHeaderRow, 'has_header_row');
         }
         return $this->sendBulkRootMultipartContent($this->domainSearchBulkBaseUrl . '/sendfile', $fileName, $streamContent, $fields);
     }
@@ -322,9 +322,7 @@ trait ZeroBouncePriority3
         if (isset($options['ip_address_column']) && $this->isProvided($options['ip_address_column'])) {
             $fields['ip_address_column'] = $options['ip_address_column'];
         }
-        if (isset($options['allow_phase_2'])) {
-            $fields['allow_phase_2'] = $options['allow_phase_2'] ? 'true' : 'false';
-        }
+        $this->appendOptionalBool($fields, 'allow_phase_2', isset($options['allow_phase_2']) ? $options['allow_phase_2'] : null);
         return $fields;
     }
 
@@ -370,7 +368,7 @@ trait ZeroBouncePriority3
     private function appendOptionalBool(array &$fields, $key, $value)
     {
         if ($value !== null) {
-            $fields[$key] = $value ? 'true' : 'false';
+            $fields[$key] = self::wireBool($value, $key);
         }
     }
 
@@ -517,7 +515,7 @@ trait ZeroBouncePriority3
         }
         $fields = array('domain_column' => $domainColumn);
         if ($hasHeaderRow !== null) {
-            $fields['has_header_row'] = $hasHeaderRow ? 'true' : 'false';
+            $fields['has_header_row'] = self::wireBool($hasHeaderRow, 'has_header_row');
         }
         if ($this->isProvided($firstNameColumn)) {
             $fields['first_name_column'] = $firstNameColumn;

@@ -32,10 +32,15 @@ class ZBDeleteFileResponse extends ZBResponse
         return parent::getValue($classKey, $value);
     }
 
+    protected function boolFields()
+    {
+        return array('success');
+    }
+
     public function __toString()
     {
         return "ZBDeleteFileResponse{" .
-            "success=" . $this->success .
+            "success=" . $this->boolField($this->success) .
             ", message=" . $this->arrayField($this->message) .
             ", fileName=" . $this->stringField($this->fileName) .
             ", fileId=" . $this->stringField($this->fileId) .

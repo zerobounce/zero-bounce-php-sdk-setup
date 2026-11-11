@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+
+- **Breaking:** boolean request options are parsed strictly. `true`/`false`, `"true"`/`"false"` (any case) and `1`/`0` are accepted; anything else throws `ZBMissingParameterException` ("`<name>` must be true or false") before a request is sent. Up to 2.2.0 any truthy value was sent as `true`, so `$options->activityData = 'false'` sent `true`. Affects `ZBValidateOptions` (`activityData`, `verifyPlus`, `domainInfo`, `greylistProcessing`) for `validate` and `validateBatch`, `ZBGetFileOptions::$activityData`, the `$hasHeaderRow` and `$allowPhase2` arguments of the file uploads, and the S3/SFTP job options (`has_header_row`, `remove_duplicates`, `remove_duplicate`, `allow_phase_2`). The caller's `ZBValidateOptions` object is not modified.
+- **Breaking:** `ZBValidateResponse::$mxFound`, `$catchallDomain` and `$freeEmail`, `ZBActivityResponse::$found`, `ZBListEvaluatorResponse::$abuse`, `$doNotMail` and `$spamTrap`, and `$success` on the file responses are `bool` or `null`, as documented. Up to 2.2.0 they kept the API's string, so `"false"` was truthy (`if ($response->mxFound)` was true for a domain with no MX record). A value that is not a boolean (such as `"unknown"`) is now `null`.
+
+### Fixed
+
+- A 2xx `{"error_message": "..."}` with no result fields throws, like a bare `error`/`Error` body. 2.2.0 returned it as the result.
+- `guessFormat` throws for a body made only of message fields (the API's answer to a dead key, `{"Message": "Invalid API key or your account ran out of credits"}`), as `findEmail` and `findEmailFormat` already did. 2.2.0 returned it as an empty result.
+- A streamed download (`ZBGetFileOptions::$stream`) no longer hangs on a server that stops sending: it is abandoned after 120 seconds without data (`CURLOPT_LOW_SPEED_TIME`), still with no overall limit, so large files finish. Every request of the `ZeroBounce` client now has a 30-second connect timeout.
+- A connection failure or timeout throws with cURL's own message (for example `Failed to connect to ... Could not connect to server`) instead of `Empty response from ZeroBounce (HTTP 0)`, and a redirect throws `ZeroBounce answered with a redirect (HTTP 302), which is not followed` instead of `Empty response from ZeroBounce (HTTP 302)`.
+- `ZBValidateResponse::$subStatus` from the API is now checked against the known values; the check looked for a `sub_status` property that never exists. A status or sub-status this version does not know is kept as the API sent it; `$status` used to become `""`.
+- `ZBValidateResponse::__toString()` includes `activeInDays` and `activeFirstSeen`, and prints flags as `true`/`false`/`NULL`.
+- `var_dump()` and `print_r()` of a `ZeroBounce` or `ZeroBounceWarmup` client show `***` instead of the API key (`__debugInfo`).
+
+### Changed
+
+- Errors reported on a 2xx response (a dead key's `error`, `Error` or `error_message`, and a message-only body from the email finder and domain search) throw `ZBApiException` with `getStatusCode()` 200. They threw a plain `ZBException`, which `ZBApiException` extends, so existing `catch (ZBException $e)` blocks are unaffected.
+- `composer.json` has a fuller description, the keywords `zerobounce`, `email-validation`, `email-verification`, `email-finder`, `domain-search` and `sdk` (instead of `zero`, `bounce`, `sdk`), a homepage, and `support` links to https://github.com/zerobounce/zero-bounce-php-sdk-setup. The Packagist dist now holds only `src/`, `README.md`, `LICENSE`, `CHANGELOG.md` and `composer.json`.
+- Development only: `composer.lock`'s content hash matches `composer.json` again (no locked package changed).
+
 ## [2.2.0] - 2026-11-11
 
 This release has breaking changes. Read the **Breaking** entries under Changed before you upgrade from 2.1.x.

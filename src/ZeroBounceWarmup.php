@@ -52,6 +52,18 @@ class ZeroBounceWarmup
         $this->root = rtrim($base, '/') . self::BasePath;
     }
 
+    /**
+     * Keeps the API key out of var_dump() and print_r().
+     *
+     * @return array<string, mixed>
+     */
+    public function __debugInfo()
+    {
+        $vars = get_object_vars($this);
+        $vars['apiKey'] = '***';
+        return $vars;
+    }
+
     // -- transport -----------------------------------------------------------
 
     /**
