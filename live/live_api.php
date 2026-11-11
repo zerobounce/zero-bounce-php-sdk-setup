@@ -17,9 +17,10 @@
  *
  *   ZEROBOUNCE_LIVE_SPEND=1     spends credits: scoring, activity, email
  *                               finder, and bulk round trips (every job is
- *                               deleted again); also a complete S3 email
- *                               finder job, which starts real work on an
- *                               account with an S3 integration
+ *                               deleted again; ZEROBOUNCE_LIVE_DELETE_SECONDS
+ *                               sets how long that delete is retried); also a
+ *                               complete S3 email finder job, which starts real
+ *                               work on an account with an S3 integration
  *   ZEROBOUNCE_LIVE_CHANGES=1   reversible account changes, each undone in
  *                               cleanup even when a test fails: a test filter,
  *                               and a self-managed Warmup sending account
@@ -48,10 +49,25 @@ const UNKNOWN_ID = '0d1b7a4e-1111-2222-3333-444455556666';
 const CALLBACK = 'https://example.com/zerobounce-sdk-live-test';
 const SANDBOX = 'valid@example.com';
 
+/**
+ * LIVE: the bulk API refuses to delete a just-uploaded file for far longer
+ * than a status of "Complete" suggests -- observed runs have needed anywhere
+ * from ~10 to ~50 minutes before the delete was accepted, so "Complete" is not
+ * a sufficient precondition. The suite waits DELETE_WINDOW seconds before
+ * giving up, and every file it could not delete is retried once more and named
+ * at the end of the run, so a test CSV is never silently left on the live
+ * account. Raise it for a slower account:
+ *
+ *   ZEROBOUNCE_LIVE_DELETE_SECONDS=3000
+ */
+define('DELETE_WINDOW', max(0, (int)getenv('ZEROBOUNCE_LIVE_DELETE_SECONDS') ?: 600));
+const DELETE_INTERVAL = 10;
+
 $passed = 0;
 $failed = 0;
 $skipped = 0;
 $failures = array();
+$leftovers = array();
 
 function redact($text)
 {
@@ -92,6 +108,52 @@ function check($condition, $message)
     }
 }
 
+/**
+ * Deletes an uploaded bulk file, retrying until DELETE_WINDOW is spent, and
+ * throws naming the file that is still on the account. Anything it gives up on
+ * is swept again at the end of the run.
+ *
+ * @throws \RuntimeException
+ */
+function deleteUploadedFile(ZeroBounce $client, $fileId)
+{
+    global $leftovers;
+    $deadline = time() + DELETE_WINDOW;
+    $lastError = '';
+    while (true) {
+        try {
+            $client->deleteFile($fileId);
+            return;
+        } catch (\Throwable $e) {
+            $lastError = redact($e->getMessage());
+        }
+        if (time() + DELETE_INTERVAL >= $deadline) {
+            break;
+        }
+        sleep(DELETE_INTERVAL);
+    }
+    $leftovers[] = $fileId;
+    throw new \RuntimeException(
+        'could not delete ' . $fileId . ' after retrying for ' . DELETE_WINDOW . 's: ' . $lastError
+    );
+}
+
+/**
+ * A rejected request still deserializes into a response object with every
+ * field null -- the API answers a bad key with a bare {"Message": "..."} body
+ * that carries no payload key for the SDK to reject -- so a "not null" check
+ * passes on a rejection and proves nothing. An answered /guessformat response
+ * echoes the domain it was asked about.
+ *
+ * @param ZBFindEmailResponse|ZBFindEmailFormatResponse $response
+ * @param string $domain
+ */
+function checkGuessFormatAnswered($response, $domain)
+{
+    check($response !== null, 'no response');
+    check($response->domain === $domain, 'the response did not echo the domain: ' . $response);
+}
+
 /** Run $call, expecting it to fail, and hand back the (redacted) message. */
 function expectFailure(callable $call, $what)
 {
@@ -125,7 +187,11 @@ function validationFree()
     $before = creditBalance($client);
 
     test('getCredits returns a balance', function () use ($before) {
-        check($before >= 0 || $before === -1, 'credits was not a number');
+        // LIVE: -1 is the API's answer for an INVALID key, not a balance.
+        // Accepting it let a dead key sail through this check while every
+        // billable call below failed, so the one test that should catch a bad
+        // key sat green.
+        check($before > 0, 'not a usable credit balance: ' . $before);
     });
 
     test('getApiUsage parses the documented date formats', function () use ($client) {
@@ -170,9 +236,9 @@ function validationFree()
         // these endpoints, which keeps the key out of request logs.
         $end = new DateTime();
         $start = (new DateTime())->modify('-7 days');
-        check((int)$client->getCredits(true)->credits >= -1, 'no credits over POST');
+        check((int)$client->getCredits(true)->credits > 0, 'no credit balance over POST');
         check($client->getApiUsage($start, $end, true)->total !== null, 'no usage total over POST');
-        check($client->findEmailFormat('example.com', null, true) !== null, 'no format over POST');
+        checkGuessFormatAnswered($client->findEmailFormat('example.com', null, true), 'example.com');
     });
 
     test('an unknown file id is a short, clean error', function () use ($client) {
@@ -275,11 +341,15 @@ function validationSpend()
     });
 
     test('email finder', function () use ($client) {
-        check($client->findEmail('example.com', 'John', null, null, 'Doe') !== null, 'no response');
+        $response = $client->findEmail('example.com', 'John', null, null, 'Doe');
+        checkGuessFormatAnswered($response, 'example.com');
+        check(is_string($response->email), 'no email in the response: ' . $response);
     });
 
     test('domain search', function () use ($client) {
-        check($client->findEmailFormat('example.com') !== null, 'no response');
+        $response = $client->findEmailFormat('example.com');
+        checkGuessFormatAnswered($response, 'example.com');
+        check(is_string($response->format), 'no format in the response: ' . $response);
     });
 
     // Not a free call: on an account with an S3 integration this complete
@@ -312,19 +382,9 @@ function validationSpend()
     });
 
     test('the uploaded validation job is deleted again', function () use ($client, &$fileId) {
-        // LIVE: a just-accepted job answers "File cannot be found" for a short
+        // LIVE: a just-accepted job answers "File cannot be found" for a long
         // while, so the delete is retried rather than leaving the job behind.
-        $lastError = '';
-        for ($attempt = 0; $attempt < 12; $attempt++) {
-            try {
-                $client->deleteFile($fileId);
-                return;
-            } catch (\Throwable $e) {
-                $lastError = redact($e->getMessage());
-                sleep(10);
-            }
-        }
-        throw new \RuntimeException('could not delete ' . $fileId . ' after retrying: ' . $lastError);
+        deleteUploadedFile($client, $fileId);
     }, $fileId !== null, 'upload did not produce a file id');
 }
 
@@ -477,6 +537,23 @@ if ($WARMUP_KEY !== '') {
 }
 if ($WARMUP_KEY !== '' && $CHANGES) {
     warmupChanges();
+}
+
+// A file the suite could not delete is still on the live account, so it gets
+// one more attempt now that the rest of the run has bought it extra time, and
+// is named loudly if it is still there.
+if (!empty($leftovers)) {
+    echo "\nLeftover uploaded files\n";
+    $sweeper = sdk();
+    foreach ($leftovers as $fileId) {
+        try {
+            $sweeper->deleteFile($fileId);
+            echo '  + ' . $fileId . " deleted on a later attempt\n";
+        } catch (\Throwable $e) {
+            echo '  ! ' . $fileId . ' is STILL on the account, delete it by hand: '
+                . redact($e->getMessage()) . "\n";
+        }
+    }
 }
 
 echo "\n" . $passed . ' passed, ' . $failed . ' failed, ' . $skipped . " skipped\n";
