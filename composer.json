@@ -1,6 +1,6 @@
 {
   "name": "zero-bounce/sdk",
-  "version": "2.2.0",
+  "version": "3.0.0",
   "description": "Official ZeroBounce PHP SDK: email validation, AI scoring, bulk files, email finder and domain search",
   "keywords": [
     "zerobounce",
