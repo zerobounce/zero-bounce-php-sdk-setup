@@ -1,4 +1,5 @@
-# Run PHPUnit tests on every PR.
+# Run PHPUnit tests on the latest PHP, and an offline smoke run on the oldest PHP
+# composer.json allows, on every PR.
 name: SDK CI
 
 on:
@@ -28,7 +29,39 @@ jobs:
         run: composer install --no-interaction --no-progress
 
       - name: PHP syntax check
-        run: find src test -name '*.php' -exec php -l {} \;
+        # xargs, not find -exec ... \;, so a parse error fails the step.
+        run: find src test -name '*.php' -print0 | xargs -0 -n1 php -l
 
       - name: Run tests
         run: vendor/bin/phpunit --colors=always
+
+  floor:
+    # composer.json says "php": ">=7.0". The PHPUnit suite cannot run on 7.0
+    # (no PHPUnit that installs there has the assertions it uses, and 7.0 has
+    # no void return type), so this job lints everything on 7.0 and drives the
+    # offline fake API through test/offline_smoke.php. Raise the version here
+    # whenever composer.json's floor changes.
+    name: Floor (PHP 7.0)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: "7.0"
+          # Composer 2.3+ needs PHP 7.2.5; 2.2 is the LTS line for older PHP.
+          tools: composer:2.2
+
+      # Runtime only: the locked PHPUnit 10 needs PHP 8.1. The package has no
+      # runtime dependencies, so this just builds vendor/autoload.php.
+      - name: Install (no dev dependencies)
+        run: composer install --no-dev --no-interaction --no-progress
+
+      - name: PHP syntax check
+        run: find src test -name '*.php' -print0 | xargs -0 -n1 php -l
+
+      - name: Offline smoke run
+        run: php test/offline_smoke.php
