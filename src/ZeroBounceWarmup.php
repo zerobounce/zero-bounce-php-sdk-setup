@@ -22,7 +22,7 @@ class ZeroBounceWarmup
     /** Required by the schema but always replaced with the key's own team. */
     const AnyTeamId = 1;
 
-    /** @var string */
+    /** @var ZBSecret The key, kept out of var_export(), serialize() and dumps. */
     private $apiKey;
     /** @var string */
     private $root;
@@ -32,24 +32,46 @@ class ZeroBounceWarmup
      * @param string|null $baseUrl defaults to https://warmup-api.zerobounce.net
      * @throws ZBException
      */
-    public function __construct($apiKey, $baseUrl = null)
-    {
-        if ($apiKey === null || trim((string)$apiKey) === '') {
-            throw new ZBMissingApiKeyException('api_key is required');
+    public function __construct(
+        #[\SensitiveParameter]
+        $apiKey,
+        $baseUrl = null
+    ) {
+        // The key is a parameter of this frame, so an exception thrown from
+        // here would carry it in its stack trace.
+        try {
+            if ($apiKey === null || trim((string)$apiKey) === '') {
+                throw new ZBMissingApiKeyException('api_key is required');
+            }
+            // A key with surrounding whitespace or control characters would be
+            // quoted, unredacted, in the HTTP library's own error.
+            if ($apiKey !== trim($apiKey) || preg_match('/[\x00-\x1f\x7f]/', $apiKey)) {
+                throw new ZBMissingParameterException(
+                    'api_key has surrounding whitespace or control characters'
+                );
+            }
+            $base = ($baseUrl === null || trim((string)$baseUrl) === '') ? self::DefaultBaseUrl : $baseUrl;
+            if (stripos($base, 'https://') !== 0) {
+                throw new ZBMissingParameterException('base_url must be an https:// URL');
+            }
+        } catch (\Exception $e) {
+            throw ZBSecret::withoutSecretInTrace($e, $apiKey);
         }
-        // A key with surrounding whitespace or control characters would be
-        // quoted, unredacted, in the HTTP library's own error.
-        if ($apiKey !== trim($apiKey) || preg_match('/[\x00-\x1f\x7f]/', $apiKey)) {
-            throw new ZBMissingParameterException(
-                'api_key has surrounding whitespace or control characters'
-            );
-        }
-        $base = ($baseUrl === null || trim((string)$baseUrl) === '') ? self::DefaultBaseUrl : $baseUrl;
-        if (stripos($base, 'https://') !== 0) {
-            throw new ZBMissingParameterException('base_url must be an https:// URL');
-        }
-        $this->apiKey = $apiKey;
+        $this->apiKey = new ZBSecret($apiKey);
         $this->root = rtrim($base, '/') . self::BasePath;
+    }
+
+    /**
+     * @return string
+     * @throws ZBMissingApiKeyException in a copy restored by unserialize()
+     */
+    private function apiKey()
+    {
+        $key = $this->apiKey === null ? null : $this->apiKey->value();
+        if ($key === null) {
+            throw new ZBMissingApiKeyException('api_key is required: this client was restored by unserialize(), which does not keep the key');
+        }
+        return $key;
     }
 
     /**
@@ -75,7 +97,8 @@ class ZeroBounceWarmup
      */
     private function redact($text, array $secrets = array())
     {
-        $all = array_merge(array($this->apiKey), $secrets);
+        $key = $this->apiKey === null ? null : $this->apiKey->value();
+        $all = array_merge(array($key), $secrets);
         foreach ($all as $secret) {
             if ($secret === null || $secret === '') {
                 continue;
@@ -108,7 +131,7 @@ class ZeroBounceWarmup
             );
         }
 
-        $headers = array('API-Key: ' . $this->apiKey, 'Accept: application/json');
+        $headers = array('API-Key: ' . $this->apiKey(), 'Accept: application/json');
         $content = null;
         if ($body !== null) {
             $headers[] = 'Content-Type: application/json';
@@ -192,24 +215,29 @@ class ZeroBounceWarmup
     protected function executeHttp($method, $url, array $headers = array(), $body = null, $timeout = 120)
     {
         $curl = curl_init();
-        curl_setopt_array($curl, array(
+        $options = array(
             CURLOPT_URL => $url,
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_HEADER => true,
+            CURLOPT_CONNECTTIMEOUT => ZeroBounce::ConnectTimeoutSeconds,
             CURLOPT_TIMEOUT => $timeout,
             CURLOPT_FOLLOWLOCATION => false,
             CURLOPT_MAXREDIRS => 0,
             CURLOPT_CUSTOMREQUEST => strtoupper($method),
             CURLOPT_HTTPHEADER => $headers,
-        ));
+        );
         if ($body !== null) {
-            curl_setopt($curl, CURLOPT_POSTFIELDS, $body);
+            $options[CURLOPT_POSTFIELDS] = $body;
         }
+        $this->applyCurlOptions($curl, $options);
         $raw = curl_exec($curl);
         $status = (int)curl_getinfo($curl, CURLINFO_HTTP_CODE);
         $headerSize = (int)curl_getinfo($curl, CURLINFO_HEADER_SIZE);
         $error = curl_error($curl);
-        curl_close($curl);
+        if (\PHP_VERSION_ID < 80000) {
+            // A no-op from PHP 8.0, deprecated in 8.5.
+            curl_close($curl);
+        }
 
         if ($raw === false) {
             // Rebuilt rather than wrapped: the original holds the URL and headers.
@@ -220,6 +248,19 @@ class ZeroBounceWarmup
             'headers' => explode("\r\n", substr($raw, 0, $headerSize)),
             'body' => substr($raw, $headerSize),
         );
+    }
+
+    /**
+     * Sets the options on a curl handle. Separated so the tests can check
+     * the options every request is sent with.
+     *
+     * @param resource|\CurlHandle $curl
+     * @param array<int, mixed> $options
+     * @return void
+     */
+    protected function applyCurlOptions($curl, array $options)
+    {
+        curl_setopt_array($curl, $options);
     }
 
     /** Turn an error body into a short message. Never raw HTML or a parser dump. */

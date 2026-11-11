@@ -29,4 +29,9 @@ class ZBRawJsonResponse extends ZBResponse
         }
         $this->data = $json;
     }
+
+    public function __toString()
+    {
+        return "ZBRawJsonResponse{data=" . $this->arrayField($this->data) . "}";
+    }
 }

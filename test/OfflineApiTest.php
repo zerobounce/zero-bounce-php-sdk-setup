@@ -70,7 +70,9 @@ class OfflineApiTest extends TestCase
         $this->assertSame('/v2/validate', $request['path']);
         $this->assertSame('api.zerobounce.net', $request['host']);
         $this->assertSame('person@example.com', $request['fields']['email']);
-        $this->assertSame('', $request['fields']['ip_address']);
+        // No IP address: the parameter is left out, as in the other SDKs.
+        $this->assertArrayNotHasKey('ip_address', $request['fields']);
+        $this->assertStringNotContainsString('ip_address', $request['url']);
         $this->assertSame('false', $request['fields']['activity_data']);
         $this->assertSame('true', $request['fields']['verify_plus']);
         $this->assertArrayNotHasKey('timeout', $request['fields']);
@@ -95,6 +97,18 @@ class OfflineApiTest extends TestCase
         $this->assertSame('15', $request['fields']['timeout']);
         $this->assertArrayNotHasKey('activity_data', $request['fields']);
         $this->assertArrayNotHasKey('verify_plus', $request['fields']);
+
+        foreach (array(null, '') as $ip) {
+            $client->validate('person@example.com', $ip, $options);
+            $request = $this->only($api);
+            $this->assertSame('POST', $request['method']);
+            $this->assertArrayNotHasKey('ip_address', $request['fields']);
+            $client->validate('person@example.com', $ip);
+            $request = $this->only($api);
+            $this->assertSame('GET', $request['method']);
+            $this->assertArrayNotHasKey('ip_address', $request['fields']);
+            $this->assertStringNotContainsString('ip_address', $request['url']);
+        }
     }
 
     public function testValidateEncodesQueryValues()
@@ -788,6 +802,9 @@ class OfflineApiTest extends TestCase
         });
         $this->assertStringContainsString('Invalid API Key', $error->getMessage());
         $this->assertStringContainsString('ran out of credits', $error->getMessage());
+        // An account error on an HTTP 200, like a dead key on the other calls.
+        $this->assertInstanceOf(ZBApiException::class, $error);
+        $this->assertSame(200, $error->getStatusCode());
 
         $credits = $this->client($api, 'account-invalid-credits');
         $creditError = $this->capture(function () use ($credits) {
@@ -922,8 +939,11 @@ echo "<!DOCTYPE html><html><title>redirect</title><body>go</body></html>";
 return true;
 ');
         $pipes = array();
+        // An argument list, not a command string: no shell sits between, so
+        // proc_terminate() stops the server itself. Through /bin/sh (dash) only
+        // the shell died, and the orphaned server kept phpunit's output pipe open.
         $process = proc_open(
-            escapeshellarg(PHP_BINARY) . ' -S 127.0.0.1:' . $port . ' ' . escapeshellarg($router),
+            array(PHP_BINARY, '-S', '127.0.0.1:' . $port, $router),
             array(0 => array('pipe', 'r'), 1 => array('pipe', 'w'), 2 => array('pipe', 'w')),
             $pipes
         );
@@ -949,14 +969,15 @@ return true;
             $this->assertStringNotContainsString('999', $error->getMessage());
         } finally {
             proc_terminate($process);
-            proc_close($process);
             foreach ($pipes as $pipe) {
                 if (is_resource($pipe)) {
                     fclose($pipe);
                 }
             }
+            proc_close($process);
             @unlink($router);
         }
+        $this->assertFalse(@fsockopen('127.0.0.1', $port, $cerrno, $cerr, 0.5), 'the test server outlived the test');
     }
 
     public function testValidateSendsTheNewOptionsOnlyWhenSet()

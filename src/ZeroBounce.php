@@ -67,7 +67,8 @@ class ZeroBounce
 
     /** @var string Overridable per instance; defaults to InboxPlacementBaseUrl. */
     protected $inboxPlacementBaseUrl = self::InboxPlacementBaseUrl;
-    
+
+    /** @var ZBSecret|null The key, kept out of var_export(), serialize() and dumps. */
     private $apiKey = null;
 
     /** @var string|null "EU" or "US" when apiBaseUrl is a regional host. */
@@ -95,13 +96,40 @@ class ZeroBounce
      * @throws ZBException
      */
     public function initialize(
+        #[\SensitiveParameter]
         $apiKey,
         $baseUrl = null,
         $listEvaluatorBaseUrl = null,
         $inboxPlacementBaseUrl = null,
         $bulkBaseUrl = null
     ) {
-        $this->apiKey = self::checkedApiKey($apiKey);
+        // The key is a parameter of this frame, so an exception thrown from
+        // here would carry it in its stack trace.
+        try {
+            $this->configure(self::checkedApiKey($apiKey), $baseUrl, $listEvaluatorBaseUrl, $inboxPlacementBaseUrl, $bulkBaseUrl);
+        } catch (Exception $e) {
+            throw ZBSecret::withoutSecretInTrace($e, $apiKey);
+        }
+    }
+
+    /**
+     * @param string|null $apiKey already checked
+     * @param string|null $baseUrl
+     * @param string|null $listEvaluatorBaseUrl
+     * @param string|null $inboxPlacementBaseUrl
+     * @param string|null $bulkBaseUrl
+     * @return void
+     * @throws ZBException
+     */
+    private function configure(
+        #[\SensitiveParameter]
+        $apiKey,
+        $baseUrl,
+        $listEvaluatorBaseUrl,
+        $inboxPlacementBaseUrl,
+        $bulkBaseUrl
+    ) {
+        $this->apiKey = ($apiKey === null || $apiKey === '') ? null : new ZBSecret((string)$apiKey);
         $this->apiBaseUrl = self::resolvedBaseUrl($baseUrl);
         // Every bulkapi.zerobounce.net path hangs off one root, so a single
         // override points bulk files, scoring, email finder, domain search,
@@ -129,6 +157,14 @@ class ZeroBounce
     }
 
     /**
+     * @return string|null
+     */
+    private function apiKey()
+    {
+        return $this->apiKey === null ? null : $this->apiKey->value();
+    }
+
+    /**
      * The key, or a clear error. A key with surrounding whitespace or control
      * characters would otherwise be quoted, unredacted, in a transport error.
      *
@@ -136,8 +172,10 @@ class ZeroBounce
      * @return string
      * @throws ZBException
      */
-    protected static function checkedApiKey($apiKey)
-    {
+    protected static function checkedApiKey(
+        #[\SensitiveParameter]
+        $apiKey
+    ) {
         // An empty key stays deferred to checkValidApiKey(), which names the
         // call that initializes the client.
         if ($apiKey === null || trim((string)$apiKey) === '') {
@@ -323,11 +361,12 @@ class ZeroBounce
             }
         }
         $response = new ZBValidateResponse();
+        // ip_address is sent only when given, as in the other SDKs.
         $ipValue = ($ipAddress === null) ? '' : (string)$ipAddress;
-        $fields = array(
-            'email' => $email,
-            'ip_address' => $ipValue,
-        );
+        $fields = array('email' => $email);
+        if ($ipValue !== '') {
+            $fields['ip_address'] = $ipValue;
+        }
         if ($options instanceof ZBValidateOptions) {
             if ($options->timeout !== null) {
                 $fields['timeout'] = (string)$options->timeout;
@@ -352,8 +391,11 @@ class ZeroBounce
                 return $response;
             }
         }
-        $url = $this->apiBaseUrl . "/validate?api_key=" . urlencode($this->apiKey)
-            . "&email=" . urlencode($email) . "&ip_address=" . urlencode($ipValue);
+        $url = $this->apiBaseUrl . "/validate?api_key=" . urlencode($this->apiKey())
+            . "&email=" . urlencode($email);
+        if ($ipValue !== '') {
+            $url .= "&ip_address=" . urlencode($ipValue);
+        }
         if ($options instanceof ZBValidateOptions) {
             if ($options->timeout !== null) {
                 $url .= "&timeout=" . urlencode((string)$options->timeout);
@@ -741,7 +783,7 @@ class ZeroBounce
      */
     protected function json($url, $data, $response)
     {
-        $data['api_key'] = $this->apiKey;
+        $data['api_key'] = $this->apiKey();
         $content = json_encode($data);
         $result = $this->executeHttp(
             'POST',
@@ -765,7 +807,7 @@ class ZeroBounce
      */
     protected function formPost($url, $data, $response)
     {
-        $data['api_key'] = $this->apiKey;
+        $data['api_key'] = $this->apiKey();
         $content = http_build_query($data);
         $result = $this->executeHttp(
             'POST',
@@ -796,7 +838,7 @@ class ZeroBounce
         if ($usePost) {
             return $this->formPost($url, $params, $response);
         }
-        $params['api_key'] = $this->apiKey;
+        $params['api_key'] = $this->apiKey();
         return $this->request($url . '?' . http_build_query($params), $response);
     }
 
@@ -886,7 +928,7 @@ class ZeroBounce
         $response = new ZBFileStatusResponse();
         $this->request($this->bulkApiBaseUrl
             . ($scoring ? "/scoring" : "")
-            . "/filestatus?api_key=" . urlencode($this->apiKey)
+            . "/filestatus?api_key=" . urlencode($this->apiKey())
             . "&file_id=" . urlencode($fileId),
             $response);
 
@@ -939,7 +981,7 @@ class ZeroBounce
 
         try {
             $query = array(
-                'api_key' => $this->apiKey,
+                'api_key' => $this->apiKey(),
                 'file_id' => $fileId,
             );
             if ($options instanceof ZBGetFileOptions) {
@@ -970,10 +1012,11 @@ class ZeroBounce
     private function redactApiKey($message)
     {
         $message = (string) $message;
-        if (!$this->apiKey) {
+        $key = $this->apiKey();
+        if (!$key) {
             return $message;
         }
-        return str_replace(array($this->apiKey, urlencode($this->apiKey), rawurlencode($this->apiKey)), '***', $message);
+        return str_replace(array($key, urlencode($key), rawurlencode($key)), '***', $message);
     }
 
     /**
@@ -1142,7 +1185,7 @@ class ZeroBounce
         $response = new ZBDeleteFileResponse();
         $this->request($this->bulkApiBaseUrl
             . ($scoring ? "/scoring" : "")
-            . "/deletefile?api_key=" . urlencode($this->apiKey)
+            . "/deletefile?api_key=" . urlencode($this->apiKey())
             . "&file_id=" . urlencode($fileId),
             $response);
 
@@ -1192,11 +1235,11 @@ class ZeroBounce
         if ($body !== null) {
             $curlOpts[CURLOPT_POSTFIELDS] = $body;
         }
-        curl_setopt_array($curl, $curlOpts);
+        $this->applyCurlOptions($curl, $curlOpts);
         $raw = curl_exec($curl);
         $status = (int)curl_getinfo($curl, CURLINFO_HTTP_CODE);
         $error = curl_error($curl);
-        curl_close($curl);
+        self::closeCurl($curl);
         if ($raw === false || $raw === null) {
             return array(
                 'status' => $status,
@@ -1348,7 +1391,8 @@ class ZeroBounce
             if ($message === '') {
                 $message = 'Invalid API Key or your account ran out of credits';
             }
-            throw new ZBException($message);
+            // Reported on an HTTP 200, like a dead key on the other calls.
+            throw new ZBApiException($message, 200);
         }
     }
 
@@ -1395,7 +1439,7 @@ class ZeroBounce
         $headers = array();
         $sniffing = true;
         $curl = curl_init();
-        curl_setopt_array($curl, array(
+        $this->applyCurlOptions($curl, array(
             CURLOPT_URL => $this->checkedUrl($url),
             // No overall limit, so a large file can take as long as it needs;
             // a server that stops sending is dropped instead of hanging forever.
@@ -1428,7 +1472,7 @@ class ZeroBounce
         $ok = curl_exec($curl);
         $status = (int)curl_getinfo($curl, CURLINFO_HTTP_CODE);
         $error = curl_error($curl);
-        curl_close($curl);
+        self::closeCurl($curl);
         if ($sniffing) {
             // The whole body fit inside the sniff window and was never written.
             fwrite($handle, $head);
@@ -1443,6 +1487,33 @@ class ZeroBounce
 
     /** How long a connection may take to open, for every request. */
     const ConnectTimeoutSeconds = 30;
+
+    /**
+     * Sets the options on a curl handle. Separated so the tests can check
+     * the options every request is sent with.
+     *
+     * @param resource|\CurlHandle $curl
+     * @param array<int, mixed> $options
+     * @return void
+     */
+    protected function applyCurlOptions($curl, array $options)
+    {
+        curl_setopt_array($curl, $options);
+    }
+
+    /**
+     * curl_close() frees the handle before PHP 8.0; from 8.0 it does nothing
+     * and 8.5 deprecates it, so it is called only where it still matters.
+     *
+     * @param resource|\CurlHandle $curl
+     * @return void
+     */
+    private static function closeCurl($curl)
+    {
+        if (\PHP_VERSION_ID < 80000) {
+            curl_close($curl);
+        }
+    }
 
     /**
      * @var int A streamed download that receives nothing for this long is
@@ -1528,7 +1599,7 @@ class ZeroBounce
         $genderColumn, $ipAddressColumn, $hasHeaderRow, $allowPhase2, $url)
     {
         $fields = array(
-            'api_key' => $this->apiKey,
+            'api_key' => $this->apiKey(),
             'email_address_column' => $emailAddressColumn,
         );
         if ($returnUrl) {
@@ -1560,7 +1631,7 @@ class ZeroBounce
      */
     private function checkValidApiKey()
     {
-        if (!$this->apiKey) throw new ZBMissingApiKeyException("ZeroBounce SDK is not initialized. Please call ZeroBounce::Instance()->initialize(\"API_KEY\") first");
+        if (!$this->apiKey()) throw new ZBMissingApiKeyException("ZeroBounce SDK is not initialized. Please call ZeroBounce::Instance()->initialize(\"API_KEY\") first");
     }
 
     private function build_data_files($boundary, $fields, $files)
@@ -1613,7 +1684,7 @@ class ZeroBounce
 
         $response = new ZBGuessFormatResponse();
         $args = [
-            "api_key" => $this->apiKey,
+            "api_key" => $this->apiKey(),
             "domain" => $domain
         ];
         if ($firstName) $args['first_name'] = $firstName;

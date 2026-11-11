@@ -149,7 +149,7 @@ trait ZeroBouncePriority3
         $this->checkValidApiKey();
         $this->requireProvided($fileId, 'fileId is required');
         $url = $this->listEvaluatorBaseUrl . '/' . self::pathSegment($fileId, 'fileId')
-            . '/?api_key=' . urlencode($this->apiKey);
+            . '/?api_key=' . urlencode($this->apiKey());
         $response = new ZBListEvaluatorResponse();
         $this->request($url, $response);
         return $response;
@@ -188,7 +188,7 @@ trait ZeroBouncePriority3
     public function listS3Files($bucket = null, $search = null)
     {
         $this->checkValidApiKey();
-        $url = $this->bulkApiRootUrl . '/listS3files?api_key=' . urlencode($this->apiKey);
+        $url = $this->bulkApiRootUrl . '/listS3files?api_key=' . urlencode($this->apiKey());
         if ($bucket !== null && $bucket !== '') {
             $url .= '&bucket=' . urlencode($bucket);
         }
@@ -279,7 +279,7 @@ trait ZeroBouncePriority3
         if ($usePost) {
             return $this->filterFormPost($this->apiBaseUrl . '/filters/list', array());
         }
-        $url = $this->apiBaseUrl . '/filters/list?api_key=' . urlencode($this->apiKey);
+        $url = $this->apiBaseUrl . '/filters/list?api_key=' . urlencode($this->apiKey());
         $holder = new ZBRawJsonResponse();
         $this->request($url, $holder);
         return $holder->data;
@@ -539,7 +539,7 @@ trait ZeroBouncePriority3
         if (!$filepath) {
             throw new ZBMissingParameterException('filePath is required');
         }
-        $fields['api_key'] = $this->apiKey;
+        $fields['api_key'] = $this->apiKey();
         $files = array($filepath => file_get_contents($filepath));
         $response = $this->curl($url, $fields, $files);
         $rsp = new ZBSendFileResponse();
@@ -550,7 +550,7 @@ trait ZeroBouncePriority3
     private function sendBulkRootMultipartContent($url, $fileName, $content, array $fields)
     {
         $this->checkValidApiKey();
-        $fields['api_key'] = $this->apiKey;
+        $fields['api_key'] = $this->apiKey();
         $files = array($fileName => $content);
         $response = $this->curl($url, $fields, $files);
         $rsp = new ZBSendFileResponse();
@@ -565,7 +565,7 @@ trait ZeroBouncePriority3
         $this->requireProvided($fileId, 'fileId is required');
         $response = new ZBFileStatusResponse();
         $this->request(
-            $baseUrl . '/filestatus?api_key=' . urlencode($this->apiKey) . '&file_id=' . urlencode($fileId),
+            $baseUrl . '/filestatus?api_key=' . urlencode($this->apiKey()) . '&file_id=' . urlencode($fileId),
             $response
         );
         return $response;
@@ -577,7 +577,7 @@ trait ZeroBouncePriority3
         $this->requireProvided($fileId, 'fileId is required');
         $response = new ZBDeleteFileResponse();
         $this->request(
-            $baseUrl . '/deletefile?api_key=' . urlencode($this->apiKey) . '&file_id=' . urlencode($fileId),
+            $baseUrl . '/deletefile?api_key=' . urlencode($this->apiKey()) . '&file_id=' . urlencode($fileId),
             $response
         );
         return $response;
@@ -588,7 +588,7 @@ trait ZeroBouncePriority3
         $this->checkValidApiKey();
         $this->requireProvided($fileId, 'fileId is required');
         $this->requireProvided($downloadPath, 'downloadPath is required');
-        $url = $baseUrl . '/getfile?api_key=' . urlencode($this->apiKey) . '&file_id=' . urlencode($fileId);
+        $url = $baseUrl . '/getfile?api_key=' . urlencode($this->apiKey()) . '&file_id=' . urlencode($fileId);
         return $this->saveBulkDownload($this->getBulkFileHttp($url), $downloadPath);
     }
 

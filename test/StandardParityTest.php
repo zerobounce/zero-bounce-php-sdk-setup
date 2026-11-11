@@ -6,10 +6,12 @@ use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 use ZeroBounce\SDK\ZBActivityResponse;
 use ZeroBounce\SDK\ZBApiException;
+use ZeroBounce\SDK\ZBBatchValidateResponse;
 use ZeroBounce\SDK\ZBException;
 use ZeroBounce\SDK\ZBFileStatusResponse;
 use ZeroBounce\SDK\ZBGetFileOptions;
 use ZeroBounce\SDK\ZBListEvaluatorResponse;
+use ZeroBounce\SDK\ZBMissingApiKeyException;
 use ZeroBounce\SDK\ZBValidateOptions;
 use ZeroBounce\SDK\ZBValidateResponse;
 use ZeroBounce\SDK\ZeroBounce;
@@ -85,6 +87,64 @@ class LoopbackStreamClient extends ZeroBounce
             $prop->setAccessible(true);
         }
         $prop->setValue($this, $root . '/v2');
+    }
+}
+
+/** Records the curl options of real requests, sent only to a closed loopback port. */
+class CurlOptionsClient extends ZeroBounce
+{
+    /** @var array<int, array<int, mixed>> */
+    public $options = array();
+
+    public function __construct()
+    {
+        parent::__construct();
+    }
+
+    protected function applyCurlOptions($curl, array $options)
+    {
+        $this->options[] = $options;
+        parent::applyCurlOptions($curl, $options);
+    }
+
+    public function plainRequest($url)
+    {
+        return $this->executeHttp('GET', $url);
+    }
+
+    public function streamedRequest($url)
+    {
+        $handle = fopen('php://memory', 'w+');
+        try {
+            return $this->streamHttpToHandle($url, $handle);
+        } finally {
+            fclose($handle);
+        }
+    }
+}
+
+class CurlOptionsWarmup extends ZeroBounceWarmup
+{
+    /** @var array<int, array<int, mixed>> */
+    public $options = array();
+
+    protected function applyCurlOptions($curl, array $options)
+    {
+        $this->options[] = $options;
+        parent::applyCurlOptions($curl, $options);
+    }
+}
+
+/** Answers every Warmup request with an empty list and records the headers. */
+class CannedWarmup extends ZeroBounceWarmup
+{
+    /** @var string[] */
+    public $headers = array();
+
+    protected function executeHttp($method, $url, array $headers = array(), $body = null, $timeout = 120)
+    {
+        $this->headers = array_merge($this->headers, $headers);
+        return array('status' => 200, 'headers' => array('Content-Type: application/json'), 'body' => '[]');
     }
 }
 
@@ -258,8 +318,9 @@ while (time() < $until && ($c = @stream_socket_accept($server, 1)) !== false || 
 }
 ');
         $pipes = array();
+        // An argument list, so proc_terminate() reaches the server, not a shell.
         $process = proc_open(
-            escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($script),
+            array(PHP_BINARY, $script),
             array(0 => array('pipe', 'r'), 1 => array('pipe', 'w'), 2 => array('pipe', 'w')),
             $pipes
         );
@@ -300,6 +361,7 @@ while (time() < $until && ($c = @stream_socket_accept($server, 1)) !== false || 
             proc_close($process);
             @unlink($script);
         }
+        $this->assertFalse(@stream_socket_client('tcp://127.0.0.1:' . $port, $errno, $errstr, 0.5), 'the stall server outlived the test');
     }
 
     // -- request options -----------------------------------------------------
@@ -520,5 +582,198 @@ while (time() < $until && ($c = @stream_socket_accept($server, 1)) !== false || 
             }
         }
         $this->assertSame(array(), $client->urls);
+    }
+
+    // -- connect timeout -------------------------------------------------------
+
+    public function testEveryCurlRequestHasAConnectTimeout()
+    {
+        $port = $this->closedPort();
+        $client = new CurlOptionsClient();
+        $client->initialize('parity-key');
+        $client->plainRequest('http://127.0.0.1:' . $port . '/v2/getcredits');
+        $client->streamedRequest('https://127.0.0.1:' . $port . '/v2/getfile');
+        $warmup = new CurlOptionsWarmup('parity-key', 'https://127.0.0.1:' . $port);
+        try {
+            $warmup->listSendingAccounts();
+        } catch (ZBException $e) {
+            // Refused by the closed port, as intended.
+        }
+        $recorded = array('executeHttp' => $client->options, 'warmup' => $warmup->options);
+        $this->assertCount(2, $client->options, 'executeHttp and the streamed download');
+        $this->assertCount(1, $warmup->options, 'the Warmup client');
+        foreach ($recorded as $name => $requests) {
+            foreach ($requests as $i => $options) {
+                $this->assertArrayHasKey(CURLOPT_CONNECTTIMEOUT, $options, $name . ' #' . $i);
+                $this->assertSame(30, $options[CURLOPT_CONNECTTIMEOUT], $name . ' #' . $i);
+            }
+        }
+    }
+
+    public function testEveryCurlHandleInTheSourceSetsAConnectTimeout()
+    {
+        // A new transport added later cannot skip the timeout unnoticed.
+        foreach (glob(dirname(__DIR__) . '/src/*.php') as $file) {
+            $source = (string)file_get_contents($file);
+            $this->assertSame(
+                substr_count($source, 'curl_init('),
+                substr_count($source, 'CURLOPT_CONNECTTIMEOUT =>'),
+                basename($file) . ': every curl handle needs CURLOPT_CONNECTTIMEOUT'
+            );
+        }
+    }
+
+    // -- the key in errors, traces and dumps -----------------------------------
+
+    public function testTheKeyIsMaskedInErrorMessages()
+    {
+        $key = 'mask+me/key=1';
+        $forms = array($key, urlencode($key), rawurlencode($key));
+        $json = 'application/json';
+        $answers = array(
+            'transport error, urlencoded key' => array('status' => 0, 'body' => '', 'error' => 'Could not reach /v2/getcredits?api_key=' . urlencode($key)),
+            'transport error, raw key' => array('status' => 0, 'body' => '', 'error' => 'Could not use key ' . $key),
+            'error on a 200' => array('status' => 200, 'body' => json_encode(array('error' => 'Unknown key ' . $key))),
+            'error on a 400' => array('status' => 400, 'body' => json_encode(array('error' => 'Unknown key ' . rawurlencode($key)))),
+        );
+        $masked = 0;
+        foreach ($answers as $name => $answer) {
+            $client = new CannedClient($answer['body'], $answer['status'], $json);
+            if (isset($answer['error'])) {
+                $client->answer['error'] = $answer['error'];
+            }
+            $client->initialize($key);
+            $path = sys_get_temp_dir() . '/zb-php-' . getmypid() . '-mask.csv';
+            foreach (array(
+                'getCredits' => function () use ($client) { $client->getCredits(); },
+                'getFile' => function () use ($client, $path) { $client->getFile('f1', $path); },
+            ) as $call => $run) {
+                $message = $this->thrown($run)->getMessage();
+                foreach ($forms as $form) {
+                    $this->assertStringNotContainsString($form, $message, $name . ', ' . $call);
+                }
+                $masked += substr_count($message, '***');
+            }
+        }
+        $this->assertGreaterThanOrEqual(count($answers) * 2, $masked, 'each message should show *** where the key was');
+    }
+
+    public function testTheKeyStaysOutOfStackTraces()
+    {
+        // Exception traces keep call arguments unless this is set (php.ini-production sets it).
+        $previous = ini_set('zend.exception_ignore_args', '0');
+        $key = 'trace-secret-0123456789abcdef';
+        $prefix = substr($key, 0, 15);
+        try {
+            $calls = array(
+                'initialize, http baseUrl' => function () use ($key) { ZeroBounce::create()->initialize($key, 'http://api.example.test/v2'); },
+                'initialize, http bulkBaseUrl' => function () use ($key) { ZeroBounce::create()->initialize($key, null, null, null, 'http://bulk.example.test'); },
+                'initialize, key with a newline' => function () use ($key) { ZeroBounce::create()->initialize($key . "\n"); },
+                'warmup, http baseUrl' => function () use ($key) { new ZeroBounceWarmup($key, 'http://warmup.example.test'); },
+                'warmup, key with a newline' => function () use ($key) { new ZeroBounceWarmup($key . "\n"); },
+            );
+            foreach ($calls as $name => $call) {
+                $error = $this->thrown($call);
+                $this->assertStringNotContainsString($prefix, $error->getTraceAsString(), $name);
+                $this->assertStringNotContainsString($prefix, (string)$error, $name);
+                foreach ($error->getTrace() as $frame) {
+                    foreach (isset($frame['args']) ? $frame['args'] : array() as $arg) {
+                        if (is_string($arg)) {
+                            $this->assertStringNotContainsString($prefix, $arg, $name);
+                        }
+                    }
+                }
+            }
+        } finally {
+            ini_set('zend.exception_ignore_args', $previous === false ? '0' : $previous);
+        }
+    }
+
+    public function testVarExportAndSerializeDoNotRevealTheKey()
+    {
+        // Canned clients: nothing here may reach the network.
+        $client = new CannedClient('{"Credits":"5"}');
+        $client->initialize('export-client-key');
+        $warmup = new CannedWarmup('export-warmup-key');
+        foreach (array('export-client-key' => $client, 'export-warmup-key' => $warmup) as $key => $object) {
+            $this->assertStringNotContainsString($key, var_export($object, true));
+            $this->assertStringNotContainsString($key, serialize($object));
+            $this->assertStringNotContainsString($key, print_r((array)$object, true));
+            ob_start();
+            var_dump((array)$object);
+            $this->assertStringNotContainsString($key, (string)ob_get_clean());
+        }
+
+        // A copy made by unserialize() has no key: it refuses to send anything
+        // until it is initialized again.
+        $copy = unserialize(serialize($client));
+        $this->assertInstanceOf(ZBMissingApiKeyException::class, $this->thrown(function () use ($copy) { $copy->getCredits(); }));
+        $this->assertSame(array(), $copy->urls);
+        $warmupCopy = unserialize(serialize($warmup));
+        $this->assertInstanceOf(ZBMissingApiKeyException::class, $this->thrown(function () use ($warmupCopy) { $warmupCopy->listSendingAccounts(); }));
+        $this->assertSame(array(), $warmupCopy->headers);
+        // The originals keep their keys.
+        $this->assertSame('5', (string)$client->getCredits()->credits);
+        $warmup->listSendingAccounts();
+        $this->assertContains('API-Key: export-warmup-key', $warmup->headers);
+    }
+
+    // -- toString --------------------------------------------------------------
+
+    public function testToStringNamesItsTypeAndEveryPublicField()
+    {
+        $files = glob(dirname(__DIR__) . '/src/ZB*Response.php');
+        $this->assertGreaterThan(10, count($files));
+        foreach ($files as $file) {
+            $short = basename($file, '.php');
+            $ref = new ReflectionClass('ZeroBounce\\SDK\\' . $short);
+            $object = $ref->newInstanceWithoutConstructor();
+            $method = $ref->getMethod('boolFields');
+            if (\PHP_VERSION_ID < 80100) {
+                $method->setAccessible(true);
+            }
+            $bools = $method->invoke($object);
+            $expected = array();
+            foreach ($ref->getProperties(\ReflectionProperty::IS_PUBLIC) as $i => $prop) {
+                if ($prop->isStatic()) {
+                    continue;
+                }
+                $name = $prop->getName();
+                if (in_array($name, $bools, true)) {
+                    $prop->setValue($object, true);
+                    $expected[$name] = $name . '=true';
+                    continue;
+                }
+                $marker = 'MARK' . $i . 'X';
+                $prop->setValue($object, is_array($prop->getValue($object)) ? array($marker) : $marker);
+                $expected[$name] = $marker;
+            }
+            $text = (string)$object;
+            $this->assertStringContainsString($short . '{', $text);
+            foreach ($expected as $name => $needle) {
+                $this->assertStringContainsString($needle, $text, $short . '::$' . $name . ' is missing from ' . $text);
+            }
+        }
+    }
+
+    public function testBatchToStringShowsEveryFieldOfEachResultAndTheErrors()
+    {
+        $email = new ZBValidateResponse();
+        $markers = array();
+        foreach ((new ReflectionClass(ZBValidateResponse::class))->getProperties(\ReflectionProperty::IS_PUBLIC) as $i => $prop) {
+            if (!$prop->isStatic() && !in_array($prop->getName(), array('freeEmail', 'mxFound', 'catchallDomain'), true)) {
+                $markers[$prop->getName()] = 'EMAIL' . $i . 'X';
+                $prop->setValue($email, 'EMAIL' . $i . 'X');
+            }
+        }
+        $batch = new ZBBatchValidateResponse();
+        $batch->emailBatch = array($email);
+        $batch->errors = array(array('email_address' => 'bad@', 'error' => 'Invalid email address'));
+        $text = (string)$batch;
+        foreach ($markers as $name => $marker) {
+            $this->assertStringContainsString($marker, $text, $name);
+        }
+        $this->assertStringContainsString('bad@', $text);
+        $this->assertStringContainsString('Invalid email address', $text);
     }
 }
