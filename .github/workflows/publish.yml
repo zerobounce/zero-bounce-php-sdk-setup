@@ -122,6 +122,9 @@ jobs:
     needs: [release]
     if: ${{ !cancelled() && !failure() }}
     runs-on: ubuntu-latest
+    # Uses PACKAGIST_API_TOKEN, so it runs in the release environment like the other publish
+    # jobs (and gets that environment's protection rules and secrets).
+    environment: release
     steps:
       # Same shape as Packagist’s manual update curl:
       # curl -XPOST -H'content-type:application/json' \
