@@ -1,13 +1,22 @@
 {
   "name": "zero-bounce/sdk",
   "version": "2.2.0",
-  "description": "The ZeroBounce SDK for PHP programming language",
+  "description": "Official ZeroBounce PHP SDK: email validation, AI scoring, bulk files, email finder and domain search",
   "keywords": [
-    "zero",
-    "bounce",
+    "zerobounce",
+    "email-validation",
+    "email-verification",
+    "email-finder",
+    "domain-search",
     "sdk"
   ],
+  "homepage": "https://www.zerobounce.net",
   "license": "MIT",
+  "support": {
+    "issues": "https://github.com/zerobounce/zero-bounce-php-sdk-setup/issues",
+    "source": "https://github.com/zerobounce/zero-bounce-php-sdk-setup",
+    "docs": "https://www.zerobounce.net/docs/"
+  },
   "scripts": {
     "dumpautoload": "composer dumpautoload -o",
     "lint": "find src test live -name '*.php' -exec php -l {} \\;",

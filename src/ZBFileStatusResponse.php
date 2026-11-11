@@ -54,10 +54,15 @@ class ZBFileStatusResponse extends ZBResponse
      */
     public $returnUrl;
 
+    protected function boolFields()
+    {
+        return array('success');
+    }
+
     public function __toString()
     {
         return "ZBFileStatusResponse{" .
-            "success=" . $this->success .
+            "success=" . $this->boolField($this->success) .
             ", message=" . $this->stringField($this->message) .
             ", fileStatus=" . $this->stringField($this->fileStatus) .
             ", filePhase2Status=" . $this->stringField($this->filePhase2Status) .

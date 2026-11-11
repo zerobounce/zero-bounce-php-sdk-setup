@@ -14,10 +14,15 @@ class ZBActivityResponse extends ZBResponse
      */
     public $activeInDays;
 
+    protected function boolFields()
+    {
+        return array('found');
+    }
+
     public function __toString()
     {
         return "ZBActivityResponse{" .
-            "found=" . $this->found . ", " .
+            "found=" . $this->boolField($this->found) . ", " .
             "activeInDays=" . $this->activeInDays . "}";
     }
 }

@@ -1315,12 +1315,14 @@ return true;
         }
     }
 
-    public function testAnAccountErrorOnAnHttp200IsAPlainZBException()
+    public function testAnAccountErrorOnAnHttp200CarriesStatus200()
     {
-        // The dead-key body carries no HTTP error, so it is not a ZBApiException.
+        // A dead key answers with an HTTP 200; the error carries that status,
+        // as in the other SDKs, and is still a ZBException.
         $client = $this->client(new FakeApi(), 'dead-key-1');
         $error = $this->capture(function () use ($client) { $client->validate('a@example.com'); });
-        $this->assertNotInstanceOf(ZBApiException::class, $error);
+        $this->assertInstanceOf(ZBApiException::class, $error);
+        $this->assertSame(200, $error->getStatusCode());
         $this->assertSame('Invalid API key or your account ran out of credits', $error->getMessage());
     }
 

@@ -208,6 +208,63 @@ class ZeroBounce
     }
 
     /**
+     * A boolean option, parsed strictly: true/false, "true"/"false" in any
+     * case, or 1/0. Anything else is rejected, so "false" is never sent as
+     * true and a typo is not taken as a flag.
+     *
+     * @param mixed $value
+     * @param string $name
+     * @return bool
+     * @throws ZBMissingParameterException
+     */
+    protected static function strictBool($value, $name)
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+        if ($value === 1 || $value === 0) {
+            return $value === 1;
+        }
+        if (is_string($value)) {
+            $text = strtolower(trim($value));
+            if ($text === 'true' || $text === '1') {
+                return true;
+            }
+            if ($text === 'false' || $text === '0') {
+                return false;
+            }
+        }
+        throw new ZBMissingParameterException($name . ' must be true or false');
+    }
+
+    /**
+     * A strict boolean option as the string the API expects on the wire.
+     *
+     * @param mixed $value
+     * @param string $name
+     * @return string "true" or "false"
+     * @throws ZBMissingParameterException
+     */
+    protected static function wireBool($value, $name)
+    {
+        return self::strictBool($value, $name) ? 'true' : 'false';
+    }
+
+    /**
+     * Keeps the API key out of var_dump() and print_r().
+     *
+     * @return array<string, mixed>
+     */
+    public function __debugInfo()
+    {
+        $vars = get_object_vars($this);
+        if (isset($vars['apiKey'])) {
+            $vars['apiKey'] = '***';
+        }
+        return $vars;
+    }
+
+    /**
      * The URL, after checking it is https and warning once when a regional
      * base URL is paired with the single global bulk host.
      *
@@ -246,6 +303,14 @@ class ZeroBounce
         if (!$email) throw new ZBMissingParameterException("email is required");
         if ($options instanceof ZBValidateOptions) {
             $this->checkTimeout($options->timeout, false);
+            // Parsed strictly up front, on a copy so the caller's object is untouched.
+            $options = clone $options;
+            foreach (array('activityData' => 'activity_data', 'verifyPlus' => 'verify_plus',
+                'domainInfo' => 'domain_info', 'greylistProcessing' => 'greylist_processing') as $property => $name) {
+                if ($options->{$property} !== null) {
+                    $options->{$property} = self::strictBool($options->{$property}, $name);
+                }
+            }
             // callbackUrl only means anything while greylist processing is on, so
             // reject it here rather than letting the API take the request.
             if ($options->callbackUrl !== null && $options->greylistProcessing !== true) {
@@ -326,6 +391,12 @@ class ZeroBounce
         if (!$emails or !count($emails)) throw new ZBMissingParameterException("emails parameter is required");
         if ($options instanceof ZBValidateOptions) {
             $this->checkTimeout($options->timeout, true);
+            $options = clone $options;
+            foreach (array('activityData' => 'activity_data', 'verifyPlus' => 'verify_plus') as $property => $name) {
+                if ($options->{$property} !== null) {
+                    $options->{$property} = self::strictBool($options->{$property}, $name);
+                }
+            }
         }
 
         $params = [];
@@ -876,7 +947,7 @@ class ZeroBounce
                     $query['download_type'] = $options->downloadType;
                 }
                 if (!$scoring && $options->activityData !== null) {
-                    $query['activity_data'] = $options->activityData ? 'true' : 'false';
+                    $query['activity_data'] = self::wireBool($options->activityData, 'activity_data');
                 }
             }
 
@@ -913,6 +984,9 @@ class ZeroBounce
     protected function getBulkFileHttp($url)
     {
         $result = $this->executeHttp('GET', $this->checkedUrl($url), array(), null, 120);
+        if (isset($result['error']) && (string)$result['error'] !== '') {
+            throw new ZBException($this->redactApiKey($result['error']));
+        }
         if ($result['body'] === '' && (int)$result['status'] === 0) {
             throw new ZBException('No response');
         }
@@ -1099,6 +1173,7 @@ class ZeroBounce
             CURLOPT_URL => $url,
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_HEADER => false,
+            CURLOPT_CONNECTTIMEOUT => self::ConnectTimeoutSeconds,
             CURLOPT_TIMEOUT => $timeout,
             CURLOPT_FOLLOWLOCATION => false,
             CURLOPT_MAXREDIRS => 0,
@@ -1120,9 +1195,15 @@ class ZeroBounce
         curl_setopt_array($curl, $curlOpts);
         $raw = curl_exec($curl);
         $status = (int)curl_getinfo($curl, CURLINFO_HTTP_CODE);
+        $error = curl_error($curl);
         curl_close($curl);
         if ($raw === false || $raw === null) {
-            return array('status' => $status, 'headers' => $responseHeaders, 'body' => '');
+            return array(
+                'status' => $status,
+                'headers' => $responseHeaders,
+                'body' => '',
+                'error' => $error === '' ? 'The request to ZeroBounce failed.' : $error,
+            );
         }
         return array(
             'status' => $status,
@@ -1221,6 +1302,11 @@ class ZeroBounce
         $status = isset($result['status']) ? (int)$result['status'] : 0;
         $body = isset($result['body']) ? (string)$result['body'] : '';
         $headers = (isset($result['headers']) && is_array($result['headers'])) ? $result['headers'] : array();
+        if (isset($result['error']) && (string)$result['error'] !== '') {
+            // A transport failure (connect error, timeout): curl's own message,
+            // not an "Empty response (HTTP 0)".
+            throw new ZBException($this->redactApiKey($result['error']));
+        }
         if (trim($body) === '' || $status > 299 || ZBHttpError::isHtml($body, $headers)) {
             // A ZBApiException, so callers can tell a Cloudflare 403 from an
             // API 400/404; it is still a ZBException.
@@ -1230,10 +1316,10 @@ class ZeroBounce
         if (!is_array($decoded)) {
             throw new ZBApiException('ZeroBounce returned a response that is not valid JSON.', $status);
         }
-        ZBHttpError::throwIfBareAccountError($decoded);
+        ZBHttpError::throwIfBareAccountError($decoded, $status);
         ZBHttpError::throwIfSuccessIsFalse($decoded, $status, $body, $headers);
         if ($this->messageOnlyIsFailure) {
-            ZBHttpError::throwIfMessageOnly($decoded);
+            ZBHttpError::throwIfMessageOnly($decoded, $status);
         }
         return $body;
     }
@@ -1311,7 +1397,12 @@ class ZeroBounce
         $curl = curl_init();
         curl_setopt_array($curl, array(
             CURLOPT_URL => $this->checkedUrl($url),
+            // No overall limit, so a large file can take as long as it needs;
+            // a server that stops sending is dropped instead of hanging forever.
             CURLOPT_TIMEOUT => 0,
+            CURLOPT_CONNECTTIMEOUT => self::ConnectTimeoutSeconds,
+            CURLOPT_LOW_SPEED_LIMIT => 1,
+            CURLOPT_LOW_SPEED_TIME => $this->downloadStallSeconds,
             CURLOPT_FOLLOWLOCATION => false,
             CURLOPT_MAXREDIRS => 0,
             CURLOPT_HEADERFUNCTION => function ($curlHandle, $header) use (&$headers) {
@@ -1349,6 +1440,15 @@ class ZeroBounce
             'error' => $ok === false ? ($error === '' ? 'The download failed.' : $error) : '',
         );
     }
+
+    /** How long a connection may take to open, for every request. */
+    const ConnectTimeoutSeconds = 30;
+
+    /**
+     * @var int A streamed download that receives nothing for this long is
+     *     aborted. There is no overall limit, so large files still finish.
+     */
+    protected $downloadStallSeconds = 120;
 
     /** Sniff this much before deciding whether a download is really an error body. */
     const DownloadSniffBytes = 65536;
@@ -1447,10 +1547,10 @@ class ZeroBounce
             $fields['ip_address_column'] = $ipAddressColumn;
         }
         if ($hasHeaderRow !== null) {
-            $fields['has_header_row'] = $hasHeaderRow ? 'true' : 'false';
+            $fields['has_header_row'] = self::wireBool($hasHeaderRow, 'has_header_row');
         }
         if ($allowPhase2 !== null && strpos($url, '/scoring/') === false) {
-            $fields['allow_phase_2'] = $allowPhase2 ? 'true' : 'false';
+            $fields['allow_phase_2'] = self::wireBool($allowPhase2, 'allow_phase_2');
         }
         return $fields;
     }
@@ -1522,7 +1622,14 @@ class ZeroBounce
 
         $query = http_build_query($args);
 
-        $this->request($this->apiBaseUrl . "/guessformat?$query", $response);
+        // Like findEmail and findEmailFormat: a body made only of message fields
+        // (LIVE: {"Message": ...} for a dead key) is an error, not a result.
+        $this->messageOnlyIsFailure = true;
+        try {
+            $this->request($this->apiBaseUrl . "/guessformat?$query", $response);
+        } finally {
+            $this->messageOnlyIsFailure = false;
+        }
         return $response;
     }
 

@@ -173,7 +173,7 @@ class OfflineWarmupTest extends TestCase
         $reflection = new \ReflectionClass(ZeroBounceWarmup::class);
         $names = array();
         foreach ($reflection->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
-            if ($method->class === ZeroBounceWarmup::class && $method->getName() !== '__construct') {
+            if ($method->class === ZeroBounceWarmup::class && strpos($method->getName(), '__') !== 0) {
                 $names[] = $method->getName();
             }
         }
