@@ -81,6 +81,7 @@ class ZBGuessFormatResponse extends ZBResponse
             "subStatus=" . $this->stringField($this->subStatus) . ", " .
             "confidence=" . $this->stringField($this->confidence) . ", " .
             "didYouMean=" . $this->stringField($this->didYouMean) . ", " .
-            "failureReason=" . $this->stringField($this->failureReason) . "}";
+            "failureReason=" . $this->stringField($this->failureReason) . ", " .
+            "otherDomainFormats=" . $this->arrayField($this->otherDomainFormats) . "}";
     }
 }

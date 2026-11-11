@@ -303,6 +303,40 @@ scenario('standard parity', function () {
     check(strpos(print_r($client, true), 'secret-debug-key') === false, 'print_r hides the key');
 });
 
+// Before PHP 8.2 there is no #[\SensitiveParameter]: this is where the SDK's
+// own trace scrubbing is what keeps the key out.
+scenario('the key in traces, var_export and serialize', function () {
+    $previous = ini_set('zend.exception_ignore_args', '0');
+    $key = 'trace-secret-0123456789abcdef';
+    $calls = array(
+        'initialize, http baseUrl' => function () use ($key) { client(new FakeApi(), $key)->initialize($key, 'http://api.example.test/v2'); },
+        'initialize, key with a newline' => function () use ($key) { client(new FakeApi(), 'k')->initialize($key . "\n"); },
+        'warmup, http baseUrl' => function () use ($key) { new ZeroBounceWarmup($key, 'http://warmup.example.test'); },
+        'warmup, key with a newline' => function () use ($key) { new ZeroBounceWarmup($key . "\n"); },
+    );
+    foreach ($calls as $name => $call) {
+        $error = rejected($call);
+        check($error !== null, $name . ': rejected');
+        if ($error !== null) {
+            check(strpos($error->getTraceAsString(), substr($key, 0, 15)) === false, $name . ': key not in the trace');
+        }
+    }
+    ini_set('zend.exception_ignore_args', $previous === false ? '0' : $previous);
+
+    $api = new FakeApi();
+    $client = client($api, 'export-client-key');
+    $warmup = new SmokeWarmup('export-warmup-key');
+    check(strpos(var_export($client, true), 'export-client-key') === false, 'var_export hides the key');
+    check(strpos(serialize($client), 'export-client-key') === false, 'serialize leaves the key out');
+    check(strpos(var_export($warmup, true), 'export-warmup-key') === false, 'warmup var_export hides the key');
+    check(strpos(serialize($warmup), 'export-warmup-key') === false, 'warmup serialize leaves the key out');
+    $copy = unserialize(serialize($client));
+    check(rejected(function () use ($copy) { $copy->getCredits(); }) instanceof \ZeroBounce\SDK\ZBMissingApiKeyException, 'an unserialized client has no key');
+    check($api->count() === 0, 'an unserialized client sends nothing');
+    $client->getCredits();
+    check(only($api)['api_key'] === 'export-client-key', 'the original client keeps its key');
+});
+
 echo 'PHP ' . PHP_VERSION . ': ' . $checks . ' checks, ' . count($deprecations) . " expected deprecation(s)\n";
 if ($failures) {
     echo count($failures) . " failure(s):\n  - " . implode("\n  - ", $failures) . "\n";

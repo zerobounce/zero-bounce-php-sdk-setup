@@ -59,6 +59,15 @@ class ZBListEvaluatorResponse extends ZBResponse
     {
         return "ZBListEvaluatorResponse{fileId=" . $this->stringField($this->fileId)
             . ", status=" . $this->stringField($this->status)
-            . ", progress=" . $this->stringField($this->progress) . "}";
+            . ", progress=" . $this->stringField($this->progress)
+            . ", invalidPercentage=" . $this->stringField($this->invalidPercentage)
+            . ", catchAllPercentage=" . $this->stringField($this->catchAllPercentage)
+            . ", activityDataPercentage=" . $this->stringField($this->activityDataPercentage)
+            . ", abuse=" . $this->boolField($this->abuse)
+            . ", doNotMail=" . $this->boolField($this->doNotMail)
+            . ", spamTrap=" . $this->boolField($this->spamTrap)
+            . ", totalRiskyPercentage=" . $this->stringField($this->totalRiskyPercentage)
+            . ", errorMessage=" . $this->stringField($this->errorMessage)
+            . ", data=" . $this->arrayField($this->data) . "}";
     }
 }

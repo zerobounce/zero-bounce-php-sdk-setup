@@ -35,37 +35,11 @@ class ZBBatchValidateResponse extends ZBResponse
 
     public function __toString()
     {
-        $result = "ZBBatchValidateResponse[";
-        foreach ($this->emailBatch as $email)
-            $result .= $this->__toStringEmail($email);
-        $result .= "]";
-        return $result;
-    }
-
-    private function __toStringEmail($email)
-    {
-        return "{" .
-            "address=" . $email->address . ", " .
-            "status=" . $email->status . ", " .
-            "subStatus=" . $email->subStatus . ", " .
-            "account=" . $this->stringField($email->account) . ", " .
-            "domain=" . $this->stringField($email->domain) . ", " .
-            "didYouMean=" . $this->stringField($email->didYouMean) . ", " .
-            "domainAgeDays=" . $this->stringField($email->domainAgeDays) . ", " .
-            "freeEmail=" . $this->boolField($email->freeEmail) . ", " .
-            "mxFound=" . $this->boolField($email->mxFound) . ", " .
-            "mxRecord=" . $this->stringField($email->mxRecord) . ", " .
-            "smtpProvider=" . $this->stringField($email->smtpProvider) . ", " .
-            "catchallDomain=" . $this->boolField($email->catchallDomain) . ", " .
-            "firstName=" . $this->stringField($email->firstName) . ", " .
-            "lastName=" . $this->stringField($email->lastName) . ", " .
-            "gender=" . $this->stringField($email->gender) . ", " .
-            "city=" . $this->stringField($email->city) . ", " .
-            "region=" . $this->stringField($email->region) . ", " .
-            "zipCode=" . $this->stringField($email->zipcode) . ", " .
-            "country=" . $this->stringField($email->country) . ", " .
-            "processedAt=" . $this->stringField($email->processedAt) . ", " .
-            "error=" . $this->stringField($email->error) . ", " .
-            "}";
+        $emails = array();
+        foreach ((array)$this->emailBatch as $email) {
+            $emails[] = $email instanceof ZBValidateResponse ? (string)$email : json_encode($email);
+        }
+        return "ZBBatchValidateResponse{emailBatch=[" . implode(", ", $emails) . "]"
+            . ", errors=" . $this->arrayField($this->errors) . "}";
     }
 }

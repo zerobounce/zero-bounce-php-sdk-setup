@@ -229,7 +229,7 @@ trait ZeroBounceInboxPlacement
 
         // The documented auth for this API is a Bearer header, not an api_key
         // query parameter.
-        $headers = array('Authorization: Bearer ' . $this->apiKey);
+        $headers = array('Authorization: Bearer ' . $this->apiKey());
         $content = null;
         if ($body !== null) {
             $headers[] = 'Content-Type: application/json';

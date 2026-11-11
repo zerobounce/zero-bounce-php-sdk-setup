@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- PHP 8.5: requests no longer raise `E_DEPRECATED` ("Function curl_close() is deprecated since 8.5"). `curl_close()` is called only before PHP 8.0, where it still frees the handle; from 8.0 it does nothing.
+- `validateBatch` with an account-level error (an `"email_address": "all"` entry, such as "Invalid API Key or your account ran out of credits") on an HTTP 200 throws `ZBApiException` with `getStatusCode()` 200, like the other calls and the other SDKs. 3.0.0 threw a plain `ZBException` with no status; `catch (ZBException $e)` still catches it.
+- `ZeroBounceWarmup` requests have the same 30-second connect timeout as the `ZeroBounce` client. In 3.0.0 they had only the 120-second overall limit.
+- `validate` without an IP address leaves `ip_address` out of the request instead of sending an empty `ip_address=`, as the Python SDK does. An IP address of `"0"` is still sent.
+- `__toString()` of `ZBListEvaluatorResponse` shows every field (the percentages, `abuse`, `doNotMail`, `spamTrap`, `errorMessage` and `data`, not only `fileId`, `status` and `progress`); `ZBBatchValidateResponse` shows each result as its full `ZBValidateResponse` text and the `errors` list; `ZBGuessFormatResponse` adds `otherDomainFormats`; `ZBRawJsonResponse` shows its `data` instead of `ZeroBounce\SDK\ZBRawJsonResponse{}`. `ZBBatchValidateResponse`'s text now starts `ZBBatchValidateResponse{emailBatch=[` instead of `ZBBatchValidateResponse[`.
+
+### Security
+
+- The API key no longer appears in the stack trace of an exception thrown by `ZeroBounce::initialize()` or `new ZeroBounceWarmup()` (an `http://` base URL, a key with surrounding whitespace). PHP prints the first 15 characters of each call argument in a trace unless `zend.exception_ignore_args` is on, which it is in `php.ini-production` but not by default. The key parameters are marked `#[\SensitiveParameter]` (PHP 8.2+), and on older PHP the SDK replaces the key in the trace with `***`.
+- `var_export()` and `serialize()` of a `ZeroBounce` or `ZeroBounceWarmup` client no longer contain the API key (3.0.0 hid it from `var_dump()` and `print_r()` only). A client restored with `unserialize()` therefore has no key: `ZeroBounce` throws `ZBMissingApiKeyException` until `initialize()` is called again, and `ZeroBounceWarmup` throws `ZBMissingApiKeyException` on every call.
+
+### Changed
+
+- Development only: PHPUnit fails on deprecations (`failOnDeprecation`), so a PHP deprecation in the SDK fails CI. `composer.lock`'s content hash matches `composer.json` again after the 3.0.0 version bump (no locked package changed). The tests that start a local PHP server stop it reliably, so `phpunit | tail` no longer hangs on Debian-based images.
+
 ## [3.0.0] - 2026-11-12
 
 ### Breaking
