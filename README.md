@@ -521,3 +521,7 @@ Run it by hand before every release: the offline suite proves the SDK sends what
 2. **Actions → Publish → Run workflow** with that tag.
 
 Registry: [zero-bounce/sdk on Packagist](https://packagist.org/packages/zero-bounce/sdk)
+
+## License
+
+MIT. See [LICENSE](LICENSE).
