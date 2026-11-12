@@ -185,8 +185,8 @@ final class ZBSecret
     /**
      * $text with every form of every secret replaced by ***. Then closed
      * under encoding: if any decoded view of what is left (URL-decoding, "+"
-     * as a space, JSON unescaping incl. "\/" and \uXXXX, up to three layers
-     * in any order) still holds a secret, CREDENTIAL_OMITTED_MESSAGE instead.
+     * as a space, JSON unescaping incl. "\/" and \uXXXX, up to four layers
+     * in any order: the SDK's own request encoding plus three echo layers) still holds a secret, CREDENTIAL_OMITTED_MESSAGE instead.
      *
      * @param string $text
      * @param array<int, string|null> $secrets
@@ -233,6 +233,9 @@ final class ZBSecret
         return false;
     }
 
+    /** How many layers of encoding the check undoes: the SDK's own request encoding plus three echo layers. */
+    const DECODE_LAYERS = 4;
+
     /**
      * $text and every view of it after up to $layers decodings (URL with %XX,
      * URL with "+" as a space, "+" as a space alone, JSON unescaping), in any
@@ -242,7 +245,7 @@ final class ZBSecret
      * @param int $layers
      * @return string[]
      */
-    public static function decodedViews($text, $layers = 3)
+    public static function decodedViews($text, $layers = self::DECODE_LAYERS)
     {
         $text = (string)$text;
         $views = array($text => true);

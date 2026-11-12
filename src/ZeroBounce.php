@@ -81,6 +81,14 @@ class ZeroBounce
     /** Set only for the duration of an email finder or domain search call. */
     private $messageOnlyIsFailure = false;
 
+    /**
+     * @var string The JSON shape the current call answers with: 'object' (every
+     *     call but two), 'array' (listFilters) or 'files' (listS3Files: an array,
+     *     or an object with a "files" array). Strict JSON of another shape is an
+     *     API error with the HTTP status (E7).
+     */
+    private $jsonShape = 'object';
+
     /** ZeroBounce documents no regional host for anything under this one. */
     const BulkHost = 'bulkapi.zerobounce.net';
 
@@ -1363,15 +1371,54 @@ class ZeroBounce
             throw new ZBApiException(ZBHttpError::message($status, $body, $headers), $status);
         }
         $decoded = json_decode($body, true);
-        if (!is_array($decoded)) {
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            // Not JSON, or nested deeper than json_decode's depth limit.
             throw new ZBApiException('ZeroBounce returned a response that is not valid JSON.', $status);
+        }
+        if (!is_array($decoded)) {
+            throw new ZBApiException(self::shapeMessage($this->jsonShape), $status);
         }
         ZBHttpError::throwIfBareAccountError($decoded, $status);
         ZBHttpError::throwIfSuccessIsFalse($decoded, $status, $body, $headers);
         if ($this->messageOnlyIsFailure) {
             ZBHttpError::throwIfMessageOnly($decoded, $status);
         }
+        // json_decode(..., true) reads [] and {} alike: the body says which it was.
+        $isArray = substr(ltrim($body, " \t\r\n"), 0, 1) === '[';
+        $fits = $this->jsonShape === 'array' ? $isArray
+            : ($this->jsonShape === 'files' ? ($isArray || (isset($decoded['files']) && is_array($decoded['files'])))
+            : !$isArray);
+        if (!$fits) {
+            throw new ZBApiException(self::shapeMessage($this->jsonShape), $status);
+        }
         return $body;
+    }
+
+    /**
+     * @param string $shape
+     * @return string
+     */
+    private static function shapeMessage($shape)
+    {
+        $expected = array('array' => 'an array', 'files' => 'an array or an object with files');
+        return 'ZeroBounce returned JSON of an unexpected shape: expected '
+            . (isset($expected[$shape]) ? $expected[$shape] : 'an object') . '.';
+    }
+
+    /**
+     * Runs $call with the current call's JSON shape set to $shape.
+     *
+     * @param string $shape
+     * @return mixed what $call returns
+     */
+    protected function withJsonShape($shape, callable $call)
+    {
+        $this->jsonShape = $shape;
+        try {
+            return $call();
+        } finally {
+            $this->jsonShape = 'object';
+        }
     }
 
     /**
@@ -1654,6 +1701,16 @@ class ZeroBounce
                 || self::shouldTreatGetFileBodyAsError($sample, $contentType)) {
                 throw new ZBApiException(
                     $this->redactApiKey(ZBHttpError::message($status, $sample, $headers)),
+                    $status
+                );
+            }
+            if (strlen($head) >= self::DownloadSniffBytes && substr(ltrim($head), 0, 1) === '{') {
+                // A JSON object longer than the sniff window cannot be parsed to
+                // tell an error from a file; no result file starts with "{", so
+                // it is an error with its status, as the same body under the
+                // window would be.
+                throw new ZBApiException(
+                    'ZeroBounce returned a JSON body larger than the error limit instead of the file.',
                     $status
                 );
             }

@@ -471,7 +471,7 @@ class OfflineApiTest extends TestCase
 
         $api->clear();
         $listed = $client->listFilters(false);
-        $this->assertSame('p3-key', $listed['echo_api_key']);
+        $this->assertSame('p3-key', $listed[0]['echo_api_key']);
         $list = $this->only($api);
         $this->assertSame('GET', $list['method']);
         $this->assertSame('/v2/filters/list', $list['path']);

@@ -231,6 +231,10 @@ class FakeApi
         if (substr($path, -9) === '/activity') {
             return $this->respond(200, 'application/json', '{"found":true,"active_in_days":"3"}');
         }
+        if (substr($path, -13) === '/filters/list') {
+            // Documented as a JSON array of filters.
+            return $this->respond(200, 'application/json', '[{"rule":"block","target":"email","value":"a@example.com","echo_api_key":' . $quoted . '}]');
+        }
         if (strpos($path, 'filters') !== false || (strpos($path, 'listevaluator') !== false && strpos($path, 'sendfile') === false && $request['method'] === 'GET')) {
             return $this->respond(200, 'application/json', '{"echo_api_key":' . $quoted . '}');
         }

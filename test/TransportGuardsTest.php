@@ -1330,10 +1330,10 @@ return true;
     }
 
     /**
-     * An ACCEPT body is parsed. A scalar ("0", "\"x\"") is valid JSON but no
-     * call's result, so the calls that need an object may still refuse it;
-     * every ACCEPT object or array is never refused as a body that is not
-     * valid JSON, and the parser itself takes every ACCEPT body.
+     * An ACCEPT body is parsed: every call either returns it as a result or,
+     * when it is the wrong shape for the call ("0" is not a validate result),
+     * raises a ZBApiException with status 200 that says so. Never "not valid
+     * JSON", another status, or a raw PHP error.
      */
     public function testNoJsonCallRejectsAnAcceptBodyAsInvalid()
     {
@@ -1343,20 +1343,19 @@ return true;
             if ($verdict !== 'ACCEPT') {
                 continue;
             }
-            $decoded = json_decode($body, true);
-            if ($decoded === null && trim($body) !== 'null') {
+            json_decode($body, true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
                 $wrong[] = 'json_decode refused ' . json_encode($body);
-            }
-            if (!is_array($decoded)) {
-                continue;
             }
             foreach ($this->corpusCalls($body) as $label => $call) {
                 try {
                     $this->quietly($call);
-                } catch (ZBException $e) {
-                    if (strpos($e->getMessage(), 'not valid JSON') !== false) {
-                        $wrong[] = $label . ' refused ' . json_encode($body);
+                } catch (ZBApiException $e) {
+                    if ($e->getStatusCode() !== 200 || strpos($e->getMessage(), 'unexpected shape') === false) {
+                        $wrong[] = $label . ' ' . $e->getStatusCode() . ' ' . $e->getMessage() . ' for ' . json_encode($body);
                     }
+                } catch (\Throwable $e) {
+                    $wrong[] = $label . ' ' . get_class($e) . ' for ' . json_encode($body);
                 }
             }
         }
@@ -1641,5 +1640,280 @@ return true;
     public function testAMessageWithoutASecretIsKept()
     {
         $this->assertSame('Invalid email a+b%20c\/d', ZBSecret::redact('Invalid email a+b%20c\/d', array(self::FUZZ_SECRET)));
+    }
+
+    // -- E7: JSON of the wrong shape for the call --------------------------------------
+
+    /** The calls whose documented answer is a JSON array (listS3Files: or an object with "files"). */
+    private static $arrayCalls = array('listFilters');
+    private static $eitherCalls = array('listS3Files');
+
+    /**
+     * Every typed ZeroBounce call (downloads aside) answered with each body
+     * $bodiesFor gives it; what is not a ZBApiException with status 200.
+     * The Warmup client returns the API's JSON as is, so only its parsing is
+     * checked, by the corpus test.
+     *
+     * @return string[]
+     */
+    private function wrongShapes(callable $bodiesFor)
+    {
+        $wrong = array();
+        $client = new CannedFileClient(200, 'application/json', '');
+        $client->initialize('shape-key');
+        foreach ($this->sweepCalls($client, $this->dir . '/result.csv') as $name => $variants) {
+            if (in_array($name, self::$downloads, true)) {
+                continue;
+            }
+            foreach ($bodiesFor($name) as $body) {
+                $client->answer['body'] = $body;
+                foreach ($variants as $i => $call) {
+                    try {
+                        $this->quietly($call);
+                        $wrong[] = "$name#$i accepted $body";
+                    } catch (ZBApiException $e) {
+                        if ($e->getStatusCode() !== 200) {
+                            $wrong[] = "$name#$i status " . $e->getStatusCode() . " for $body";
+                        }
+                    } catch (\Throwable $e) {
+                        $wrong[] = "$name#$i " . get_class($e) . " for $body";
+                    }
+                }
+            }
+        }
+        return $wrong;
+    }
+
+    public function testTheShapeSweepNamesRealCalls()
+    {
+        $client = new CannedFileClient(200, 'application/json', '');
+        $names = array_keys($this->sweepCalls($client, $this->dir . '/result.csv'));
+        foreach (array_merge(self::$arrayCalls, self::$eitherCalls) as $name) {
+            $this->assertContains($name, $names);
+        }
+        $this->assertGreaterThan(50, count($names));
+    }
+
+    public function testAScalarOrNullIsAnErrorOnEveryCall()
+    {
+        $this->assertSame(array(), $this->wrongShapes(function () {
+            return array('0', '"x"', 'null', 'true', '1.5');
+        }));
+    }
+
+    public function testAnArrayWhereAnObjectIsExpectedIsAnError()
+    {
+        $this->assertSame(array(), $this->wrongShapes(function ($name) {
+            if (in_array($name, self::$arrayCalls, true) || in_array($name, self::$eitherCalls, true)) {
+                return array();
+            }
+            return array('[]', '[{"status":"valid"}]', ' [1]');
+        }));
+    }
+
+    public function testAnObjectWhereAnArrayIsExpectedIsAnError()
+    {
+        $this->assertSame(array(), $this->wrongShapes(function ($name) {
+            if (in_array($name, self::$arrayCalls, true)) {
+                return array('{}', '{"rule":"block"}');
+            }
+            if (in_array($name, self::$eitherCalls, true)) {
+                return array('{}', '{"success":true}', '{"success":true,"files":5}');
+            }
+            return array();
+        }));
+    }
+
+    public function testAFieldOfTheWrongShapeIsAnError()
+    {
+        $bodies = array(
+            'validateBatch' => array('{"email_batch":5}', '{"email_batch":["x"]}', '{"errors":[1]}'),
+        );
+        $this->assertSame(array(), $this->wrongShapes(function ($name) use ($bodies) {
+            return isset($bodies[$name]) ? $bodies[$name] : array();
+        }));
+    }
+
+    public function testTheDocumentedShapesStillParse()
+    {
+        $client = new CannedFileClient(200, 'application/json', '[]');
+        $client->initialize('shape-key');
+        $this->assertSame(array(), $client->listFilters());
+        $this->assertSame(array(), $client->listFilters(true));
+        $this->assertSame(array(), $client->listS3Files());
+        $client->answer['body'] = '[{"rule":"block","target":"email","value":"a@example.com"}]';
+        $this->assertSame('block', $client->listFilters()[0]['rule']);
+        $client->answer['body'] = '{"success":true,"files":[]}';
+        $this->assertSame(array('success' => true, 'files' => array()), $client->listS3Files());
+        $client->answer['body'] = '{"Credits":"7"}';
+        $this->assertSame('7', (string)$client->getCredits()->credits);
+    }
+
+    // -- E7: a body nested deeper than the parser allows -------------------------------
+
+    public function testADeeplyNestedBodyIsAnErrorOnEveryCall()
+    {
+        $wrong = array();
+        $bodies = array(
+            str_repeat('[', 200000),
+            str_repeat('[', 100000) . str_repeat(']', 100000),
+            str_repeat('{"a":', 100000) . '1' . str_repeat('}', 100000),
+            // Past json_decode's default depth (512), within what its parser could read.
+            str_repeat('{"a":', 1000) . '1' . str_repeat('}', 1000),
+        );
+        foreach ($bodies as $body) {
+            $client = new CannedFileClient(200, 'application/json', $body);
+            $client->initialize('depth-key');
+            $calls = array();
+            foreach ($this->sweepCalls($client, $this->dir . '/result.csv') as $name => $variants) {
+                foreach ($variants as $i => $call) {
+                    $calls["$name#$i"] = $call;
+                }
+            }
+            foreach ($this->warmupCalls(new CannedFileWarmup(200, 'application/json', $body)) as $name => $call) {
+                $calls["Warmup $name"] = $call;
+            }
+            foreach ($calls as $label => $call) {
+                try {
+                    $this->quietly($call);
+                    $wrong[] = "$label accepted " . strlen($body);
+                } catch (ZBApiException $e) {
+                    if ($e->getStatusCode() !== 200) {
+                        $wrong[] = "$label status " . $e->getStatusCode();
+                    }
+                } catch (\Throwable $e) {
+                    $wrong[] = "$label " . get_class($e);
+                }
+            }
+        }
+        $this->assertSame(array(), $wrong);
+        $this->assertSame(array(), $this->leftovers());
+    }
+
+    // -- an error body larger than the download sniff window ---------------------------
+
+    /**
+     * A streamed download sniffs DownloadSniffBytes of the body; an error body
+     * larger than that keeps its HTTP status (a 500 stays 500, a 200 JSON body
+     * is an error with status 200, also under a CSV content type, where it is
+     * too long to parse) and saves no file.
+     */
+    public function testAnErrorBodyOverTheSniffWindowKeepsItsStatus()
+    {
+        $size = ZeroBounce::DownloadSniffBytes + 65536;
+        $cases = array(
+            array(500, 'text/plain', str_repeat('x', $size)),
+            array(503, 'text/html', '<html>' . str_repeat('x', $size)),
+            array(200, 'application/json', '{"error":"' . str_repeat('x', $size) . '"}'),
+            array(200, 'text/csv', '{"error":"' . str_repeat('x', $size) . '"}'),
+        );
+        $stream = new ZBGetFileOptions();
+        $stream->stream = true;
+        foreach ($cases as $case) {
+            list($status, $type, $body) = $case;
+            $client = new CannedFileClient($status, $type, $body);
+            $client->initialize('size-key');
+            foreach (array('getFile', 'scoringGetFile', 'emailFinderGetFile', 'domainSearchGetFile') as $method) {
+                $e = $this->thrown(function () use ($client, $method, $stream) {
+                    $client->$method('f1', $this->dir . '/out.csv', $stream);
+                });
+                $this->assertInstanceOf(ZBApiException::class, $e, "$method $status $type");
+                $this->assertSame($status, $e->getStatusCode(), "$method $status $type");
+            }
+        }
+        $this->assertSame(array(), $this->leftovers());
+    }
+
+    // -- S4: the redaction decode check ------------------------------------------------
+
+    private static function threeTimes($text)
+    {
+        return rawurlencode(rawurlencode(rawurlencode($text)));
+    }
+
+    private static function lowerHex($text)
+    {
+        $out = '';
+        foreach (str_split($text) as $byte) {
+            $out .= sprintf('%%%02x', ord($byte));
+        }
+        return $out;
+    }
+
+    private static function uEscaped($text)
+    {
+        $out = '';
+        foreach (preg_split('//u', $text, -1, PREG_SPLIT_NO_EMPTY) as $char) {
+            $out .= sprintf('\\u%04x', mb_ord($char, 'UTF-8'));
+        }
+        return $out;
+    }
+
+    /** Four layers: the SDK's own request encoding plus three echo layers (standard.md). */
+    public function testAKeyUnderFourLayersIsOmitted()
+    {
+        $secret = 'probe"key/ZQXMARK01+23&ab c\\xyz';
+        $body = self::threeTimes('GET /v2/getcredits?api_key=' . urlencode($secret) . ' HTTP/1.1');
+        $this->assertSame(ZBSecret::CREDENTIAL_OMITTED_MESSAGE, ZBSecret::redact($body, array($secret)));
+    }
+
+    public function testEveryCallOmitsARequestUrlEchoedUnderThreeMoreEncodings()
+    {
+        $secret = 'probe"key/ZQXMARK01+23&ab c\\xyz';
+        $root = $this->serve('<?php
+            header("Content-Type: text/plain", true, 400);
+            echo rawurlencode(rawurlencode(rawurlencode($_SERVER["REQUEST_URI"])));
+        ');
+        $client = new LoopbackClient();
+        $client->initialize($secret);
+        $client->pointAt($root);
+        $leaks = array();
+        $errors = 0;
+        foreach ($this->sweepCalls($client, $this->dir . '/result.csv') as $name => $variants) {
+            foreach ($variants as $call) {
+                try {
+                    $this->quietly($call);
+                } catch (\Throwable $e) {
+                    $errors++;
+                    foreach (array($e->getMessage(), (string)$e) as $text) {
+                        foreach (ZBSecret::decodedViews($text, 4) as $view) {
+                            if (strpos($view, 'ZQXMARK') !== false) {
+                                $leaks[$name] = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        $this->assertGreaterThan(40, $errors);
+        $this->assertSame(array(), array_keys($leaks));
+    }
+
+    /** Every decode step is needed; a NUL or %00 before the secret does not end the check. */
+    public function testEveryDecodeStepIsNeeded()
+    {
+        $secret = 'zq x/ZQXMARK';
+        $u = self::uEscaped($secret);
+        $bodies = array(
+            'lower-case %xx after invalid UTF-8' => '%ff%fe' . self::lowerHex($secret),
+            '+ as space, then %xx' => self::lowerHex('zq') . '+' . self::lowerHex('x/ZQXMARK'),
+            'JSON \\u escapes' => $u,
+            '\\u escapes, URL-encoded' => self::lowerHex($u),
+            'a literal + kept, %xx decoded' => 'zq+x' . self::lowerHex('/ZQXMARK'),
+            'NUL first' => "\0" . $u,
+            '%00 first' => '%00' . self::lowerHex($secret),
+        );
+        foreach ($bodies as $label => $body) {
+            $secrets = $label === 'a literal + kept, %xx decoded' ? array('zq+x/ZQXMARK') : array($secret);
+            $this->assertSame(ZBSecret::CREDENTIAL_OMITTED_MESSAGE, ZBSecret::redact('rejected ' . $body, $secrets), $label);
+        }
+    }
+
+    public function testAUEscapedSurrogatePairIsJoined()
+    {
+        $secret = "pw\u{1F600}ZQXMARK";
+        $once = substr(json_encode($secret), 1, -1); // pw😀ZQXMARK
+        $body = self::uEscaped($once);
+        $this->assertSame(ZBSecret::CREDENTIAL_OMITTED_MESSAGE, ZBSecret::redact($body, array($secret)));
     }
 }

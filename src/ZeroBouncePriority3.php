@@ -196,7 +196,9 @@ trait ZeroBouncePriority3
             $url .= '&search=' . urlencode($search);
         }
         $holder = new ZBRawJsonResponse();
-        $this->request($url, $holder);
+        $this->withJsonShape('files', function () use ($url, $holder) {
+            $this->request($url, $holder);
+        });
         return $holder->data;
     }
 
@@ -276,13 +278,15 @@ trait ZeroBouncePriority3
     public function listFilters($usePost = false)
     {
         $this->checkValidApiKey();
-        if ($usePost) {
-            return $this->filterFormPost($this->apiBaseUrl . '/filters/list', array());
-        }
-        $url = $this->apiBaseUrl . '/filters/list?api_key=' . urlencode($this->apiKey());
-        $holder = new ZBRawJsonResponse();
-        $this->request($url, $holder);
-        return $holder->data;
+        return $this->withJsonShape('array', function () use ($usePost) {
+            if ($usePost) {
+                return $this->filterFormPost($this->apiBaseUrl . '/filters/list', array());
+            }
+            $url = $this->apiBaseUrl . '/filters/list?api_key=' . urlencode($this->apiKey());
+            $holder = new ZBRawJsonResponse();
+            $this->request($url, $holder);
+            return $holder->data;
+        });
     }
 
     /**
