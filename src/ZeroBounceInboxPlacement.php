@@ -167,12 +167,13 @@ trait ZeroBounceInboxPlacement
      * Delete a finished test. DELETE /test/{id}
      *
      * @param string|int $testId
-     * @return ZBRawJsonResponse
+     * @return ZBRawJsonResponse empty data when the API answers with an
+     *     empty 2xx (204 No Content)
      * @throws ZBException
      */
     public function deleteInboxPlacementTest($testId)
     {
-        return $this->iptRequest('DELETE', '/test/' . $this->iptTestPath($testId));
+        return $this->iptRequest('DELETE', '/test/' . $this->iptTestPath($testId), array(), null, true);
     }
 
     /**
@@ -216,10 +217,11 @@ trait ZeroBounceInboxPlacement
      * @param string $path
      * @param array<string, mixed> $query
      * @param array<string, mixed>|null $body JSON body, sent without api_key.
+     * @param bool $emptyIsSuccess an empty 2xx is a success with no data
      * @return ZBRawJsonResponse
      * @throws ZBException
      */
-    private function iptRequest($method, $path, array $query = array(), $body = null)
+    private function iptRequest($method, $path, array $query = array(), $body = null, $emptyIsSuccess = false)
     {
         $this->checkValidApiKey();
         $url = $this->inboxPlacementBaseUrl . $path;
@@ -240,6 +242,11 @@ trait ZeroBounceInboxPlacement
         // the one-time warning when a regional baseUrl meets the global bulk host.
         $result = $this->executeHttp($method, $this->checkedUrl($url), $headers, $content, 120);
         $response = new ZBRawJsonResponse();
+        $status = isset($result['status']) ? (int)$result['status'] : 0;
+        if ($emptyIsSuccess && (!isset($result['error']) || (string)$result['error'] === '')
+            && $status >= 200 && $status < 300 && trim(isset($result['body']) ? (string)$result['body'] : '') === '') {
+            return $response;
+        }
         $response->Deserialize($this->readJsonBody($result));
         return $response;
     }

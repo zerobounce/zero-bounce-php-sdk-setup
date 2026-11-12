@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- A streamed result-file download (`ZBGetFileOptions::$stream`) whose file cannot be written, for example on a full disk, throws `ZBException("Could not write file")` and leaves nothing at the download path. Up to 3.0.1 the failed writes were ignored and the call returned success with a truncated file.
+- A download without streaming that fails part-way through writing its file (a full disk) deletes the truncated file before throwing. Up to 3.0.1 it threw but left the partial file at the download path.
+- `ZeroBounceWarmup::downloadSeeds()` and `downloadStatistics()` throw `ZBApiException` (with the HTTP status) for an HTML page on a 200, such as a proxy's "Access denied" page, as the Python SDK does. Up to 3.0.1 the page was returned as the CSV text.
+- `initialize()` is all-or-nothing: every argument is checked before any is stored, so a call that throws (an `http://` URL) leaves the client exactly as it was. Up to 3.0.1 a bad list evaluator, Inbox Placement or bulk URL threw after the new key and base URL had already been applied.
+- `deleteInboxPlacementTest()` returns a `ZBRawJsonResponse` with empty `data` when the API answers with an empty 2xx (204 No Content), as the Go SDK does. Up to 3.0.1 it threw `ZBApiException` ("Empty response"). The other Inbox Placement calls still treat an empty body as an error.
+
 ## [3.0.1] - 2026-11-11
 
 ### Fixed

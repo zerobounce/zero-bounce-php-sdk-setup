@@ -129,26 +129,34 @@ class ZeroBounce
         $inboxPlacementBaseUrl,
         $bulkBaseUrl
     ) {
-        $this->apiKey = ($apiKey === null || $apiKey === '') ? null : new ZBSecret((string)$apiKey);
-        $this->apiBaseUrl = self::resolvedBaseUrl($baseUrl);
+        // Every argument is checked before anything is stored, so a call that
+        // throws leaves the client exactly as it was (no new key with the old
+        // URLs, no half-applied set of URLs).
+        $apiBaseUrl = self::resolvedBaseUrl($baseUrl);
         // Every bulkapi.zerobounce.net path hangs off one root, so a single
         // override points bulk files, scoring, email finder, domain search,
         // S3/SFTP, the list evaluator and the Inbox Placement Tester at a test
         // server. The two arguments before it still override their own host.
-        $this->setBulkBaseUrls(
-            $bulkBaseUrl === null || $bulkBaseUrl === ''
-                ? self::BulkApiRootUrl
-                : rtrim(self::requireHttpsUrl($bulkBaseUrl, 'bulkBaseUrl'), '/')
-        );
+        $bulkRoot = $bulkBaseUrl === null || $bulkBaseUrl === ''
+            ? self::BulkApiRootUrl
+            : rtrim(self::requireHttpsUrl($bulkBaseUrl, 'bulkBaseUrl'), '/');
+        $listEvaluator = null;
         if ($listEvaluatorBaseUrl !== null && $listEvaluatorBaseUrl !== '') {
-            $this->listEvaluatorBaseUrl = rtrim(
-                self::requireHttpsUrl($listEvaluatorBaseUrl, 'listEvaluatorBaseUrl'), '/'
-            );
+            $listEvaluator = rtrim(self::requireHttpsUrl($listEvaluatorBaseUrl, 'listEvaluatorBaseUrl'), '/');
         }
+        $inboxPlacement = null;
         if ($inboxPlacementBaseUrl !== null && $inboxPlacementBaseUrl !== '') {
-            $this->inboxPlacementBaseUrl = rtrim(
-                self::requireHttpsUrl($inboxPlacementBaseUrl, 'inboxPlacementBaseUrl'), '/'
-            );
+            $inboxPlacement = rtrim(self::requireHttpsUrl($inboxPlacementBaseUrl, 'inboxPlacementBaseUrl'), '/');
+        }
+
+        $this->apiKey = ($apiKey === null || $apiKey === '') ? null : new ZBSecret((string)$apiKey);
+        $this->apiBaseUrl = $apiBaseUrl;
+        $this->setBulkBaseUrls($bulkRoot);
+        if ($listEvaluator !== null) {
+            $this->listEvaluatorBaseUrl = $listEvaluator;
+        }
+        if ($inboxPlacement !== null) {
+            $this->inboxPlacementBaseUrl = $inboxPlacement;
         }
         $host = strtolower((string)parse_url($this->apiBaseUrl, PHP_URL_HOST));
         $regions = array('api-eu.zerobounce.net' => 'EU', 'api-us.zerobounce.net' => 'US');
@@ -1415,7 +1423,16 @@ class ZeroBounce
         if ($folder !== '' && $folder !== '.' && !file_exists($folder)) {
             mkdir($folder, 0777, true);
         }
-        if (file_put_contents($downloadPath, $body) === false) {
+        $handle = $this->openDownloadFile($downloadPath);
+        if ($handle === false) {
+            throw new ZBException('Could not write file');
+        }
+        $written = self::writeAll($handle, $body);
+        $flushed = @fflush($handle);
+        if (!@fclose($handle) || !$flushed || !$written) {
+            // A short write (a full disk) leaves a truncated file that would
+            // read as the result: remove it.
+            @unlink($downloadPath);
             throw new ZBException('Could not write file');
         }
         $response = new ZBGetFileResponse();
@@ -1438,6 +1455,7 @@ class ZeroBounce
         $head = '';
         $headers = array();
         $sniffing = true;
+        $writeFailed = false;
         $curl = curl_init();
         $this->applyCurlOptions($curl, array(
             CURLOPT_URL => $this->checkedUrl($url),
@@ -1456,33 +1474,70 @@ class ZeroBounce
                 }
                 return strlen($header);
             },
-            CURLOPT_WRITEFUNCTION => function ($curlHandle, $chunk) use (&$head, &$sniffing, $handle) {
+            CURLOPT_WRITEFUNCTION => function ($curlHandle, $chunk) use (&$head, &$sniffing, &$writeFailed, $handle) {
+                $size = strlen($chunk);
                 if ($sniffing) {
                     $head .= $chunk;
-                    if (strlen($head) >= self::DownloadSniffBytes) {
-                        $sniffing = false;
-                        fwrite($handle, $head);
+                    if (strlen($head) < self::DownloadSniffBytes) {
+                        return $size;
                     }
-                    return strlen($chunk);
+                    $sniffing = false;
+                    $chunk = $head;
                 }
-                fwrite($handle, $chunk);
-                return strlen($chunk);
+                if (!self::writeAll($handle, $chunk)) {
+                    // A short count makes curl stop the transfer
+                    // (CURLE_WRITE_ERROR) instead of going on to "succeed".
+                    $writeFailed = true;
+                    return 0;
+                }
+                return $size;
             },
         ));
         $ok = curl_exec($curl);
         $status = (int)curl_getinfo($curl, CURLINFO_HTTP_CODE);
         $error = curl_error($curl);
         self::closeCurl($curl);
-        if ($sniffing) {
+        if ($sniffing && !$writeFailed && !self::writeAll($handle, $head)) {
             // The whole body fit inside the sniff window and was never written.
-            fwrite($handle, $head);
+            $writeFailed = true;
+        }
+        if (!$writeFailed && !@fflush($handle)) {
+            $writeFailed = true;
         }
         return array(
             'status' => $status,
             'headers' => $headers,
             'head' => $head,
-            'error' => $ok === false ? ($error === '' ? 'The download failed.' : $error) : '',
+            // A transfer curl stopped because the file could not be written
+            // is reported as that, after any API error the body shows.
+            'error' => ($ok === false && !$writeFailed) ? ($error === '' ? 'The download failed.' : $error) : '',
+            'writeFailed' => $writeFailed,
         );
+    }
+
+    /**
+     * Writes all of $data, or reports that it could not.
+     *
+     * @param resource $handle
+     * @param string $data
+     * @return bool
+     */
+    private static function writeAll($handle, $data)
+    {
+        // @: a full disk raises a notice; the caller throws instead.
+        return $data === '' || @fwrite($handle, $data) === strlen($data);
+    }
+
+    /**
+     * Opens a download's file for writing. Separated so the tests can
+     * simulate a disk that fills up.
+     *
+     * @param string $path
+     * @return resource|false
+     */
+    protected function openDownloadFile($path)
+    {
+        return @fopen($path, 'wb');
     }
 
     /** How long a connection may take to open, for every request. */
@@ -1551,14 +1606,14 @@ class ZeroBounce
         if ($partial === false) {
             throw new ZBException('Could not write file');
         }
-        $handle = fopen($partial, 'wb');
+        $handle = $this->openDownloadFile($partial);
         if ($handle === false) {
             @unlink($partial);
             throw new ZBException('Could not write file');
         }
 
         $transfer = $this->streamHttpToHandle($url, $handle);
-        fclose($handle);
+        $closed = @fclose($handle);
         $head = (string)$transfer['head'];
         $headers = (array)$transfer['headers'];
         $status = (int)$transfer['status'];
@@ -1577,6 +1632,10 @@ class ZeroBounce
                     $this->redactApiKey(ZBHttpError::message($status, $sample, $headers)),
                     $status
                 );
+            }
+            if (!empty($transfer['writeFailed']) || !$closed) {
+                // A full disk: the partial file is truncated.
+                throw new ZBException('Could not write file');
             }
             if (!rename($partial, $downloadPath)) {
                 throw new ZBException('Could not write file');
