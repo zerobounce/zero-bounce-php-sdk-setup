@@ -462,7 +462,10 @@ class ZeroBounceWarmup
             }
             if (isset($managedSending['timezone_offset'])) {
                 $offset = $managedSending['timezone_offset'];
-                if (!is_numeric($offset) || $offset < -11 || $offset > 14) {
+                // A real number only: a numeric string would go out as a JSON
+                // string, and NAN/INF make json_encode fail.
+                if (!(is_int($offset) || is_float($offset)) || !is_finite($offset)
+                    || $offset < -11 || $offset > 14) {
                     throw new ZBMissingParameterException('timezone_offset must be -11 to 14');
                 }
             }

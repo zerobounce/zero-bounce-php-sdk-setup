@@ -6,6 +6,7 @@ use DateTime;
 use PHPUnit\Framework\TestCase;
 use ZeroBounce\SDK\ZBApiException;
 use ZeroBounce\SDK\ZBException;
+use ZeroBounce\SDK\ZBSecret;
 use ZeroBounce\SDK\ZeroBounceWarmup;
 
 require_once __DIR__ . '/OfflineHttp.php';
@@ -135,6 +136,19 @@ class OfflineWarmupTest extends TestCase
                 $this->client->addSendingAccount('a@b.com', 'zb_managed', null, null, null, array('timezone_offset' => $offset));
             });
             $this->assertStringContainsString('timezone_offset', $error->getMessage());
+        }
+        $this->assertSame(array(), $this->api->take());
+    }
+
+    public function testTimezoneOffsetMustBeAFiniteNumberNotANumericString()
+    {
+        // A numeric string would go out as a JSON string, and NAN/INF make
+        // json_encode fail, so the POST body would be false.
+        foreach (array('5.5', '1e1', '3', NAN, INF, -INF, true, false) as $offset) {
+            $error = $this->capture(function () use ($offset) {
+                $this->client->addSendingAccount('a@b.com', 'zb_managed', null, null, null, array('timezone_offset' => $offset));
+            });
+            $this->assertStringContainsString('timezone_offset', $error->getMessage(), var_export($offset, true));
         }
         $this->assertSame(array(), $this->api->take());
     }
@@ -620,30 +634,48 @@ class OfflineWarmupTest extends TestCase
     }
 
     /**
-     * Each spelling of a secret, built here with the encoders themselves, is
-     * masked, as the Warmup key and as the SMTP password. The first secret
-     * holds every character an encoding changes; the second a non-ASCII
-     * character next to "/" and '"'. Each spelling has a value no other has
-     * for one of them, so dropping any one from ZBSecret::forms fails.
+     * Each spelling of a secret, composed here from the encoders themselves,
+     * is masked, as the Warmup key and as the SMTP password: {raw, JSON,
+     * JSON with plain /} x {as is, URL-encoded with +, with %20}, and JSON
+     * twice (with and without \/), each JSON form also with non-ASCII as is.
+     * The first secret holds every character an encoding changes; the
+     * second a non-ASCII character next to a space, "/" and '"'. Each spelling has a
+     * value no other has for one of them, so dropping any one generator from
+     * ZBSecret::forms fails.
      */
     public function testEverySpellingOfASecretIsMasked()
     {
-        $secrets = array("a b\"/+%&=<>'\\", "pw\u{e9}/\"x");
+        $secrets = array("a b\"/+%&=<>'\\", "pw\u{e9} /\"x");
         $spellings = function ($secret) {
-            $json = substr(json_encode($secret), 1, -1);
-            return array(
-                'raw' => $secret,
-                'URL-encoded, +' => urlencode($secret),
-                'URL-encoded, %20' => rawurlencode($secret),
-                'JSON' => $json,
-                'JSON, plain /' => substr(json_encode($secret, JSON_UNESCAPED_SLASHES), 1, -1),
-                'JSON, non-ASCII as is' => substr(json_encode($secret, JSON_UNESCAPED_UNICODE), 1, -1),
-                'JSON, plain / and non-ASCII' =>
-                    substr(json_encode($secret, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), 1, -1),
-                'URL-encoded JSON, +' => urlencode($json),
-                'URL-encoded JSON, %20' => rawurlencode($json),
+            $json = function ($text, $flags) {
+                return substr(json_encode($text, $flags), 1, -1);
+            };
+            $escapers = array(
+                'raw' => function ($text) { return $text; },
+                'JSON' => function ($text) use ($json) { return $json($text, 0); },
+                'JSON, plain /' => function ($text) use ($json) { return $json($text, JSON_UNESCAPED_SLASHES); },
+                'JSON, non-ASCII as is' => function ($text) use ($json) { return $json($text, JSON_UNESCAPED_UNICODE); },
+                'JSON, plain / and non-ASCII' => function ($text) use ($json) {
+                    return $json($text, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+                },
             );
+            $urlEncoders = array(
+                '' => function ($text) { return $text; },
+                ', URL-encoded +' => 'urlencode',
+                ', URL-encoded %20' => 'rawurlencode',
+            );
+            $all = array();
+            foreach ($escapers as $escapeLabel => $escape) {
+                foreach ($urlEncoders as $urlLabel => $encode) {
+                    $all[$escapeLabel . $urlLabel] = $encode($escape($secret));
+                }
+                if ($escapeLabel !== 'raw') {
+                    $all[$escapeLabel . ', twice'] = $escape($escape($secret));
+                }
+            }
+            return $all;
         };
+        $this->assertCount(19, $spellings($secrets[0]));
         foreach (array_keys($spellings($secrets[0])) as $label) {
             $unique = false;
             foreach ($secrets as $secret) {
@@ -656,6 +688,8 @@ class OfflineWarmupTest extends TestCase
         $leaks = array();
         foreach ($secrets as $secret) {
             foreach ($spellings($secret) as $label => $form) {
+                // Masked whole, not partly by a shorter spelling.
+                $this->assertSame('<***>', ZBSecret::redact('<' . $form . '>', array($secret)), $label);
                 $calls = array(
                     'key' => function () use ($secret) {
                         (new OfflineWarmupClient($this->api, $secret))->listSendingAccounts();

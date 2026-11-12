@@ -111,10 +111,12 @@ final class ZBSecret
     }
 
     /**
-     * Every form the secrets can take in a body or URL echoed back to us: raw,
-     * URL-encoded (+ and %20 styles), JSON-escaped (with and without "\/",
-     * non-ASCII as is or as \uXXXX) and the URL-encoded JSON form (+ and %20).
-     * Longest first, so a form that contains another is masked whole.
+     * Every form the secrets can take in a body or URL echoed back to us,
+     * composed from the encoders up to depth 2: {raw, JSON-escaped with "\/",
+     * JSON-escaped with plain "/"} x {as is, URL-encoded with +, URL-encoded
+     * with %20}, and JSON-escaped twice (with and without "\/"); each JSON
+     * form also with non-ASCII as is or as \uXXXX. Longest first, so a form
+     * that contains another is masked whole.
      *
      * @param array<int, string|null> $secrets
      * @return string[]
@@ -128,28 +130,48 @@ final class ZBSecret
             if (!is_string($secret) || $secret === '') {
                 continue;
             }
-            $candidates = array($secret, urlencode($secret), rawurlencode($secret));
-            foreach (array(0, JSON_UNESCAPED_SLASHES, JSON_UNESCAPED_UNICODE, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) as $flags) {
-                $json = json_encode($secret, $flags);
-                if (is_string($json)) {
-                    $candidates[] = substr($json, 1, -1);
+            $flagSets = array(0, JSON_UNESCAPED_SLASHES, JSON_UNESCAPED_UNICODE, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            $escaped = array($secret);
+            foreach ($flagSets as $flags) {
+                $escaped[] = self::jsonEscaped($secret, $flags);
+            }
+            $candidates = array();
+            foreach ($escaped as $form) {
+                if ($form !== null) {
+                    $candidates[] = $form;
+                    $candidates[] = urlencode($form);
+                    $candidates[] = rawurlencode($form);
                 }
             }
-            // The JSON form as the SDK sends it, URL-encoded: a server that
-            // echoes a URL-encoded copy of a JSON request body.
-            $json = json_encode($secret);
-            if (is_string($json)) {
-                $candidates[] = urlencode(substr($json, 1, -1));
-                $candidates[] = rawurlencode(substr($json, 1, -1));
+            // A JSON string carrying a JSON-escaped secret (an error body
+            // quoting the JSON request body), escaped twice the same way.
+            foreach ($flagSets as $flags) {
+                $once = self::jsonEscaped($secret, $flags);
+                $candidates[] = $once === null ? null : self::jsonEscaped($once, $flags);
             }
             foreach ($candidates as $form) {
-                if ($form !== '') {
+                if (is_string($form) && $form !== '') {
                     $forms[$form] = strlen($form);
                 }
             }
         }
         arsort($forms);
         return array_map('strval', array_keys($forms));
+    }
+
+    /**
+     * @param string $text
+     * @param int $flags json_encode flags
+     * @return string|null $text as it appears inside a JSON string, or null
+     *     when it cannot be encoded (invalid UTF-8)
+     */
+    private static function jsonEscaped(
+        #[\SensitiveParameter]
+        $text,
+        $flags
+    ) {
+        $json = json_encode($text, $flags);
+        return is_string($json) ? substr($json, 1, -1) : null;
     }
 
     /**
