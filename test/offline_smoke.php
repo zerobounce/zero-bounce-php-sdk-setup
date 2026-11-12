@@ -42,6 +42,7 @@ set_error_handler(function ($level, $message, $file, $line) use (&$deprecations)
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 require __DIR__ . '/OfflineHttp.php';
+require __DIR__ . '/RequestSweep.php';
 
 class SmokeWarmup extends ZeroBounceWarmup
 {
@@ -335,6 +336,241 @@ scenario('the key in traces, var_export and serialize', function () {
     check($api->count() === 0, 'an unserialized client sends nothing');
     $client->getCredits();
     check(only($api)['api_key'] === 'export-client-key', 'the original client keeps its key');
+});
+
+// The same sweep as TransportGuardsTest::testNoErrorCarriesASecretInItsStackTrace:
+// PHP 7.0-7.3 always keeps call arguments in a trace and has no
+// #[\SensitiveParameter], so the SDK's own scrubbing is all there is.
+// The secrets are constants and static properties, never values a closure
+// or a frame of this script holds, so only the SDK's frames could show them.
+class TraceSecrets
+{
+    const KEY = 'floor+key/0123456789abcdef';
+    const PASSWORD = 'floor+pass/0123456789';
+    /** @var string */
+    public static $root = '';
+}
+
+class TraceCannedClient extends \ZeroBounce\SDK\ZeroBounce
+{
+    /** @var array{status: int, headers: string[], body: string} */
+    private $answer;
+
+    public function __construct($status, $body)
+    {
+        parent::__construct();
+        $this->answer = array('status' => $status, 'headers' => array('HTTP/1.1 ' . $status . ' X', 'Content-Type: text/plain'), 'body' => $body);
+    }
+
+    public function __debugInfo()
+    {
+        return array();
+    }
+
+    protected function executeHttp($method, $url, array $headers = array(), $body = null, $timeout = 120)
+    {
+        return $this->answer;
+    }
+
+    protected function streamHttpToHandle($url, $handle)
+    {
+        fwrite($handle, $this->answer['body']);
+        return array('status' => $this->answer['status'], 'headers' => $this->answer['headers'], 'head' => $this->answer['body'], 'error' => '');
+    }
+}
+
+/** Real curl requests to TraceSecrets::$root over plain http. */
+class TraceLoopbackClient extends \ZeroBounce\SDK\ZeroBounce
+{
+    public function __construct()
+    {
+        parent::__construct();
+    }
+
+    protected function checkedUrl($url)
+    {
+        foreach (array('https://api.zerobounce.net', 'https://bulkapi.zerobounce.net') as $host) {
+            if (strpos($url, $host) === 0) {
+                return TraceSecrets::$root . substr($url, strlen($host));
+            }
+        }
+        return $url;
+    }
+}
+
+class TraceWarmup extends ZeroBounceWarmup
+{
+    /** @var array{status: int, headers: string[], body: string}|null null: real curl to TraceSecrets::$root */
+    private $answer;
+
+    public function __construct($answer)
+    {
+        parent::__construct(TraceSecrets::KEY, 'https://warmup.test');
+        $this->answer = $answer;
+    }
+
+    public function __debugInfo()
+    {
+        return array();
+    }
+
+    protected function executeHttp($method, $url, array $headers = array(), $body = null, $timeout = 120)
+    {
+        if ($this->answer !== null) {
+            return $this->answer;
+        }
+        return parent::executeHttp($method, TraceSecrets::$root . substr($url, strlen('https://warmup.test')), $headers, $body, $timeout);
+    }
+}
+
+class TraceSweep
+{
+    use RequestSweep;
+
+    public function core(\ZeroBounce\SDK\ZeroBounce $c, $out)
+    {
+        $calls = $this->sweepCalls($c, $out);
+        $missing = array_diff($this->requestMethodNames(), array_keys($calls));
+        if ($missing) {
+            throw new \RuntimeException('missing from the sweep: ' . implode(', ', $missing));
+        }
+        return $calls;
+    }
+
+    public function warmup(ZeroBounceWarmup $w)
+    {
+        $calls = array(
+            'listSendingAccounts' => function () use ($w) { $w->listSendingAccounts(); },
+            'getSendingAccount' => function () use ($w) { $w->getSendingAccount('a@b.com'); },
+            'addSendingAccount' => function () use ($w) { $w->addSendingAccount('a@b.com', 'self_managed', 0); },
+            'updateSendingAccount' => function () use ($w) { $w->updateSendingAccount('a@b.com', 1, 4, true); },
+            'deleteSendingAccount' => function () use ($w) { $w->deleteSendingAccount('a@b.com'); },
+            'changeFromAddress' => function () use ($w) { $w->changeFromAddress('a@b.com', 'c@d.com'); },
+            'listFromAddresses' => function () use ($w) { $w->listFromAddresses(); },
+            'getEngagementRules' => function () use ($w) { $w->getEngagementRules(); },
+            'setEngagementRule' => function () use ($w) { $w->setEngagementRule('a@b.com', 2); },
+            'getCustomEngagement' => function () use ($w) { $w->getCustomEngagement('a@b.com'); },
+            'createCustomEngagement' => function () use ($w) { $w->createCustomEngagement('a@b.com', 10, 10, 5); },
+            'updateCustomEngagement' => function () use ($w) { $w->updateCustomEngagement('a@b.com', 10, 10, 5); },
+            'deleteCustomEngagement' => function () use ($w) { $w->deleteCustomEngagement('a@b.com', 1); },
+            'getSeeds' => function () use ($w) { $w->getSeeds(); },
+            'downloadSeeds' => function () use ($w) { $w->downloadSeeds(); },
+            'getSeedCount' => function () use ($w) { $w->getSeedCount(); },
+            'getProgressToday' => function () use ($w) { $w->getProgressToday(); },
+            'getSentToday' => function () use ($w) { $w->getSentToday(); },
+            'getEmailsPerDay' => function () use ($w) { $w->getEmailsPerDay(); },
+            'getStatistics' => function () use ($w) { $w->getStatistics('a@b.com'); },
+            'getStatisticsPerDay' => function () use ($w) { $w->getStatisticsPerDay('a@b.com', '2026-09-01', '2026-09-14'); },
+            'getStatisticsDetailed' => function () use ($w) { $w->getStatisticsDetailed('a@b.com'); },
+            'downloadStatistics' => function () use ($w) { $w->downloadStatistics('a@b.com'); },
+            'getFromAddressStatistics' => function () use ($w) { $w->getFromAddressStatistics('a@b.com'); },
+            'checkDomainDmarc' => function () use ($w) { $w->checkDomainDmarc('a@b.com'); },
+            'testSmtpConfiguration' => function () use ($w) {
+                $w->testSmtpConfiguration('a@b.com', 'u', TraceSecrets::PASSWORD, 'smtp.example.com', 587);
+            },
+        );
+        foreach ((new \ReflectionClass(ZeroBounceWarmup::class))->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
+            if (!$method->isStatic() && strpos($method->getName(), '__') !== 0 && !isset($calls[$method->getName()])) {
+                throw new \RuntimeException('missing from the Warmup sweep: ' . $method->getName());
+            }
+        }
+        return $calls;
+    }
+
+    /** @return string[] where a secret shows in the error $call throws, or 'returned' */
+    public function leaks(callable $call)
+    {
+        try {
+            $this->quietly($call);
+        } catch (\Exception $e) {
+            $found = array();
+            for ($error = $e; $error !== null; $error = $error->getPrevious()) {
+                $views = array($error->getMessage(), (string)$error, var_export($error->getTrace(), true), print_r($error, true), var_export($error, true));
+                try {
+                    $views[] = serialize($error);
+                } catch (\Exception $notSerializable) {
+                }
+                foreach ($views as $view => $text) {
+                    foreach (array(TraceSecrets::KEY, TraceSecrets::PASSWORD) as $secret) {
+                        foreach (array($secret, rawurlencode($secret), urlencode($secret), substr(json_encode($secret), 1, -1)) as $form) {
+                            if (strpos($text, $form) !== false) {
+                                $found[] = get_class($error) . ' view ' . $view;
+                            }
+                        }
+                    }
+                }
+            }
+            return array_values(array_unique($found));
+        }
+        return array('returned');
+    }
+}
+
+scenario('no secret in any error\'s stack-trace arguments', function () use ($tmp) {
+    $previous = ini_get('zend.exception_ignore_args');
+    ini_set('zend.exception_ignore_args', '0');
+    $sweep = new TraceSweep();
+    $out = $tmp . '-trace.csv';
+    // A cut-short body: a 200 header promising more than it sends.
+    $router = tempnam(sys_get_temp_dir(), 'zb-smoke-router-');
+    file_put_contents($router, '<?php header("Content-Type: application/json"); header("Content-Length: 1000"); echo "{\"a\":1}"; return true;');
+    $server = stream_socket_server('tcp://127.0.0.1:0');
+    $name = stream_socket_get_name($server, false);
+    fclose($server);
+    $cutPort = (int)substr(strrchr($name, ':'), 1);
+    $process = proc_open('exec ' . escapeshellarg(PHP_BINARY) . ' -S 127.0.0.1:' . $cutPort . ' ' . escapeshellarg($router),
+        array(0 => array('pipe', 'r'), 1 => array('file', '/dev/null', 'w'), 2 => array('file', '/dev/null', 'w')), $pipes);
+    for ($i = 0; $i < 100 && !($probe = @fsockopen('127.0.0.1', $cutPort, $errno, $errstr, 0.1)); $i++) {
+        usleep(20000);
+    }
+    if (!empty($probe)) {
+        fclose($probe);
+    }
+    $server = stream_socket_server('tcp://127.0.0.1:0');
+    $name = stream_socket_get_name($server, false);
+    fclose($server);
+    $refused = 'http://127.0.0.1:' . (int)substr(strrchr($name, ':'), 1);
+    try {
+        $roots = array('refused' => $refused, 'cut short' => 'http://127.0.0.1:' . $cutPort);
+        $clients = array(
+            '400 quoting the URL' => function () { return new TraceCannedClient(400, 'Bad request: https://x.example/v2/x?api_key=' . rawurlencode(TraceSecrets::KEY)); },
+            '500' => function () { return new TraceCannedClient(500, 'Server error'); },
+            'refused' => function () { return new TraceLoopbackClient(); },
+            'cut short' => function () { return new TraceLoopbackClient(); },
+        );
+        foreach ($clients as $label => $make) {
+            TraceSecrets::$root = isset($roots[$label]) ? $roots[$label] : '';
+            $client = $make();
+            $client->initialize(TraceSecrets::KEY);
+            foreach ($sweep->core($client, $out) as $method => $variants) {
+                foreach ($variants as $i => $call) {
+                    $found = $sweep->leaks($call);
+                    check($found === array(), 'trace: ' . $method . '#' . $i . ' (' . $label . '): ' . implode(', ', $found));
+                    @unlink($out);
+                }
+            }
+        }
+        $warmups = array(
+            '400' => array('status' => 400, 'headers' => array('HTTP/1.1 400 X'), 'body' => 'Bad request'),
+            '500' => array('status' => 500, 'headers' => array('HTTP/1.1 500 X'), 'body' => 'Server error'),
+            'refused' => null,
+            'cut short' => null,
+        );
+        foreach ($warmups as $label => $answer) {
+            TraceSecrets::$root = isset($roots[$label]) ? $roots[$label] : '';
+            foreach ($sweep->warmup(new TraceWarmup($answer)) as $method => $call) {
+                $found = $sweep->leaks($call);
+                check($found === array(), 'trace: Warmup ' . $method . ' (' . $label . '): ' . implode(', ', $found));
+            }
+        }
+    } finally {
+        proc_terminate($process);
+        proc_close($process);
+        @unlink($router);
+        if ($previous !== false) {
+            ini_set('zend.exception_ignore_args', $previous);
+        }
+    }
 });
 
 echo 'PHP ' . PHP_VERSION . ': ' . $checks . ' checks, ' . count($deprecations) . " expected deprecation(s)\n";

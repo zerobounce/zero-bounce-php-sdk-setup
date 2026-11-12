@@ -59,6 +59,7 @@ class StrictBooleanSweepTest extends TestCase
     const BOOLEAN_PARAMS = array(
         'hasHeaderRow' => 'has_header_row',
         'allowPhase2' => 'allow_phase_2',
+        'removeDuplicate' => 'remove_duplicate',
         'autoEnable' => 'auto_enable',
         'ignoreConflict' => 'ignore_conflict',
     );

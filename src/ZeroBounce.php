@@ -592,17 +592,19 @@ class ZeroBounce
      * @param int|null $ipAddressColumn
      * @param bool|null $hasHeaderRow
      * @param bool|null $allowPhase2 When not null, sends allow_phase_2 (validation bulk sendfile only).
+     * @param bool|null $removeDuplicate When not null, sends remove_duplicate (the API's default is true).
      * @return ZBSendFileResponse
      * @throws ZBMissingApiKeyException
      * @throws ZBException
      */
     public function sendFile(
         $filepath, $emailAddressColumn, $returnUrl = NULL, $firstNameColumn = NULL, $lastNameColumn = NULL,
-        $genderColumn = NULL, $ipAddressColumn = NULL, $hasHeaderRow = NULL, $allowPhase2 = null)
+        $genderColumn = NULL, $ipAddressColumn = NULL, $hasHeaderRow = NULL, $allowPhase2 = null,
+        $removeDuplicate = null)
     {
         return $this->_sendFile($this->bulkApiBaseUrl . "/sendfile", $filepath, $emailAddressColumn,
             $returnUrl, $firstNameColumn, $lastNameColumn,
-            $genderColumn, $ipAddressColumn, $hasHeaderRow, $allowPhase2);
+            $genderColumn, $ipAddressColumn, $hasHeaderRow, $allowPhase2, $removeDuplicate);
     }
 
     /**
@@ -611,16 +613,17 @@ class ZeroBounce
      * @param int $emailAddressColumn
      * @param string|null $returnUrl
      * @param bool|null $hasHeaderRow
+     * @param bool|null $removeDuplicate When not null, sends remove_duplicate (the API's default is true).
      * @return ZBSendFileResponse
      * @throws ZBMissingApiKeyException
      * @throws ZBException
      */
     public function scoringSendFile(
-        $filepath, $emailAddressColumn, $returnUrl = NULL, $hasHeaderRow = NULL)
+        $filepath, $emailAddressColumn, $returnUrl = NULL, $hasHeaderRow = NULL, $removeDuplicate = null)
     {
         return $this->_sendFile($this->bulkApiBaseUrl . "/scoring/sendfile", $filepath, $emailAddressColumn,
             $returnUrl, NULL, NULL,
-            NULL, NULL, $hasHeaderRow, null);
+            NULL, NULL, $hasHeaderRow, null, $removeDuplicate);
     }
 
     /**
@@ -635,18 +638,19 @@ class ZeroBounce
      * @param int|null $ipAddressColumn
      * @param bool|null $hasHeaderRow
      * @param bool|null $allowPhase2 When not null, sends allow_phase_2 (validation bulk sendfile only).
+     * @param bool|null $removeDuplicate When not null, sends remove_duplicate (the API's default is true).
      * @return ZBSendFileResponse
      */
     public function sendFileStream(
         $streamContent, $fileName, $emailAddressColumn, $returnUrl = NULL, $firstNameColumn = NULL,
         $lastNameColumn = NULL, $genderColumn = NULL, $ipAddressColumn = NULL, $hasHeaderRow = NULL,
-        $allowPhase2 = null)
+        $allowPhase2 = null, $removeDuplicate = null)
     {
         return $this->_sendFileWithContent(
             $this->bulkApiBaseUrl . "/sendfile",
             $fileName, $streamContent, $emailAddressColumn,
             $returnUrl, $firstNameColumn, $lastNameColumn, $genderColumn, $ipAddressColumn, $hasHeaderRow,
-            $allowPhase2
+            $allowPhase2, $removeDuplicate
         );
     }
 
@@ -657,15 +661,17 @@ class ZeroBounce
      * @param int $emailAddressColumn
      * @param string|null $returnUrl
      * @param bool|null $hasHeaderRow
+     * @param bool|null $removeDuplicate When not null, sends remove_duplicate (the API's default is true).
      * @return ZBSendFileResponse
      */
     public function scoringSendFileStream(
-        $streamContent, $fileName, $emailAddressColumn, $returnUrl = NULL, $hasHeaderRow = NULL)
+        $streamContent, $fileName, $emailAddressColumn, $returnUrl = NULL, $hasHeaderRow = NULL,
+        $removeDuplicate = null)
     {
         return $this->_sendFileWithContent(
             $this->bulkApiBaseUrl . "/scoring/sendfile",
             $fileName, $streamContent, $emailAddressColumn,
-            $returnUrl, NULL, NULL, NULL, NULL, $hasHeaderRow, null
+            $returnUrl, NULL, NULL, NULL, NULL, $hasHeaderRow, null, $removeDuplicate
         );
     }
 
@@ -680,6 +686,7 @@ class ZeroBounce
      * @param int|null $ipAddressColumn
      * @param bool|null $hasHeaderRow
      * @param bool|null $allowPhase2
+     * @param bool|null $removeDuplicate
      * @return ZBSendFileResponse
      * @throws ZBMissingApiKeyException
      * @throws ZBException
@@ -687,7 +694,8 @@ class ZeroBounce
     private function _sendFile(
         $url,
         $filepath, $emailAddressColumn, $returnUrl = NULL, $firstNameColumn = NULL, $lastNameColumn = NULL,
-        $genderColumn = NULL, $ipAddressColumn = NULL, $hasHeaderRow = NULL, $allowPhase2 = null)
+        $genderColumn = NULL, $ipAddressColumn = NULL, $hasHeaderRow = NULL, $allowPhase2 = null,
+        $removeDuplicate = null)
     {
 
         $this->checkValidApiKey();
@@ -697,7 +705,7 @@ class ZeroBounce
         try {
             $fields = $this->multipartFileFields(
                 $emailAddressColumn, $returnUrl, $firstNameColumn, $lastNameColumn,
-                $genderColumn, $ipAddressColumn, $hasHeaderRow, $allowPhase2, $url
+                $genderColumn, $ipAddressColumn, $hasHeaderRow, $allowPhase2, $url, $removeDuplicate
             );
 
             $files = array();
@@ -725,12 +733,13 @@ class ZeroBounce
      * @param int|null $ipAddressColumn
      * @param bool|null $hasHeaderRow
      * @param bool|null $allowPhase2
+     * @param bool|null $removeDuplicate
      * @return ZBSendFileResponse
      */
     private function _sendFileWithContent(
         $url, $fileName, $content, $emailAddressColumn, $returnUrl = NULL, $firstNameColumn = NULL,
         $lastNameColumn = NULL, $genderColumn = NULL, $ipAddressColumn = NULL, $hasHeaderRow = NULL,
-        $allowPhase2 = null)
+        $allowPhase2 = null, $removeDuplicate = null)
     {
         $this->checkValidApiKey();
         $this->requireProvided($fileName, "fileName is required");
@@ -739,7 +748,7 @@ class ZeroBounce
         try {
             $fields = $this->multipartFileFields(
                 $emailAddressColumn, $returnUrl, $firstNameColumn, $lastNameColumn,
-                $genderColumn, $ipAddressColumn, $hasHeaderRow, $allowPhase2, $url
+                $genderColumn, $ipAddressColumn, $hasHeaderRow, $allowPhase2, $url, $removeDuplicate
             );
 
             $files = array($fileName => $content);
@@ -1218,8 +1227,11 @@ class ZeroBounce
         $raw = curl_exec($curl);
         $status = (int)curl_getinfo($curl, CURLINFO_HTTP_CODE);
         $error = curl_error($curl);
+        // PHP 7 returns the partial body of a transfer cut short (curl's
+        // CURLE_PARTIAL_FILE) instead of false: any curl error is a failure.
+        $failed = curl_errno($curl) !== 0;
         self::closeCurl($curl);
-        if ($raw === false || $raw === null) {
+        if ($raw === false || $raw === null || $failed) {
             return array(
                 'status' => $status,
                 'headers' => $responseHeaders,
@@ -1489,6 +1501,10 @@ class ZeroBounce
         $ok = curl_exec($curl);
         $status = (int)curl_getinfo($curl, CURLINFO_HTTP_CODE);
         $error = curl_error($curl);
+        // PHP 7 reports a transfer cut short (CURLE_PARTIAL_FILE) as success.
+        if (curl_errno($curl) !== 0) {
+            $ok = false;
+        }
         self::closeCurl($curl);
         if ($sniffing && !$writeFailed && !self::writeAll($handle, $head)) {
             // The whole body fit inside the sniff window and was never written.
@@ -1648,7 +1664,7 @@ class ZeroBounce
      */
     private function multipartFileFields(
         $emailAddressColumn, $returnUrl, $firstNameColumn, $lastNameColumn,
-        $genderColumn, $ipAddressColumn, $hasHeaderRow, $allowPhase2, $url)
+        $genderColumn, $ipAddressColumn, $hasHeaderRow, $allowPhase2, $url, $removeDuplicate = null)
     {
         $fields = array(
             'api_key' => $this->apiKey(),
@@ -1671,6 +1687,9 @@ class ZeroBounce
         }
         if ($hasHeaderRow !== null) {
             $fields['has_header_row'] = self::wireBool($hasHeaderRow, 'has_header_row');
+        }
+        if ($removeDuplicate !== null) {
+            $fields['remove_duplicate'] = self::wireBool($removeDuplicate, 'remove_duplicate');
         }
         if ($allowPhase2 !== null && strpos($url, '/scoring/') === false) {
             $fields['allow_phase_2'] = self::wireBool($allowPhase2, 'allow_phase_2');

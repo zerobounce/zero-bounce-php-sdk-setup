@@ -48,6 +48,16 @@ class LoopbackClient extends ZeroBounce
         return $this->openFile === null ? parent::openDownloadFile($path) : call_user_func($this->openFile, $path);
     }
 
+    /**
+     * Without what this fake records or answers with (request URLs, an
+     * answer quoting the key): print_r() of an error shows the closures in
+     * its trace, and their bound fakes, which are not the SDK's to mask.
+     */
+    public function __debugInfo()
+    {
+        return array();
+    }
+
     public function pointAt($root)
     {
         $ref = new ReflectionClass(ZeroBounce::class);
@@ -74,9 +84,19 @@ class LoopbackWarmup extends ZeroBounceWarmup
     /** @var string|null */
     public $loopback = null;
 
-    public function __construct()
+    public function __construct($key = 'guard-key')
     {
-        parent::__construct('guard-key', 'https://warmup.test');
+        parent::__construct($key, 'https://warmup.test');
+    }
+
+    /**
+     * Without what this fake records or answers with (request URLs, an
+     * answer quoting the key): print_r() of an error shows the closures in
+     * its trace, and their bound fakes, which are not the SDK's to mask.
+     */
+    public function __debugInfo()
+    {
+        return array();
     }
 
     protected function executeHttp($method, $url, array $headers = array(), $body = null, $timeout = 120)
@@ -115,6 +135,16 @@ class CannedFileClient extends ZeroBounce
         return $this->answer;
     }
 
+    /**
+     * Without what this fake records or answers with (request URLs, an
+     * answer quoting the key): print_r() of an error shows the closures in
+     * its trace, and their bound fakes, which are not the SDK's to mask.
+     */
+    public function __debugInfo()
+    {
+        return array();
+    }
+
     protected function streamHttpToHandle($url, $handle)
     {
         fwrite($handle, $this->answer['body']);
@@ -141,6 +171,16 @@ class CannedFileWarmup extends ZeroBounceWarmup
             'headers' => array('HTTP/1.1 ' . $status . ' X', 'Content-Type: ' . $contentType),
             'body' => $body,
         );
+    }
+
+    /**
+     * Without what this fake records or answers with (request URLs, an
+     * answer quoting the key): print_r() of an error shows the closures in
+     * its trace, and their bound fakes, which are not the SDK's to mask.
+     */
+    public function __debugInfo()
+    {
+        return array();
     }
 
     protected function executeHttp($method, $url, array $headers = array(), $body = null, $timeout = 120)
@@ -228,6 +268,18 @@ class TransportGuardsTest extends TestCase
     /** @var string */
     private $dir;
 
+    /**
+     * What testNoErrorCarriesASecretInItsStackTrace looks for. Static, so a
+     * dump of this test case (PHPUnit's own frames pass it as an argument)
+     * does not show them either.
+     *
+     * @var string[]
+     */
+    private static $traceSecrets = array();
+
+    /** @var string the password warmupCalls() tests SMTP with (static for the same reason) */
+    private static $smtpPassword = 'p';
+
     protected function setUp(): void
     {
         $this->dir = sys_get_temp_dir() . '/zb-guards-' . getmypid() . '-' . mt_rand();
@@ -254,8 +306,10 @@ class TransportGuardsTest extends TestCase
             }
         }
         $this->servers = array();
-        foreach ((array)glob($this->dir . '/{,.}*', GLOB_BRACE) as $file) {
-            if (is_file($file)) {
+        // scandir, not glob(..., GLOB_BRACE): musl (Alpine) has no GLOB_BRACE.
+        foreach ((array)@scandir($this->dir) as $name) {
+            $file = $this->dir . '/' . $name;
+            if ($name !== '.' && $name !== '..' && is_file($file)) {
                 unlink($file);
             }
         }
@@ -359,7 +413,7 @@ class TransportGuardsTest extends TestCase
             'getFromAddressStatistics' => function () use ($w) { $w->getFromAddressStatistics('a@b.com'); },
             'checkDomainDmarc' => function () use ($w) { $w->checkDomainDmarc('a@b.com'); },
             'testSmtpConfiguration' => function () use ($w) {
-                $w->testSmtpConfiguration('a@b.com', 'u', 'p', 'smtp.example.com', 587);
+                $w->testSmtpConfiguration('a@b.com', 'u', self::$smtpPassword, 'smtp.example.com', 587);
             },
         );
     }
@@ -721,7 +775,10 @@ return true;
     public function testNoWarmupErrorCarriesAKeyTheBodyQuotes()
     {
         $key = 'echo+key/42';
-        foreach ($this->keyEchoBodies($key) as $label => $answer) {
+        $bodies = $this->keyEchoBodies($key);
+        // Not JSON, on a 200: each JSON call builds its error from this text.
+        $bodies['200 text quoting the key'] = array(200, 'text/plain', 'Denied for ' . $key . ' at https://x.example/?k=' . rawurlencode($key));
+        foreach ($bodies as $label => $answer) {
             list($status, $type, $body) = $answer;
             $warmup = new CannedFileWarmup($status, $type, $body, $key);
             foreach ($this->warmupCalls($warmup) as $name => $call) {
@@ -730,6 +787,136 @@ return true;
                     $this->assertTrue($threw, 'Warmup ' . $name . ' returned for ' . $label);
                 }
             }
+        }
+    }
+
+    // -- the key in stack-trace arguments ------------------------------------------
+
+    /**
+     * Every form of every secret found anywhere in $e or its previous errors:
+     * message, string form, trace (var_export), print_r, var_export and
+     * serialize where the error can be serialized.
+     *
+     * @param string[] $secrets
+     * @return string[] where each was found
+     */
+    private function secretsIn(\Throwable $e, array $secrets)
+    {
+        $found = array();
+        for ($depth = 0, $error = $e; $error !== null; $depth++, $error = $error->getPrevious()) {
+            $views = array(
+                'message' => $error->getMessage(),
+                'string' => (string)$error,
+                'trace' => var_export($error->getTrace(), true),
+                'print_r' => print_r($error, true),
+                'var_export' => var_export($error, true),
+            );
+            try {
+                $views['serialize'] = serialize($error);
+            } catch (\Throwable $notSerializable) {
+                // A closure or a SensitiveParameterValue among the arguments.
+            }
+            foreach ($views as $view => $text) {
+                foreach ($secrets as $secret) {
+                    foreach (array($secret, rawurlencode($secret), urlencode($secret), substr(json_encode($secret), 1, -1)) as $form) {
+                        if (strpos($text, $form) !== false) {
+                            $found[] = get_class($error) . ' #' . $depth . ' ' . $view . ': ' . $form;
+                        }
+                    }
+                }
+            }
+        }
+        return array_values(array_unique($found));
+    }
+
+    /**
+     * The secrets are read from self::$traceSecrets, not passed in, so no
+     * frame of the test itself holds them as an argument.
+     */
+    private function assertNoSecretInError($label, callable $call)
+    {
+        try {
+            $this->quietly($call);
+        } catch (\Throwable $e) {
+            $this->assertInstanceOf(ZBException::class, $e, $label . ': ' . get_class($e) . ': ' . $e->getMessage());
+            $this->assertSame(array(), $this->secretsIn($e, self::$traceSecrets), $label);
+            return;
+        }
+        $this->fail($label . ' did not throw');
+    }
+
+    /**
+     * With zend.exception_ignore_args off (the php.ini-development and
+     * official Docker image default, and the only behaviour on PHP 7.0-7.3)
+     * a trace keeps every frame's arguments: the request URL with api_key, a
+     * parameter array, the API-Key header, the SMTP password. No error any
+     * request method throws may carry them, on an error status or a
+     * transport failure.
+     */
+    public function testNoErrorCarriesASecretInItsStackTrace()
+    {
+        $previous = ini_set('zend.exception_ignore_args', '0');
+        try {
+            $key = 'trace+key/0123456789abcdef';
+            $password = 'smtp+pass/0123456789';
+            self::$traceSecrets = array($key, $password);
+            self::$smtpPassword = $password;
+            $out = $this->dir . '/result.csv';
+            $cutShort = $this->serve('<?php
+header("Content-Type: application/json");
+header("Content-Length: 1000");
+echo "{\"a\":1,\"b\":\"cccccccc\"}";
+return true;
+');
+            $statuses = array(
+                '400 text quoting the URL' => array(400, 'text/plain', 'Bad request: https://x.example/v2/x?api_key=' . rawurlencode($key)),
+                '500 {"error"}' => array(500, 'application/json', '{"error":"Server error"}'),
+                '200 {"error"}' => array(200, 'application/json', '{"error":"Invalid API key"}'),
+            );
+            $clients = array();
+            foreach ($statuses as $label => $answer) {
+                $clients[$label] = new CannedFileClient($answer[0], $answer[1], $answer[2]);
+            }
+            foreach (array('refused' => 'http://127.0.0.1:' . $this->freePort(), 'cut short' => $cutShort) as $label => $root) {
+                $clients[$label] = new LoopbackClient();
+                $clients[$label . ' root'] = $root;
+            }
+            foreach ($clients as $label => $client) {
+                if (!$client instanceof ZeroBounce) {
+                    continue;
+                }
+                $client->initialize($key);
+                if ($client instanceof LoopbackClient) {
+                    $client->pointAt($clients[$label . ' root']);
+                }
+                $calls = $this->sweepCalls($client, $out);
+                $this->assertSame(array(), array_values(array_diff($this->requestMethodNames(), array_keys($calls))));
+                foreach ($calls as $name => $variants) {
+                    foreach ($variants as $i => $call) {
+                        $this->assertNoSecretInError($name . '#' . $i . ' (' . $label . ')', $call);
+                    }
+                }
+            }
+
+            $warmups = array();
+            foreach (array(400, 429, 500) as $status) {
+                $warmups[$status . ' text'] = new CannedFileWarmup($status, 'text/plain', 'Bad request', $key);
+            }
+            foreach (array('refused' => 'http://127.0.0.1:' . $this->freePort(), 'cut short' => $cutShort) as $label => $root) {
+                $warmups[$label] = new LoopbackWarmup($key);
+                $warmups[$label]->loopback = $root;
+            }
+            foreach ($warmups as $label => $warmup) {
+                $calls = $this->warmupCalls($warmup);
+                $this->assertSame(array(), array_values(array_diff($this->warmupMethodNames(), array_keys($calls))));
+                foreach ($calls as $name => $call) {
+                    $this->assertNoSecretInError('Warmup ' . $name . ' (' . $label . ')', $call);
+                }
+            }
+        } finally {
+            ini_set('zend.exception_ignore_args', $previous === false ? '0' : $previous);
+            self::$traceSecrets = array();
+            self::$smtpPassword = 'p';
         }
     }
 

@@ -19,6 +19,14 @@ final class ZBSecret
     private $read;
 
     /**
+     * Every secret some ZBSecret holds now, with the number of holders: what
+     * scrubTrace() masks. Keys that look like integers are stored as ints.
+     *
+     * @var array<string|int, int>
+     */
+    private static $live = array();
+
+    /**
      * @param string $value
      */
     public function __construct(
@@ -28,6 +36,112 @@ final class ZBSecret
         $this->read = static function () use ($value) {
             return $value;
         };
+        self::hold($value, 1);
+    }
+
+    public function __clone()
+    {
+        self::hold($this->value(), 1);
+    }
+
+    public function __destruct()
+    {
+        self::hold($this->value(), -1);
+    }
+
+    /**
+     * @param string|null $value
+     * @param int $change
+     * @return void
+     */
+    private static function hold(
+        #[\SensitiveParameter]
+        $value,
+        $change
+    ) {
+        if (!is_string($value) || $value === '') {
+            return;
+        }
+        $count = (isset(self::$live[$value]) ? self::$live[$value] : 0) + $change;
+        if ($count > 0) {
+            self::$live[$value] = $count;
+        } else {
+            unset(self::$live[$value]);
+        }
+    }
+
+    /**
+     * $e and every previous error with each secret a ZBSecret holds (the API
+     * keys of live clients, the SMTP password during testSmtpConfiguration)
+     * masked out of the arguments in their stack traces. PHP records every
+     * frame's arguments in a trace unless zend.exception_ignore_args is on
+     * (it is off in the official Docker images and php.ini-development, and
+     * PHP 7.0-7.3 has no such switch), and getTrace(), the string form,
+     * print_r(), var_export() and serialize() all show them, so a request URL
+     * with api_key, a parameter array or an API-Key header in any frame
+     * would carry the key. ZBException calls this as it is built, so every
+     * exception the SDK throws is covered, whatever path builds it.
+     *
+     * @param \Throwable $e
+     * @return \Throwable the same error
+     */
+    public static function scrubTrace($e)
+    {
+        $forms = array();
+        foreach (array_keys(self::$live) as $secret) {
+            $secret = (string)$secret;
+            $json = json_encode($secret);
+            foreach (array($secret, urlencode($secret), rawurlencode($secret), is_string($json) ? substr($json, 1, -1) : $secret) as $form) {
+                $forms[$form] = strlen($form);
+            }
+        }
+        if (!$forms) {
+            return $e;
+        }
+        // Longest first, so a form that contains another is masked whole.
+        arsort($forms);
+        $forms = array_keys($forms);
+        for ($error = $e; $error !== null; $error = $error->getPrevious()) {
+            $property = new \ReflectionProperty($error instanceof \Exception ? \Exception::class : \Error::class, 'trace');
+            if (\PHP_VERSION_ID < 80100) {
+                $property->setAccessible(true);
+            }
+            $trace = $property->getValue($error);
+            if (!is_array($trace)) {
+                continue;
+            }
+            foreach ($trace as $i => $frame) {
+                if (isset($frame['args']) && is_array($frame['args'])) {
+                    $trace[$i]['args'] = self::masked($frame['args'], $forms);
+                }
+            }
+            $property->setValue($error, $trace);
+        }
+        return $e;
+    }
+
+    /**
+     * @param mixed $value
+     * @param string[] $forms
+     * @return mixed $value with every form replaced by ***, in nested arrays
+     *     too; an error passed as an argument (a caught exception handed to
+     *     a helper that rebuilds it) by its class name, since its message
+     *     and trace are the unredacted ones
+     */
+    private static function masked($value, array $forms)
+    {
+        if ($value instanceof \Exception || $value instanceof \Throwable) {
+            return 'object(' . get_class($value) . ')';
+        }
+        if (is_string($value)) {
+            return str_replace($forms, '***', $value);
+        }
+        if (is_array($value)) {
+            foreach ($value as $k => $item) {
+                $value[$k] = self::masked($item, $forms);
+            }
+        }
+        return $value;
     }
 
     /**

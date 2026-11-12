@@ -123,6 +123,22 @@ class OfflineWarmupTest extends TestCase
         $this->fail('expected ZBException');
     }
 
+    public function testTimezoneOffsetTakesFractionsWithinMinus11To14()
+    {
+        foreach (array(5.5, 3.0, -11, 14) as $offset) {
+            $this->client->addSendingAccount('a@b.com', 'zb_managed', null, null, null, array('timezone_offset' => $offset));
+            // A JSON number: 3.0 goes out as 3, which the API reads as the same offset.
+            $this->assertEquals(array('timezone_offset' => $offset), $this->only()['json']['managed_sending'], (string)$offset);
+        }
+        foreach (array(-11.5, 14.5) as $offset) {
+            $error = $this->capture(function () use ($offset) {
+                $this->client->addSendingAccount('a@b.com', 'zb_managed', null, null, null, array('timezone_offset' => $offset));
+            });
+            $this->assertStringContainsString('timezone_offset', $error->getMessage());
+        }
+        $this->assertSame(array(), $this->api->take());
+    }
+
     // -- construction --------------------------------------------------------
 
     public function testTheKeyTravelsInTheApiKeyHeaderOnTheWarmupHost()

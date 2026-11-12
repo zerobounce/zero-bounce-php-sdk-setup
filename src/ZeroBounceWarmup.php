@@ -238,6 +238,11 @@ class ZeroBounceWarmup
         $status = (int)curl_getinfo($curl, CURLINFO_HTTP_CODE);
         $headerSize = (int)curl_getinfo($curl, CURLINFO_HEADER_SIZE);
         $error = curl_error($curl);
+        // PHP 7 returns the partial body of a transfer cut short (curl's
+        // CURLE_PARTIAL_FILE) instead of false: any curl error is a failure.
+        if (curl_errno($curl) !== 0) {
+            $raw = false;
+        }
         if (\PHP_VERSION_ID < 80000) {
             // A no-op from PHP 8.0, deprecated in 8.5.
             curl_close($curl);
@@ -703,6 +708,9 @@ class ZeroBounceWarmup
         if (!is_int($port) || $port < 1 || $port > 65535) {
             throw new ZBMissingParameterException('port must be 1 to 65535');
         }
+        // Held while the request runs, so every exception built meanwhile has
+        // them masked out of its stack-trace arguments (ZBSecret::scrubTrace).
+        $held = array(new ZBSecret((string)$password), new ZBSecret((string)$username));
         return $this->json('POST', '/test-smtp-configuration', array(), array(
             'from_address' => $fromAddress,
             'username' => $username,

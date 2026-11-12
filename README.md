@@ -288,7 +288,8 @@ $response = ZeroBounce::Instance()->sendFile(
     "<GENDER_COLUMN>",          // The column index of the user's gender in the file
     "<IP_ADDRESS_COLUMN>",      // The column index of the IP address in the file
     "<HAS_HEADER_ROW>",         // If the first row from the submitted file is a header row. True or False
-    true                        // Optional ninth argument: allowPhase2 — sends allow_phase_2 (validation bulk only; omit or null to skip)
+    true,                       // Optional ninth argument: allowPhase2 — sends allow_phase_2 (validation bulk only; omit or null to skip)
+    false                       // Optional tenth argument: removeDuplicate — sends remove_duplicate (the API removes duplicates by default; omit or null to skip)
 );
 $fileId = $response->fileId;    // e.g. "aaaaaaaa-zzzz-xxxx-yyyy-5003727fffff"
 ```
@@ -357,7 +358,8 @@ $response = ZeroBounce::Instance()->scoringSendFile(
     "<FILE_PATH>",              // The csv or txt file
     "<EMAIL_ADDRESS_COLUMN>",   // The column index of the email address in the file. Index starts at 1
     "<RETURN_URL>",             // The URL will be used as a callback after the file is sent
-    "<HAS_HEADER_ROW>"          // If the first row from the submitted file is a header row. True or False
+    "<HAS_HEADER_ROW>",         // If the first row from the submitted file is a header row. True or False
+    false                       // Optional: removeDuplicate — sends remove_duplicate (omit or null to skip)
 );
 $fileId = $response->fileId;    // e.g. "aaaaaaaa-zzzz-xxxx-yyyy-5003727fffff"
 ```
