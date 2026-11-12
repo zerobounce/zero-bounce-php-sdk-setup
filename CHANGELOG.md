@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `deleteInboxPlacementTest()` returns a `ZBRawJsonResponse` with empty `data` when the API answers with an empty 2xx (204 No Content), as the Go SDK does. Up to 3.0.1 it threw `ZBApiException` ("Empty response"). The other Inbox Placement calls still treat an empty body as an error.
 - `ZeroBounceWarmup::addSendingAccount()` parses `$ignoreConflict` strictly, as `ZeroBounce` parses its boolean options: `true`/`false`, `"true"`/`"false"` (any case) and `1`/`0` are accepted, and anything else throws `ZBMissingParameterException` ("ignore_conflict must be true or false") before a request is sent. Up to 3.0.1 the value was cast with `(bool)`, so `"false"` was sent as `true`.
 
+### Security
+
+- No exception thrown by `ZeroBounce` carries the API key when a response body quotes it, whatever the HTTP status: a `{"error": "Invalid API key <key>"}` or `{"success": false, "message": ...}` body, a `validateBatch()` account-level (`"all"`) error, an HTML page's title, a result-file download's error, or a proxy's error page quoting the request URL. Up to 3.0.1 these messages were redacted only on the plain GET requests and on `sendFile()`, `scoringSendFile()`, their stream forms, `getFile()` and `scoringGetFile()`; the `$usePost` forms, `validateBatch()`, the email finder, domain search and list evaluator uploads, `emailFinderGetFile()`, `domainSearchGetFile()`, `addFilter()`, `deleteFilter()`, the S3 and SFTP jobs, `sendEvaluatedFile()` and the Inbox Placement Tester passed them on unchanged. The key is now masked (raw and URL-encoded) where every JSON response is read, so each request path is covered.
+
 ## [3.0.1] - 2026-11-11
 
 ### Fixed

@@ -133,9 +133,9 @@ class CannedFileWarmup extends ZeroBounceWarmup
     /** @var array{status: int, headers: string[], body: string} */
     public $answer;
 
-    public function __construct($status, $contentType, $body)
+    public function __construct($status, $contentType, $body, $key = 'guard-key')
     {
-        parent::__construct('guard-key');
+        parent::__construct($key);
         $this->answer = array(
             'status' => $status,
             'headers' => array('HTTP/1.1 ' . $status . ' X', 'Content-Type: ' . $contentType),
@@ -616,6 +616,121 @@ return true;
         }
         $csv = new CannedFileWarmup(200, 'text/csv', "seed,provider\na@b.com,gmail\n");
         $this->assertSame("seed,provider\na@b.com,gmail\n", $csv->downloadSeeds());
+    }
+
+    // -- Warmup transport failures -------------------------------------------------
+
+    /**
+     * A refused connection and a body cut short after its 200 header are
+     * transport failures (status 0) on every Warmup method, never a success
+     * with an empty or partial payload.
+     */
+    public function testEveryWarmupRequestFailsOnATransportFailure()
+    {
+        $cutShort = $this->serve('<?php
+$csv = strpos($_SERVER["REQUEST_URI"], "/download") !== false;
+header("Content-Type: " . ($csv ? "text/csv" : "application/json"));
+header("Content-Length: 1000");
+echo $csv ? "seed,provider\na@b.com,gmail\n" : "{\"a\":1,\"b\":\"cccccccc\"}";
+return true;
+');
+        $roots = array('refused' => 'http://127.0.0.1:' . $this->freePort(), 'cut short' => $cutShort);
+        foreach ($roots as $kind => $root) {
+            $warmup = new LoopbackWarmup();
+            $warmup->loopback = $root;
+            foreach ($this->warmupCalls($warmup) as $name => $call) {
+                $error = $this->thrown($call);
+                $label = $name . ' (' . $kind . ')';
+                $this->assertInstanceOf(ZBApiException::class, $error, $label);
+                $this->assertSame(0, $error->getStatusCode(), $label);
+                $this->assertNotSame('', $error->getMessage(), $label);
+                $this->assertStringNotContainsString('guard-key', $error->getMessage(), $label);
+            }
+        }
+    }
+
+    // -- the key in a response body -----------------------------------------------
+
+    /**
+     * Bodies that quote the key: an API message naming it, a proxy echoing the
+     * request URL, an HTML title, on a 2xx and on a 4xx.
+     *
+     * @return array<string, array{0: int, 1: string, 2: string}>
+     */
+    private function keyEchoBodies($key)
+    {
+        $encoded = rawurlencode($key);
+        return array(
+            '200 {"error"}' => array(200, 'application/json', '{"error":"Invalid API key ' . $key . '"}'),
+            '200 {"success":false}' => array(200, 'application/json', '{"success":false,"message":"Invalid API key ' . $key . '"}'),
+            '200 batch "all" error' => array(200, 'application/json',
+                '{"email_batch":[],"errors":[{"email_address":"all","error":"Invalid API key ' . $key . '"}]}'),
+            '200 HTML title' => array(200, 'text/html', '<html><head><title>Denied ' . $key . '</title></head></html>'),
+            '400 text quoting the URL' => array(400, 'text/plain', 'Bad request: https://x.example/v2/x?api_key=' . $encoded),
+            '400 {"error"}' => array(400, 'application/json', '{"error":"Invalid API key ' . $key . '"}'),
+        );
+    }
+
+    /**
+     * Runs $call and checks that no error it throws carries the key, in its
+     * raw or URL-encoded form, in its message or any previous error's.
+     *
+     * @return bool whether it threw
+     */
+    private function assertKeyNotEchoed($key, $label, callable $call)
+    {
+        try {
+            $this->quietly($call);
+        } catch (\Exception $e) {
+            $text = '';
+            for ($error = $e; $error !== null; $error = $error->getPrevious()) {
+                $text .= get_class($error) . ': ' . $error->getMessage() . "\n";
+            }
+            foreach (array($key, rawurlencode($key), urlencode($key)) as $form) {
+                $this->assertStringNotContainsString($form, $text, $label);
+            }
+            return true;
+        }
+        return false;
+    }
+
+    public function testNoErrorFromAnyRequestCarriesAKeyTheBodyQuotes()
+    {
+        $key = 'echo+key/42';
+        $out = $this->dir . '/result.csv';
+        foreach ($this->keyEchoBodies($key) as $label => $answer) {
+            list($status, $type, $body) = $answer;
+            $client = new CannedFileClient($status, $type, $body);
+            $client->initialize($key);
+            $calls = $this->sweepCalls($client, $out);
+            $this->assertSame(array(), array_values(array_diff($this->requestMethodNames(), array_keys($calls))));
+            foreach ($calls as $name => $variants) {
+                foreach ($variants as $call) {
+                    $threw = $this->assertKeyNotEchoed($key, $name . ': ' . $label, $call);
+                    // Each of these bodies is an error on every call; the batch
+                    // "all" error is one on validateBatch.
+                    if ($label !== '200 batch "all" error' || $name === 'validateBatch') {
+                        $this->assertTrue($threw, $name . ' returned for ' . $label);
+                    }
+                }
+            }
+            $this->assertSame(array(), $this->leftovers(), $label . ' left a file');
+        }
+    }
+
+    public function testNoWarmupErrorCarriesAKeyTheBodyQuotes()
+    {
+        $key = 'echo+key/42';
+        foreach ($this->keyEchoBodies($key) as $label => $answer) {
+            list($status, $type, $body) = $answer;
+            $warmup = new CannedFileWarmup($status, $type, $body, $key);
+            foreach ($this->warmupCalls($warmup) as $name => $call) {
+                $threw = $this->assertKeyNotEchoed($key, 'Warmup ' . $name . ': ' . $label, $call);
+                if ($status >= 400) {
+                    $this->assertTrue($threw, 'Warmup ' . $name . ' returned for ' . $label);
+                }
+            }
+        }
     }
 
     // -- initialize() ------------------------------------------------------------

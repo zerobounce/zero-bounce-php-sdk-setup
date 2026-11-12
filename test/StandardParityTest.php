@@ -510,6 +510,19 @@ while (time() < $until && ($c = @stream_socket_accept($server, 1)) !== false || 
 
     // -- the key in errors, traces and dumps -----------------------------------
 
+    public function testTrailingSlashesOnTheListEvaluatorAndInboxPlacementUrlsAreDropped()
+    {
+        $client = new CannedClient('{"success":true}');
+        $client->initialize('parity-key', null, 'https://le.example.test/v2/listevaluator//', 'https://ipt.example.test/api/ipt///');
+        $client->getListEvaluatorResult('f1');
+        $client->getInboxPlacementProviders();
+        $client->getInboxPlacementTest(7);
+        $this->assertCount(3, $client->urls);
+        $this->assertStringStartsWith('https://le.example.test/v2/listevaluator/f1/?', $client->urls[0]);
+        $this->assertSame('https://ipt.example.test/api/ipt/providers', $client->urls[1]);
+        $this->assertSame('https://ipt.example.test/api/ipt/test/7', $client->urls[2]);
+    }
+
     public function testTheKeyIsMaskedInErrorMessages()
     {
         $key = 'mask+me/key=1';

@@ -1313,6 +1313,12 @@ class ZeroBounce
     }
 
     /**
+     * The JSON body of a successful response. Every JSON request (GET, form,
+     * JSON and multipart POST, the Inbox Placement Tester) reads its answer
+     * here, so this is where messages built from a body - which can quote the
+     * key: "Invalid API key <key>", a proxy echoing the request URL, an HTML
+     * title - are redacted, whatever the status.
+     *
      * @param array{status?: int, headers?: string[], body?: string} $result
      * @return string
      * @throws ZBApiException an HTTP error status, an empty, HTML or non-JSON
@@ -1320,6 +1326,21 @@ class ZeroBounce
      * @throws ZBException a bare account-level error (invalid key, no credits)
      */
     private function readJsonBody(array $result)
+    {
+        try {
+            return $this->checkedJsonBody($result);
+        } catch (ZBException $e) {
+            throw $this->redactedException($e);
+        }
+    }
+
+    /**
+     * readJsonBody without the redaction.
+     *
+     * @param array{status?: int, headers?: string[], body?: string} $result
+     * @return string
+     */
+    private function checkedJsonBody(array $result)
     {
         $status = isset($result['status']) ? (int)$result['status'] : 0;
         $body = isset($result['body']) ? (string)$result['body'] : '';
@@ -1370,8 +1391,9 @@ class ZeroBounce
             if ($message === '') {
                 $message = 'Invalid API Key or your account ran out of credits';
             }
-            // Reported on an HTTP 200, like a dead key on the other calls.
-            throw new ZBApiException($message, 200);
+            // Reported on an HTTP 200, like a dead key on the other calls. The
+            // text comes from the body, which can quote the key.
+            throw new ZBApiException($this->redactApiKey($message), 200);
         }
     }
 
@@ -1388,7 +1410,7 @@ class ZeroBounce
         $code = self::parseHttpStatusFromHeaders($headers);
         $contentType = self::parseContentTypeFromHeaders($headers);
         if (trim($body) === '' || $code > 299 || ZBHttpError::isHtml($body, $headers) || self::shouldTreatGetFileBodyAsError($body, $contentType)) {
-            throw new ZBApiException(ZBHttpError::message($code, $body, $headers), $code);
+            throw new ZBApiException($this->redactApiKey(ZBHttpError::message($code, $body, $headers)), $code);
         }
         $folder = dirname($downloadPath);
         if ($folder !== '' && $folder !== '.' && !file_exists($folder)) {
