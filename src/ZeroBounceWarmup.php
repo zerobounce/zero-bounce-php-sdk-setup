@@ -198,7 +198,9 @@ class ZeroBounceWarmup
                 $contentType = strtolower(trim(substr((string)$header, strlen('content-type:'))));
             }
         }
-        if (trim($text) === '' || strpos($contentType, 'application/json') !== false) {
+        // An HTML page on a 200 (a proxy's "Access denied") is not CSV either.
+        if (trim($text) === '' || strpos($contentType, 'application/json') !== false
+            || ZBHttpError::isHtml($text, (array)$result['headers'])) {
             throw new ZBApiException(
                 $this->redact($this->messageFromBody($text, (int)$result['status'])),
                 (int)$result['status']
