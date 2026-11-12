@@ -100,16 +100,7 @@ class ZeroBounceWarmup
     private function redact($text, array $secrets = array())
     {
         $key = $this->apiKey === null ? null : $this->apiKey->value();
-        $all = array_merge(array($key), $secrets);
-        foreach ($all as $secret) {
-            if ($secret === null || $secret === '') {
-                continue;
-            }
-            foreach (array($secret, rawurlencode($secret)) as $form) {
-                $text = str_replace($form, '***', $text);
-            }
-        }
-        return $text;
+        return ZBSecret::redact($text, array_merge(array($key), $secrets));
     }
 
     /**
@@ -202,13 +193,30 @@ class ZeroBounceWarmup
         }
         // An HTML page on a 200 (a proxy's "Access denied") is not CSV either.
         if (trim($text) === '' || strpos($contentType, 'application/json') !== false
-            || ZBHttpError::isHtml($text, (array)$result['headers'])) {
+            || ZBHttpError::isHtml($text, (array)$result['headers']) || self::isJsonBody($text)) {
             throw new ZBApiException(
                 $this->redact($this->messageFromBody($text, (int)$result['status'])),
                 (int)$result['status']
             );
         }
         return $text;
+    }
+
+    /**
+     * Whether a CSV download's body is a JSON object or array: an API error
+     * under a CSV content type.
+     *
+     * @param string $text
+     * @return bool
+     */
+    private static function isJsonBody($text)
+    {
+        $trimmed = trim($text);
+        if ($trimmed === '' || ($trimmed[0] !== '{' && $trimmed[0] !== '[')) {
+            return false;
+        }
+        json_decode($trimmed);
+        return json_last_error() === JSON_ERROR_NONE;
     }
 
     /**
@@ -454,6 +462,9 @@ class ZeroBounceWarmup
                 if (!is_numeric($offset) || $offset < -11 || $offset > 14) {
                     throw new ZBMissingParameterException('timezone_offset must be -11 to 14');
                 }
+            }
+            if (isset($managedSending['weekdays_only'])) {
+                $managedSending['weekdays_only'] = self::strictBool($managedSending['weekdays_only'], 'weekdays_only');
             }
             if (isset($managedSending['warmup_start_date'])) {
                 $managedSending['warmup_start_date'] =

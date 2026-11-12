@@ -87,20 +87,10 @@ final class ZBSecret
      */
     public static function scrubTrace($e)
     {
-        $forms = array();
-        foreach (array_keys(self::$live) as $secret) {
-            $secret = (string)$secret;
-            $json = json_encode($secret);
-            foreach (array($secret, urlencode($secret), rawurlencode($secret), is_string($json) ? substr($json, 1, -1) : $secret) as $form) {
-                $forms[$form] = strlen($form);
-            }
-        }
+        $forms = self::forms(array_map('strval', array_keys(self::$live)));
         if (!$forms) {
             return $e;
         }
-        // Longest first, so a form that contains another is masked whole.
-        arsort($forms);
-        $forms = array_keys($forms);
         for ($error = $e; $error !== null; $error = $error->getPrevious()) {
             $property = new \ReflectionProperty($error instanceof \Exception ? \Exception::class : \Error::class, 'trace');
             if (\PHP_VERSION_ID < 80100) {
@@ -118,6 +108,57 @@ final class ZBSecret
             $property->setValue($error, $trace);
         }
         return $e;
+    }
+
+    /**
+     * Every form the secrets can take in a body or URL echoed back to us: raw,
+     * URL-encoded (+ and %20 styles) and JSON-escaped (with and without "\/",
+     * non-ASCII as is or as \uXXXX). Longest first, so a form that contains
+     * another is masked whole.
+     *
+     * @param array<int, string|null> $secrets
+     * @return string[]
+     */
+    public static function forms(
+        #[\SensitiveParameter]
+        array $secrets
+    ) {
+        $forms = array();
+        foreach ($secrets as $secret) {
+            if (!is_string($secret) || $secret === '') {
+                continue;
+            }
+            $candidates = array($secret, urlencode($secret), rawurlencode($secret));
+            foreach (array(0, JSON_UNESCAPED_SLASHES, JSON_UNESCAPED_UNICODE, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) as $flags) {
+                $json = json_encode($secret, $flags);
+                if (is_string($json)) {
+                    $candidates[] = substr($json, 1, -1);
+                }
+            }
+            foreach ($candidates as $form) {
+                if ($form !== '') {
+                    $forms[$form] = strlen($form);
+                }
+            }
+        }
+        arsort($forms);
+        return array_map('strval', array_keys($forms));
+    }
+
+    /**
+     * $text with every form of every secret replaced by ***.
+     *
+     * @param string $text
+     * @param array<int, string|null> $secrets
+     * @return string
+     */
+    public static function redact(
+        $text,
+        #[\SensitiveParameter]
+        array $secrets
+    ) {
+        $forms = self::forms($secrets);
+        return $forms ? str_replace($forms, '***', (string)$text) : (string)$text;
     }
 
     /**

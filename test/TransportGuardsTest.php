@@ -526,7 +526,8 @@ return true;
                     $limit = isset($options[CURLOPT_TIMEOUT]) ? $options[CURLOPT_TIMEOUT] : null;
                     if ($limit === 0) {
                         $this->assertSame(1, $options[CURLOPT_LOW_SPEED_LIMIT], $name);
-                        $this->assertGreaterThan(0, $options[CURLOPT_LOW_SPEED_TIME], $name);
+                        // The default stall limit of the client the constructor builds.
+                        $this->assertSame(120, $options[CURLOPT_LOW_SPEED_TIME], $name . ' stall limit');
                     } else {
                         $this->assertSame(120, $limit, $name . ' has no overall timeout');
                     }
@@ -592,6 +593,103 @@ return true;
                 $this->assertFileDoesNotExist($path, $label);
                 $this->assertSame(array(), $this->leftovers(), $label);
             }
+        }
+    }
+
+    private static function isDownload($name)
+    {
+        return stripos($name, 'getfile') !== false;
+    }
+
+    /**
+     * A text/html answer is an error by its content type alone: a JSON body
+     * on the JSON calls, a CSV line on the downloads, with no HTML tag.
+     */
+    public function testATextHtmlContentTypeIsAnErrorOnEveryCall()
+    {
+        $path = $this->dir . '/result.csv';
+        $answers = array(
+            'json' => '{"success":true,"Credits":"5","file_id":"f1","email_batch":[],"status":"valid"}',
+            'csv' => "email,status\na@example.com,valid\n",
+        );
+        $accepted = array();
+        foreach ($answers as $kind => $body) {
+            $client = new CannedFileClient(200, 'text/html; charset=UTF-8', $body);
+            $client->initialize('guard-key');
+            foreach ($this->sweepCalls($client, $path) as $name => $variants) {
+                if (self::isDownload($name) !== ($kind === 'csv')) {
+                    continue;
+                }
+                foreach ($variants as $call) {
+                    $error = $this->thrown($call);
+                    if (!$error instanceof ZBApiException) {
+                        $accepted[] = $name . ' (' . $kind . ')';
+                        continue;
+                    }
+                    $this->assertSame(200, $error->getStatusCode(), $name);
+                }
+            }
+            $this->assertFileDoesNotExist($path, $kind);
+        }
+        $this->assertSame(array(), $accepted);
+        foreach (array('downloadSeeds' => array(), 'downloadStatistics' => array('a@b.com')) as $name => $args) {
+            $warmup = new CannedFileWarmup(200, 'text/html', $answers['csv']);
+            $error = $this->thrown(function () use ($warmup, $name, $args) {
+                call_user_func_array(array($warmup, $name), $args);
+            });
+            $this->assertInstanceOf(ZBApiException::class, $error, $name);
+            $this->assertSame(200, $error->getStatusCode(), $name);
+        }
+    }
+
+    /** "success": "false" as a string, any case, is an error on every JSON call. */
+    public function testASuccessOfTheStringFalseIsAnErrorOnEveryJsonCall()
+    {
+        $path = $this->dir . '/result.csv';
+        $accepted = array();
+        foreach (array('{"success":"false","file_id":"f1"}', '{"success":" False ","file_id":"f1"}') as $body) {
+            $client = new CannedFileClient(200, 'application/json', $body);
+            $client->initialize('guard-key');
+            foreach ($this->sweepCalls($client, $path) as $name => $variants) {
+                if (self::isDownload($name)) {
+                    continue;
+                }
+                foreach ($variants as $call) {
+                    $error = $this->thrown($call);
+                    if (!$error instanceof ZBApiException) {
+                        $accepted[] = $name . ' ' . $body;
+                        continue;
+                    }
+                    $this->assertSame(200, $error->getStatusCode(), $name);
+                }
+            }
+        }
+        $this->assertSame(array(), $accepted);
+    }
+
+    /** The API's JSON error under a CSV content type: only the body tells it apart. */
+    public function testAJsonErrorUnderACsvContentTypeIsNotSaved()
+    {
+        $path = $this->dir . '/result.csv';
+        foreach (array('{"success":false,"message":"File cannot be found."}', "  \n{\"error\":\"File cannot be found.\"}") as $body) {
+            $client = new CannedFileClient(200, 'text/csv', $body);
+            $client->initialize('guard-key');
+            $calls = 0;
+            foreach ($this->sweepCalls($client, $path) as $name => $variants) {
+                if (!self::isDownload($name)) {
+                    continue;
+                }
+                foreach ($variants as $call) {
+                    $calls++;
+                    $error = $this->thrown($call);
+                    $this->assertInstanceOf(ZBApiException::class, $error, $name . ' ' . $body);
+                    $this->assertSame(200, $error->getStatusCode(), $name);
+                    $this->assertStringContainsString('File cannot be found.', $error->getMessage(), $name);
+                    $this->assertFileDoesNotExist($path, $name);
+                    $this->assertSame(array(), $this->leftovers(), $name);
+                }
+            }
+            $this->assertGreaterThanOrEqual(4, $calls);
         }
     }
 
@@ -707,22 +805,45 @@ return true;
 
     /**
      * Bodies that quote the key: an API message naming it, a proxy echoing the
-     * request URL, an HTML title, on a 2xx and on a 4xx.
+     * request URL, an HTML title, on a 2xx and on a 4xx. JSON bodies quote it
+     * JSON-escaped, with "/" escaped (as PHP writes it) and not (as most
+     * servers do).
      *
      * @return array<string, array{0: int, 1: string, 2: string}>
      */
     private function keyEchoBodies($key)
     {
-        $encoded = rawurlencode($key);
-        return array(
-            '200 {"error"}' => array(200, 'application/json', '{"error":"Invalid API key ' . $key . '"}'),
-            '200 {"success":false}' => array(200, 'application/json', '{"success":false,"message":"Invalid API key ' . $key . '"}'),
-            '200 batch "all" error' => array(200, 'application/json',
-                '{"email_batch":[],"errors":[{"email_address":"all","error":"Invalid API key ' . $key . '"}]}'),
+        $bodies = array(
             '200 HTML title' => array(200, 'text/html', '<html><head><title>Denied ' . $key . '</title></head></html>'),
-            '400 text quoting the URL' => array(400, 'text/plain', 'Bad request: https://x.example/v2/x?api_key=' . $encoded),
-            '400 {"error"}' => array(400, 'application/json', '{"error":"Invalid API key ' . $key . '"}'),
+            '400 text quoting the URL' => array(400, 'text/plain', 'Bad request: https://x.example/v2/x?api_key=' . rawurlencode($key)),
+            '400 text quoting the raw key' => array(400, 'text/plain', 'Bad request for ' . $key),
         );
+        $escaped = array(
+            'escaped' => substr(json_encode($key), 1, -1),
+            'escaped, plain /' => substr(json_encode($key, JSON_UNESCAPED_SLASHES), 1, -1),
+        );
+        foreach ($escaped as $how => $form) {
+            $bodies['200 {"error"} ' . $how] = array(200, 'application/json', '{"error":"Invalid API key ' . $form . '"}');
+            $bodies['200 {"success":false} ' . $how] = array(200, 'application/json', '{"success":false,"message":"Invalid API key ' . $form . '"}');
+            $bodies['200 batch "all" error ' . $how] = array(200, 'application/json',
+                '{"email_batch":[],"errors":[{"email_address":"all","error":"Invalid API key ' . $form . '"}]}');
+            $bodies['400 {"error"} ' . $how] = array(400, 'application/json', '{"error":"Invalid API key ' . $form . '"}');
+        }
+        return $bodies;
+    }
+
+    /**
+     * A secret in every form a body can quote it: raw, URL-encoded and
+     * JSON-escaped.
+     *
+     * @return string[]
+     */
+    private static function echoForms($secret)
+    {
+        return array_values(array_unique(array(
+            $secret, rawurlencode($secret), urlencode($secret),
+            substr(json_encode($secret), 1, -1), substr(json_encode($secret, JSON_UNESCAPED_SLASHES), 1, -1),
+        )));
     }
 
     /**
@@ -740,7 +861,7 @@ return true;
             for ($error = $e; $error !== null; $error = $error->getPrevious()) {
                 $text .= get_class($error) . ': ' . $error->getMessage() . "\n";
             }
-            foreach (array($key, rawurlencode($key), urlencode($key)) as $form) {
+            foreach (self::echoForms($key) as $form) {
                 $this->assertStringNotContainsString($form, $text, $label);
             }
             return true;
@@ -750,7 +871,8 @@ return true;
 
     public function testNoErrorFromAnyRequestCarriesAKeyTheBodyQuotes()
     {
-        $key = 'echo+key/42';
+        // Each character an encoding changes: '"', '/', '+' and '%'.
+        $key = 'echo"key/4+2%25';
         $out = $this->dir . '/result.csv';
         foreach ($this->keyEchoBodies($key) as $label => $answer) {
             list($status, $type, $body) = $answer;
@@ -763,7 +885,7 @@ return true;
                     $threw = $this->assertKeyNotEchoed($key, $name . ': ' . $label, $call);
                     // Each of these bodies is an error on every call; the batch
                     // "all" error is one on validateBatch.
-                    if ($label !== '200 batch "all" error' || $name === 'validateBatch') {
+                    if (strpos($label, 'batch "all"') === false || $name === 'validateBatch') {
                         $this->assertTrue($threw, $name . ' returned for ' . $label);
                     }
                 }
@@ -774,7 +896,8 @@ return true;
 
     public function testNoWarmupErrorCarriesAKeyTheBodyQuotes()
     {
-        $key = 'echo+key/42';
+        // Each character an encoding changes: '"', '/', '+' and '%'.
+        $key = 'echo"key/4+2%25';
         $bodies = $this->keyEchoBodies($key);
         // Not JSON, on a 200: each JSON call builds its error from this text.
         $bodies['200 text quoting the key'] = array(200, 'text/plain', 'Denied for ' . $key . ' at https://x.example/?k=' . rawurlencode($key));

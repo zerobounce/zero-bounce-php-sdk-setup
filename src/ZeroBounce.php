@@ -999,12 +999,7 @@ class ZeroBounce
      */
     private function redactApiKey($message)
     {
-        $message = (string) $message;
-        $key = $this->apiKey();
-        if (!$key) {
-            return $message;
-        }
-        return str_replace(array($key, urlencode($key), rawurlencode($key)), '***', $message);
+        return ZBSecret::redact($message, array($this->apiKey()));
     }
 
     /**

@@ -397,6 +397,26 @@ class OfflineWarmupTest extends TestCase
         $this->assertArrayNotHasKey('ignore_conflict', $this->only()['json']);
     }
 
+    public function testAddSendingAccountParsesWeekdaysOnlyStrictly()
+    {
+        // managed_sending.weekdays_only is a JSON boolean, parsed like ignore_conflict.
+        $accepted = array(
+            array(false, false), array('false', false), array('FALSE', false), array(0, false), array('0', false),
+            array(true, true), array('true', true), array(1, true), array('1', true),
+        );
+        foreach ($accepted as $case) {
+            $this->client->addSendingAccount('a@b.com', 'zb_managed', null, null, null, array('weekdays_only' => $case[0]));
+            $this->assertSame($case[1], $this->only()['json']['managed_sending']['weekdays_only'], var_export($case[0], true));
+        }
+        foreach (array('junk', 'yes', '', 2, 1.0, array()) as $bad) {
+            $error = $this->capture(function () use ($bad) {
+                $this->client->addSendingAccount('a@b.com', 'zb_managed', null, null, null, array('weekdays_only' => $bad));
+            });
+            $this->assertStringContainsString('weekdays_only', $error->getMessage());
+        }
+        $this->assertSame(array(), $this->api->take());
+    }
+
     public function testAddSendingAccountChecksTheZbManagedPayload()
     {
         $this->capture(function () {
@@ -540,6 +560,63 @@ class OfflineWarmupTest extends TestCase
         $this->api->reply(200, 'application/json', '{"message":"No statistics for this address."}');
         $error = $this->capture(function () { $this->client->downloadSeeds(); });
         $this->assertSame('No statistics for this address.', $error->getMessage());
+    }
+
+    public function testAJsonBodyUnderACsvContentTypeIsAnError()
+    {
+        $bodies = array('{"error":"c_from not found"}', "  \n{\"success\":false,\"message\":\"no seeds\"}", '[]');
+        foreach ($bodies as $body) {
+            foreach (array('downloadSeeds' => array(), 'downloadStatistics' => array('a@b.com')) as $name => $args) {
+                $this->api->reply(200, 'text/csv', $body);
+                $error = $this->capture(function () use ($name, $args) {
+                    call_user_func_array(array($this->client, $name), $args);
+                });
+                $this->assertInstanceOf(ZBApiException::class, $error, $name . ' ' . $body);
+                $this->assertSame(200, $error->getStatusCode(), $name . ' ' . $body);
+                $this->api->take();
+            }
+        }
+    }
+
+    public function testAnEmptyBodyIsNotACsv()
+    {
+        foreach (array('', "  \n") as $body) {
+            foreach (array('downloadSeeds' => array(), 'downloadStatistics' => array('a@b.com')) as $name => $args) {
+                $this->api->reply(200, 'text/csv', $body);
+                $error = $this->capture(function () use ($name, $args) {
+                    call_user_func_array(array($this->client, $name), $args);
+                });
+                $this->assertInstanceOf(ZBApiException::class, $error, $name);
+                $this->assertSame(200, $error->getStatusCode(), $name);
+                $this->api->take();
+            }
+        }
+    }
+
+    public function testSmtpCredentialsAreMaskedInEveryForm()
+    {
+        foreach (array('pw"with/slash+plus%41', 'pw\u00e9-unicode') as $password) {
+            $password = json_decode('"' . str_replace('"', '\"', $password) . '"');
+            $forms = array_values(array_unique(array(
+                $password, rawurlencode($password), urlencode($password),
+                substr(json_encode($password), 1, -1),
+                substr(json_encode($password, JSON_UNESCAPED_SLASHES), 1, -1),
+                substr(json_encode($password, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), 1, -1),
+            )));
+            foreach (array_slice($forms, 1) as $form) {
+                foreach (array(array(400, 'application/json', '{"error":"login failed: ' . $form . '"}'),
+                               array(500, 'text/plain', 'login failed: ' . $form)) as $answer) {
+                    $this->api->reply($answer[0], $answer[1], $answer[2]);
+                    $error = $this->capture(function () use ($password) {
+                        $this->client->testSmtpConfiguration('a@b.com', 'user', $password, 'smtp.example.com', 587);
+                    });
+                    foreach ($forms as $shown) {
+                        $this->assertStringNotContainsString($shown, $error->getMessage(), $answer[2]);
+                    }
+                    $this->api->take();
+                }
+            }
+        }
     }
 
     public function testTheHttpStatusIsOnTheError()

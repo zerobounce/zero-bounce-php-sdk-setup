@@ -573,6 +573,52 @@ scenario('no secret in any error\'s stack-trace arguments', function () use ($tm
     }
 });
 
+// PHP 7 reports a transfer cut short (CURLE_PARTIAL_FILE) as a success, so
+// the SDK checks curl_errno itself. Only this floor run can see that guard
+// fail: a CSV result file whose 200 promises more bytes than it sends must be
+// an error with status 0 and leave no file, streamed or not.
+scenario('a result file cut short', function () use ($tmp) {
+    $router = tempnam(sys_get_temp_dir(), 'zb-smoke-router-');
+    file_put_contents($router, '<?php header("Content-Type: text/csv"); header("Content-Length: 100000");'
+        . ' echo str_repeat("email,status\na@example.com,valid\n", 100); flush(); return true;');
+    $server = stream_socket_server('tcp://127.0.0.1:0');
+    $name = stream_socket_get_name($server, false);
+    fclose($server);
+    $port = (int)substr(strrchr($name, ':'), 1);
+    $process = proc_open('exec ' . escapeshellarg(PHP_BINARY) . ' -S 127.0.0.1:' . $port . ' ' . escapeshellarg($router),
+        array(0 => array('pipe', 'r'), 1 => array('file', '/dev/null', 'w'), 2 => array('file', '/dev/null', 'w')), $pipes);
+    for ($i = 0; $i < 100 && !($probe = @fsockopen('127.0.0.1', $port, $errno, $errstr, 0.1)); $i++) {
+        usleep(20000);
+    }
+    if (!empty($probe)) {
+        fclose($probe);
+    }
+    try {
+        TraceSecrets::$root = 'http://127.0.0.1:' . $port;
+        $client = new TraceLoopbackClient();
+        $client->initialize('cut-key');
+        $stream = new ZBGetFileOptions();
+        $stream->stream = true;
+        $path = $tmp . '-cut.csv';
+        $calls = array(
+            'getFile' => function () use ($client, $path) { return $client->getFile('f1', $path); },
+            'getFile stream' => function () use ($client, $path, $stream) { return $client->getFile('f1', $path, $stream); },
+            'scoringGetFile stream' => function () use ($client, $path, $stream) { return $client->scoringGetFile('f1', $path, $stream); },
+        );
+        foreach ($calls as $label => $call) {
+            $error = rejected($call);
+            check($error instanceof ZBException, 'cut short: ' . $label . ' is an error');
+            check(!($error instanceof ZBApiException) || $error->getStatusCode() === 0, 'cut short: ' . $label . ' has status 0');
+            check(!file_exists($path), 'cut short: ' . $label . ' left no file');
+            @unlink($path);
+        }
+    } finally {
+        proc_terminate($process);
+        proc_close($process);
+        @unlink($router);
+    }
+});
+
 echo 'PHP ' . PHP_VERSION . ': ' . $checks . ' checks, ' . count($deprecations) . " expected deprecation(s)\n";
 if ($failures) {
     echo count($failures) . " failure(s):\n  - " . implode("\n  - ", $failures) . "\n";

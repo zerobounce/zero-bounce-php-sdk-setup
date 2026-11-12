@@ -241,6 +241,9 @@ class StrictBooleanSweepTest extends TestCase
         foreach ($this->booleansByMethod() as $names) {
             $known = array_merge($known, $names);
         }
+        // weekdays_only is a key of Warmup's managedSending array:
+        // OfflineWarmupTest::testAddSendingAccountParsesWeekdaysOnlyStrictly.
+        $known[] = 'weekdays_only';
         $this->assertSame(array(), array_values(array_diff($parsed, $known)));
     }
 
