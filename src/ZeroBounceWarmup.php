@@ -12,6 +12,8 @@ namespace ZeroBounce\SDK;
  */
 class ZeroBounceWarmup
 {
+    use ZBStrictBool;
+
     const DefaultBaseUrl = 'https://warmup-api.zerobounce.net';
     const BasePath = '/api/v1/warmup';
 
@@ -420,7 +422,8 @@ class ZeroBounceWarmup
             }
         }
         if ($ignoreConflict !== null) {
-            $body['ignore_conflict'] = (bool)$ignoreConflict;
+            // Parsed strictly, as ZeroBounce parses its boolean options: "false" is false.
+            $body['ignore_conflict'] = self::strictBool($ignoreConflict, 'ignore_conflict');
         }
         if ($emailContent !== null) {
             if (!is_array($emailContent)) {

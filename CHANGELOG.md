@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ZeroBounceWarmup::downloadSeeds()` and `downloadStatistics()` throw `ZBApiException` (with the HTTP status) for an HTML page on a 200, such as a proxy's "Access denied" page, as the Python SDK does. Up to 3.0.1 the page was returned as the CSV text.
 - `initialize()` is all-or-nothing: every argument is checked before any is stored, so a call that throws (an `http://` URL) leaves the client exactly as it was. Up to 3.0.1 a bad list evaluator, Inbox Placement or bulk URL threw after the new key and base URL had already been applied.
 - `deleteInboxPlacementTest()` returns a `ZBRawJsonResponse` with empty `data` when the API answers with an empty 2xx (204 No Content), as the Go SDK does. Up to 3.0.1 it threw `ZBApiException` ("Empty response"). The other Inbox Placement calls still treat an empty body as an error.
+- `ZeroBounceWarmup::addSendingAccount()` parses `$ignoreConflict` strictly, as `ZeroBounce` parses its boolean options: `true`/`false`, `"true"`/`"false"` (any case) and `1`/`0` are accepted, and anything else throws `ZBMissingParameterException` ("ignore_conflict must be true or false") before a request is sent. Up to 3.0.1 the value was cast with `(bool)`, so `"false"` was sent as `true`.
 
 ## [3.0.1] - 2026-11-11
 
