@@ -358,6 +358,29 @@ class OfflineWarmupTest extends TestCase
         );
     }
 
+    public function testAddSendingAccountParsesIgnoreConflictStrictly()
+    {
+        // Parsed as ZeroBounce parses its boolean options: "false" is false, anything unrecognised is rejected.
+        $accepted = array(
+            array(false, false), array('false', false), array('FALSE', false), array(0, false), array('0', false),
+            array(true, true), array('true', true), array(1, true), array('1', true),
+        );
+        foreach ($accepted as $case) {
+            $this->client->addSendingAccount('a@b.com', 'self_managed', 0, $case[0]);
+            $this->assertSame($case[1], $this->only()['json']['ignore_conflict'], var_export($case[0], true));
+        }
+        foreach (array('junk', 'yes', '', 2, 1.0, array()) as $bad) {
+            $error = $this->capture(function () use ($bad) {
+                $this->client->addSendingAccount('a@b.com', 'self_managed', 0, $bad);
+            });
+            $this->assertStringContainsString('ignore_conflict', $error->getMessage());
+        }
+        $this->assertSame(array(), $this->api->take());
+
+        $this->client->addSendingAccount('a@b.com', 'self_managed', 0, null);
+        $this->assertArrayNotHasKey('ignore_conflict', $this->only()['json']);
+    }
+
     public function testAddSendingAccountChecksTheZbManagedPayload()
     {
         $this->capture(function () {
