@@ -619,6 +619,70 @@ class OfflineWarmupTest extends TestCase
         }
     }
 
+    /**
+     * Each spelling of a secret, built here with the encoders themselves, is
+     * masked, as the Warmup key and as the SMTP password. The first secret
+     * holds every character an encoding changes; the second a non-ASCII
+     * character next to "/" and '"'. Each spelling has a value no other has
+     * for one of them, so dropping any one from ZBSecret::forms fails.
+     */
+    public function testEverySpellingOfASecretIsMasked()
+    {
+        $secrets = array("a b\"/+%&=<>'\\", "pw\u{e9}/\"x");
+        $spellings = function ($secret) {
+            $json = substr(json_encode($secret), 1, -1);
+            return array(
+                'raw' => $secret,
+                'URL-encoded, +' => urlencode($secret),
+                'URL-encoded, %20' => rawurlencode($secret),
+                'JSON' => $json,
+                'JSON, plain /' => substr(json_encode($secret, JSON_UNESCAPED_SLASHES), 1, -1),
+                'JSON, non-ASCII as is' => substr(json_encode($secret, JSON_UNESCAPED_UNICODE), 1, -1),
+                'JSON, plain / and non-ASCII' =>
+                    substr(json_encode($secret, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), 1, -1),
+                'URL-encoded JSON, +' => urlencode($json),
+                'URL-encoded JSON, %20' => rawurlencode($json),
+            );
+        };
+        foreach (array_keys($spellings($secrets[0])) as $label) {
+            $unique = false;
+            foreach ($secrets as $secret) {
+                $all = $spellings($secret);
+                $unique = $unique || count(array_keys($all, $all[$label], true)) === 1;
+            }
+            $this->assertTrue($unique, $label . ' has no value of its own');
+        }
+
+        $leaks = array();
+        foreach ($secrets as $secret) {
+            foreach ($spellings($secret) as $label => $form) {
+                $calls = array(
+                    'key' => function () use ($secret) {
+                        (new OfflineWarmupClient($this->api, $secret))->listSendingAccounts();
+                    },
+                    'password' => function () use ($secret) {
+                        $this->client->testSmtpConfiguration('a@b.com', 'smtp-user-1', $secret, 'smtp.example.com', 587);
+                    },
+                );
+                $answers = array(
+                    array(500, 'text/plain', 'rejected: ' . $form),
+                    array(200, 'text/html', '<html><head><title>rejected ' . $form . '</title></head></html>'),
+                );
+                foreach ($answers as $answer) {
+                    foreach ($calls as $what => $call) {
+                        $this->api->reply($answer[0], $answer[1], $answer[2]);
+                        $error = $this->capture($call);
+                        if (strpos($error->getMessage(), $form) !== false) {
+                            $leaks[] = $what . ' ' . $label . ' ' . $answer[0] . ' ' . $secret;
+                        }
+                        $this->api->take();
+                    }
+                }
+            }
+        }
+        $this->assertSame(array(), $leaks);
+    }
+
     public function testTheHttpStatusIsOnTheError()
     {
         $this->api->reply(429, 'application/json', '{"message":"Custom rule was updated less than 7 days ago."}');

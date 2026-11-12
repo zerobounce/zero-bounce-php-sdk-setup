@@ -162,8 +162,11 @@ class ZeroBounceWarmup
         if ((int)$result['status'] === 204 || trim($text) === '') {
             return null;
         }
-        $decoded = json_decode($text, true);
-        if ($decoded === null && trim($text) !== 'null') {
+        // A page (a proxy's "Access denied") is an error even when its body
+        // parses as JSON.
+        $html = ZBHttpError::isHtml($text, (array)$result['headers']);
+        $decoded = $html ? null : json_decode($text, true);
+        if ($html || ($decoded === null && trim($text) !== 'null')) {
             throw new ZBApiException(
                 $this->redact($this->messageFromBody($text, (int)$result['status']), $secrets),
                 (int)$result['status']

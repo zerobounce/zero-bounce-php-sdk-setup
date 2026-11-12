@@ -1419,20 +1419,19 @@ class ZeroBounce
         if (trim($body) === '' || $code > 299 || ZBHttpError::isHtml($body, $headers) || self::shouldTreatGetFileBodyAsError($body, $contentType)) {
             throw new ZBApiException($this->redactApiKey(ZBHttpError::message($code, $body, $headers)), $code);
         }
-        $folder = dirname($downloadPath);
-        if ($folder !== '' && $folder !== '.' && !file_exists($folder)) {
-            mkdir($folder, 0777, true);
-        }
-        $handle = $this->openDownloadFile($downloadPath);
+        // Written beside $downloadPath and moved into place once complete, so
+        // a failed write (a full disk, a read-only folder) leaves no partial
+        // file and keeps a file already at $downloadPath.
+        $partial = self::partialFileBeside($downloadPath);
+        $handle = $this->openDownloadFile($partial);
         if ($handle === false) {
+            @unlink($partial);
             throw new ZBException('Could not write file');
         }
         $written = self::writeAll($handle, $body);
         $flushed = @fflush($handle);
-        if (!@fclose($handle) || !$flushed || !$written) {
-            // A short write (a full disk) leaves a truncated file that would
-            // read as the result: remove it.
-            @unlink($downloadPath);
+        if (!@fclose($handle) || !$flushed || !$written || !@rename($partial, $downloadPath)) {
+            @unlink($partial);
             throw new ZBException('Could not write file');
         }
         $response = new ZBGetFileResponse();
@@ -1533,6 +1532,36 @@ class ZeroBounce
     }
 
     /**
+     * An empty temporary file in $downloadPath's folder (created if missing),
+     * for a download to be written to and then renamed over $downloadPath.
+     *
+     * @param string $downloadPath
+     * @return string
+     * @throws ZBException when the folder cannot take a new file
+     */
+    private static function partialFileBeside($downloadPath)
+    {
+        $folder = dirname($downloadPath);
+        if ($folder === '' || $folder === '.') {
+            $folder = '.';
+        } elseif (!file_exists($folder)) {
+            @mkdir($folder, 0777, true);
+        }
+        // @: tempnam() falls back to the system temp folder, with a notice,
+        // when $folder is not writable; a file there is refused below.
+        $partial = @tempnam($folder, '.zb-download-');
+        if ($partial === false || realpath(dirname($partial)) !== realpath($folder)) {
+            if ($partial !== false) {
+                @unlink($partial);
+            }
+            throw new ZBException('Could not write file');
+        }
+        // tempnam() creates the file 0600; a download gets the usual mode.
+        @chmod($partial, 0666 & ~umask());
+        return $partial;
+    }
+
+    /**
      * Opens a download's file for writing. Separated so the tests can
      * simulate a disk that fills up.
      *
@@ -1600,16 +1629,7 @@ class ZeroBounce
      */
     protected function streamBulkDownload($url, $downloadPath)
     {
-        $folder = dirname($downloadPath);
-        if ($folder === '' || $folder === '.') {
-            $folder = '.';
-        } elseif (!file_exists($folder)) {
-            mkdir($folder, 0777, true);
-        }
-        $partial = tempnam($folder, '.zb-download-');
-        if ($partial === false) {
-            throw new ZBException('Could not write file');
-        }
+        $partial = self::partialFileBeside($downloadPath);
         $handle = $this->openDownloadFile($partial);
         if ($handle === false) {
             @unlink($partial);
@@ -1641,7 +1661,7 @@ class ZeroBounce
                 // A full disk: the partial file is truncated.
                 throw new ZBException('Could not write file');
             }
-            if (!rename($partial, $downloadPath)) {
+            if (!@rename($partial, $downloadPath)) {
                 throw new ZBException('Could not write file');
             }
         } catch (Exception $e) {

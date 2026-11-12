@@ -112,9 +112,9 @@ final class ZBSecret
 
     /**
      * Every form the secrets can take in a body or URL echoed back to us: raw,
-     * URL-encoded (+ and %20 styles) and JSON-escaped (with and without "\/",
-     * non-ASCII as is or as \uXXXX). Longest first, so a form that contains
-     * another is masked whole.
+     * URL-encoded (+ and %20 styles), JSON-escaped (with and without "\/",
+     * non-ASCII as is or as \uXXXX) and the URL-encoded JSON form (+ and %20).
+     * Longest first, so a form that contains another is masked whole.
      *
      * @param array<int, string|null> $secrets
      * @return string[]
@@ -134,6 +134,13 @@ final class ZBSecret
                 if (is_string($json)) {
                     $candidates[] = substr($json, 1, -1);
                 }
+            }
+            // The JSON form as the SDK sends it, URL-encoded: a server that
+            // echoes a URL-encoded copy of a JSON request body.
+            $json = json_encode($secret);
+            if (is_string($json)) {
+                $candidates[] = urlencode(substr($json, 1, -1));
+                $candidates[] = rawurlencode(substr($json, 1, -1));
             }
             foreach ($candidates as $form) {
                 if ($form !== '') {

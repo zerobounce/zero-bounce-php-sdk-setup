@@ -145,14 +145,24 @@ class CannedFileClient extends ZeroBounce
         return array();
     }
 
+    /** @var callable|null replaces opening the download file */
+    public $openFile = null;
+
+    protected function openDownloadFile($path)
+    {
+        return $this->openFile === null ? parent::openDownloadFile($path) : call_user_func($this->openFile, $path);
+    }
+
     protected function streamHttpToHandle($url, $handle)
     {
-        fwrite($handle, $this->answer['body']);
+        $body = $this->answer['body'];
+        $written = @fwrite($handle, $body) === strlen($body) && @fflush($handle);
         return array(
             'status' => $this->answer['status'],
             'headers' => $this->answer['headers'],
-            'head' => substr($this->answer['body'], 0, 65536),
+            'head' => substr($body, 0, 65536),
             'error' => '',
+            'writeFailed' => !$written,
         );
     }
 }
@@ -642,6 +652,53 @@ return true;
         }
     }
 
+    /** The Warmup JSON calls: a body that parses as JSON, under text/html. */
+    public function testATextHtmlContentTypeIsAnErrorOnEveryWarmupJsonCall()
+    {
+        $accepted = array();
+        $warmup = new CannedFileWarmup(200, 'text/html; charset=UTF-8', '{"a":1}');
+        foreach ($this->warmupCalls($warmup) as $name => $call) {
+            if (in_array($name, array('downloadSeeds', 'downloadStatistics'), true)) {
+                continue;
+            }
+            $error = $this->thrown($call);
+            if (!$error instanceof ZBApiException) {
+                $accepted[] = $name;
+                continue;
+            }
+            $this->assertSame(200, $error->getStatusCode(), $name);
+        }
+        $this->assertSame(array(), $accepted);
+    }
+
+    /**
+     * application/json on a body that reads as CSV: only the content type
+     * says it is not a result file. Every download, streamed and not, and the
+     * Warmup CSVs; the file already at the target is kept.
+     */
+    public function testAJsonContentTypeAloneIsAnErrorOnEveryDownload()
+    {
+        $csv = "email,status\na@example.com,valid\n";
+        $client = new CannedFileClient(200, 'application/json', $csv);
+        $client->initialize('guard-key');
+        $calls = $this->downloadsOverExistingFiles($client, $this->dir);
+        foreach ($calls as $name => $call) {
+            $error = $this->thrown($call[0]);
+            $this->assertInstanceOf(ZBApiException::class, $error, $name);
+            $this->assertSame(200, $error->getStatusCode(), $name);
+            $this->assertSame("keep me\n", file_get_contents($call[1]), $name);
+        }
+        $this->assertCount(count($calls), $this->leftovers());
+        $warmup = new CannedFileWarmup(200, 'application/json; charset=utf-8', $csv);
+        foreach (array('downloadSeeds' => array(), 'downloadStatistics' => array('a@b.com')) as $name => $args) {
+            $error = $this->thrown(function () use ($warmup, $name, $args) {
+                call_user_func_array(array($warmup, $name), $args);
+            });
+            $this->assertInstanceOf(ZBApiException::class, $error, $name);
+            $this->assertSame(200, $error->getStatusCode(), $name);
+        }
+    }
+
     /** "success": "false" as a string, any case, is an error on every JSON call. */
     public function testASuccessOfTheStringFalseIsAnErrorOnEveryJsonCall()
     {
@@ -693,23 +750,89 @@ return true;
         }
     }
 
-    public function testAFailedWriteLeavesNoFile()
+    /**
+     * Every download, streamed and not, each into its own file under $folder
+     * that already holds "keep me".
+     *
+     * @return array<string, array{0: callable, 1: string}>
+     */
+    private function downloadsOverExistingFiles(ZeroBounce $client, $folder)
+    {
+        $stream = new ZBGetFileOptions();
+        $stream->stream = true;
+        $calls = array();
+        foreach (array('getFile', 'scoringGetFile', 'emailFinderGetFile', 'domainSearchGetFile') as $name) {
+            foreach (array('plain' => null, 'streamed' => $stream) as $how => $options) {
+                $path = $folder . '/' . $name . '-' . $how . '.csv';
+                file_put_contents($path, "keep me\n");
+                $calls[$name . ' ' . $how] = array(function () use ($client, $name, $path, $options) {
+                    $client->$name('f1', $path, $options);
+                }, $path);
+            }
+        }
+        return $calls;
+    }
+
+    /** A disk that fills up, or a write that cannot be flushed: no partial file, the old one kept. */
+    public function testAFailedWriteKeepsTheExistingFileAndLeavesNoPartialFile()
     {
         $csv = "email,status\n" . str_repeat("a@example.com,valid\n", 100);
         $client = new CannedFileClient(200, 'text/csv', $csv);
         $client->initialize('guard-key');
-        $real = $this->dir . '/result.csv';
-        foreach (array('getFile', 'scoringGetFile', 'emailFinderGetFile', 'domainSearchGetFile') as $name) {
-            FullDiskStream::$room = 100;
-            $error = $this->thrown(function () use ($client, $name, $real) { $client->$name('f1', 'zbfull://' . $real); });
-            $this->assertSame('Could not write file', $error->getMessage(), $name);
-            $this->assertFileDoesNotExist($real, $name . ' left a partial file');
+        $client->openFile = function ($path) { return fopen('zbfull://' . $path, 'wb'); };
+        $calls = $this->downloadsOverExistingFiles($client, $this->dir);
+        foreach (array('full disk' => array(100, false), 'failed flush' => array(null, true)) as $how => $failure) {
+            foreach ($calls as $name => $call) {
+                FullDiskStream::$room = $failure[0];
+                FullDiskStream::$failFlush = $failure[1];
+                $error = $this->thrown($call[0]);
+                $this->assertInstanceOf(ZBException::class, $error, $name . ' ' . $how);
+                $this->assertSame('Could not write file', $error->getMessage(), $name . ' ' . $how);
+                $this->assertSame("keep me\n", file_get_contents($call[1]), $name . ' ' . $how);
+            }
+        }
+        $this->assertCount(count($calls), $this->leftovers(), 'a partial file was left behind');
 
-            FullDiskStream::$room = null;
-            FullDiskStream::$failFlush = true;
-            $this->thrown(function () use ($client, $name, $real) { $client->$name('f1', 'zbfull://' . $real); });
-            $this->assertFileDoesNotExist($real, $name . ' kept a file it could not flush');
-            FullDiskStream::$failFlush = false;
+        FullDiskStream::$room = null;
+        FullDiskStream::$failFlush = false;
+        foreach ($calls as $name => $call) {
+            $call[0]();
+            $this->assertSame($csv, file_get_contents($call[1]), $name . ' did not replace the old file');
+            if (DIRECTORY_SEPARATOR === '/') {
+                clearstatcache();
+                // The usual mode for a new file, not tempnam()'s 0600.
+                $this->assertSame(0666 & ~umask(), fileperms($call[1]) & 0777, $name);
+            }
+        }
+        $this->assertCount(count($calls), $this->leftovers());
+    }
+
+    /** A folder the download cannot write to: an error, and the file already there is kept. */
+    public function testAReadOnlyFolderKeepsTheExistingFile()
+    {
+        if (function_exists('posix_geteuid') && posix_geteuid() === 0) {
+            $this->markTestSkipped('root writes into a read-only folder');
+        }
+        $client = new CannedFileClient(200, 'text/csv', "email\na@example.com\n");
+        $client->initialize('guard-key');
+        $folder = $this->dir . '/read-only';
+        mkdir($folder);
+        $calls = $this->downloadsOverExistingFiles($client, $folder);
+        chmod($folder, 0555);
+        try {
+            foreach ($calls as $name => $call) {
+                $error = $this->thrown($call[0]);
+                $this->assertInstanceOf(ZBException::class, $error, $name);
+                $this->assertSame('Could not write file', $error->getMessage(), $name);
+                $this->assertSame("keep me\n", file_get_contents($call[1]), $name);
+            }
+            $this->assertCount(count($calls), array_diff(scandir($folder), array('.', '..')));
+        } finally {
+            chmod($folder, 0755);
+            foreach ($calls as $call) {
+                @unlink($call[1]);
+            }
+            @rmdir($folder);
         }
     }
 
