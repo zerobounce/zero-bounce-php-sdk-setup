@@ -243,8 +243,9 @@ trait ZeroBounceInboxPlacement
         $result = $this->executeHttp($method, $this->checkedUrl($url), $headers, $content, 120);
         $response = new ZBRawJsonResponse();
         $status = isset($result['status']) ? (int)$result['status'] : 0;
+        // Empty means zero bytes: a blank body is not JSON, and is an error.
         if ($emptyIsSuccess && (!isset($result['error']) || (string)$result['error'] === '')
-            && $status >= 200 && $status < 300 && trim(isset($result['body']) ? (string)$result['body'] : '') === '') {
+            && $status >= 200 && $status < 300 && (isset($result['body']) ? (string)$result['body'] : '') === '') {
             return $response;
         }
         $response->Deserialize($this->readJsonBody($result));

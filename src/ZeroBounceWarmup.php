@@ -150,7 +150,8 @@ class ZeroBounceWarmup
 
     /**
      * The JSON payload of a success, or null for the documented empty
-     * successes (204, and an empty 200).
+     * successes (204, and an empty 200). Empty means zero bytes: a blank
+     * body (spaces, a newline) is not JSON and is an error with its status.
      *
      * @return array<string, mixed>|null
      * @throws ZBException
@@ -159,7 +160,7 @@ class ZeroBounceWarmup
     {
         $result = $this->send($method, $path, $query, $body, $secrets);
         $text = (string)$result['body'];
-        if ((int)$result['status'] === 204 || trim($text) === '') {
+        if ((int)$result['status'] === 204 || $text === '') {
             return null;
         }
         // A page (a proxy's "Access denied") is an error even when its body

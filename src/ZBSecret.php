@@ -15,6 +15,13 @@ namespace ZeroBounce\SDK;
  */
 final class ZBSecret
 {
+    /**
+     * What an exception says instead of text that still holds a secret in an
+     * encoding no spelling covers.
+     */
+    const CREDENTIAL_OMITTED_MESSAGE =
+        'ZeroBounce returned an error; the response body was omitted because it contained a credential.';
+
     /** @var \Closure|null */
     private $read;
 
@@ -87,7 +94,8 @@ final class ZBSecret
      */
     public static function scrubTrace($e)
     {
-        $forms = self::forms(array_map('strval', array_keys(self::$live)));
+        $secrets = array_map('strval', array_keys(self::$live));
+        $forms = self::forms($secrets);
         if (!$forms) {
             return $e;
         }
@@ -102,7 +110,7 @@ final class ZBSecret
             }
             foreach ($trace as $i => $frame) {
                 if (isset($frame['args']) && is_array($frame['args'])) {
-                    $trace[$i]['args'] = self::masked($frame['args'], $forms);
+                    $trace[$i]['args'] = self::masked($frame['args'], $forms, $secrets);
                 }
             }
             $property->setValue($error, $trace);
@@ -175,7 +183,10 @@ final class ZBSecret
     }
 
     /**
-     * $text with every form of every secret replaced by ***.
+     * $text with every form of every secret replaced by ***. Then closed
+     * under encoding: if any decoded view of what is left (URL-decoding, "+"
+     * as a space, JSON unescaping incl. "\/" and \uXXXX, up to three layers
+     * in any order) still holds a secret, CREDENTIAL_OMITTED_MESSAGE instead.
      *
      * @param string $text
      * @param array<int, string|null> $secrets
@@ -187,28 +198,133 @@ final class ZBSecret
         array $secrets
     ) {
         $forms = self::forms($secrets);
-        return $forms ? str_replace($forms, '***', (string)$text) : (string)$text;
+        $text = $forms ? str_replace($forms, '***', (string)$text) : (string)$text;
+        return self::holdsSecret($text, $secrets) ? self::CREDENTIAL_OMITTED_MESSAGE : $text;
+    }
+
+    /**
+     * Whether any decoded view of $text holds one of the secrets.
+     *
+     * @param string $text
+     * @param array<int, string|null> $secrets
+     * @return bool
+     */
+    public static function holdsSecret(
+        $text,
+        #[\SensitiveParameter]
+        array $secrets
+    ) {
+        $text = (string)$text;
+        $secrets = array_values(array_filter($secrets, function ($secret) {
+            return is_string($secret) && $secret !== '';
+        }));
+        if (!$secrets) {
+            return false;
+        }
+        // Nothing to decode: the text is its only view.
+        $views = strpbrk($text, '%+\\') === false ? array($text) : self::decodedViews($text);
+        foreach ($views as $view) {
+            foreach ($secrets as $secret) {
+                if (strpos($view, $secret) !== false) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * $text and every view of it after up to $layers decodings (URL with %XX,
+     * URL with "+" as a space, "+" as a space alone, JSON unescaping), in any
+     * order.
+     *
+     * @param string $text
+     * @param int $layers
+     * @return string[]
+     */
+    public static function decodedViews($text, $layers = 3)
+    {
+        $text = (string)$text;
+        $views = array($text => true);
+        $frontier = array($text);
+        for ($layer = 0; $layer < $layers && $frontier; $layer++) {
+            $next = array();
+            foreach ($frontier as $view) {
+                $decoded = array(rawurldecode($view), urldecode($view), str_replace('+', ' ', $view), self::jsonUnescape($view));
+                foreach ($decoded as $candidate) {
+                    if (!isset($views[$candidate])) {
+                        $views[$candidate] = true;
+                        $next[] = $candidate;
+                    }
+                }
+            }
+            $frontier = $next;
+        }
+        return array_map('strval', array_keys($views));
+    }
+
+    /**
+     * $text with its JSON string escapes decoded (\uXXXX surrogate pairs
+     * included); text that is not an escape stays as it is.
+     *
+     * @param string $text
+     * @return string
+     */
+    private static function jsonUnescape($text)
+    {
+        $text = preg_replace_callback('/\\\\u(d[89ab][0-9a-f]{2})\\\\u(d[c-f][0-9a-f]{2})/i', function ($m) {
+            return self::utf8(0x10000 + ((hexdec($m[1]) - 0xd800) << 10) + (hexdec($m[2]) - 0xdc00));
+        }, $text);
+        $simple = array('"' => '"', '\\' => '\\', '/' => '/', 'b' => "\x08", 'f' => "\f", 'n' => "\n", 'r' => "\r", 't' => "\t");
+        return preg_replace_callback('/\\\\(?:u([0-9a-fA-F]{4})|(["\\\\\/bfnrt]))/', function ($m) use ($simple) {
+            return (isset($m[2]) && $m[2] !== '') ? $simple[$m[2]] : self::utf8(hexdec($m[1]));
+        }, $text);
+    }
+
+    /**
+     * @param int $code a code point
+     * @return string its UTF-8 bytes (a lone surrogate as its three bytes)
+     */
+    private static function utf8($code)
+    {
+        if ($code < 0x80) {
+            return chr($code);
+        }
+        if ($code < 0x800) {
+            return chr(0xc0 | ($code >> 6)) . chr(0x80 | ($code & 0x3f));
+        }
+        if ($code < 0x10000) {
+            return chr(0xe0 | ($code >> 12)) . chr(0x80 | (($code >> 6) & 0x3f)) . chr(0x80 | ($code & 0x3f));
+        }
+        return chr(0xf0 | ($code >> 18)) . chr(0x80 | (($code >> 12) & 0x3f))
+            . chr(0x80 | (($code >> 6) & 0x3f)) . chr(0x80 | ($code & 0x3f));
     }
 
     /**
      * @param mixed $value
      * @param string[] $forms
+     * @param string[] $secrets
      * @return mixed $value with every form replaced by ***, in nested arrays
-     *     too; an error passed as an argument (a caught exception handed to
-     *     a helper that rebuilds it) by its class name, since its message
-     *     and trace are the unredacted ones
+     *     too, and a string that still holds a secret in a decoded view (a
+     *     body quoting the key in an encoding no form covers) as *** whole;
+     *     an object by its class name: an error passed as an argument (a
+     *     caught exception handed to a helper that rebuilds it) has the
+     *     unredacted message and trace, and a response object (the batch
+     *     response validateBatch checks for an account-level error) holds
+     *     text decoded from the body
      */
-    private static function masked($value, array $forms)
+    private static function masked($value, array $forms, array $secrets)
     {
-        if ($value instanceof \Exception || $value instanceof \Throwable) {
+        if (is_object($value)) {
             return 'object(' . get_class($value) . ')';
         }
         if (is_string($value)) {
-            return str_replace($forms, '***', $value);
+            $value = str_replace($forms, '***', $value);
+            return self::holdsSecret($value, $secrets) ? '***' : $value;
         }
         if (is_array($value)) {
             foreach ($value as $k => $item) {
-                $value[$k] = self::masked($item, $forms);
+                $value[$k] = self::masked($item, $forms, $secrets);
             }
         }
         return $value;

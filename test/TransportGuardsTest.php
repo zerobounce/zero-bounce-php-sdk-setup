@@ -1228,4 +1228,418 @@ return true;
         $empty->initialize('guard-key');
         $this->assertInstanceOf(ZBApiException::class, $this->thrown(function () use ($empty) { $empty->getInboxPlacementTest(7); }));
     }
+
+    // -- E7: the shared strict JSON corpus -------------------------------------------
+
+    /**
+     * (verdict, body) pairs. test/fixtures/strict-json-corpus.tsv is a
+     * byte-identical copy of sdk-docs/skills/zerobounce-sdk/references/
+     * strict-json-corpus.tsv (zerobounce/sdk-docs); refresh it from there.
+     * Each line's second field is a JSON-encoded string holding the body.
+     *
+     * @return array<int, array{0: string, 1: string}>
+     */
+    private static function strictJsonCorpus()
+    {
+        $rows = array();
+        foreach (file(__DIR__ . '/fixtures/strict-json-corpus.tsv', FILE_IGNORE_NEW_LINES) as $line) {
+            if ($line === '' || $line[0] === '#') {
+                continue;
+            }
+            list($verdict, $encoded) = explode("\t", $line, 2);
+            $rows[] = array($verdict, json_decode($encoded));
+        }
+        return $rows;
+    }
+
+    /** Downloads are not JSON calls: any JSON body is an error there. */
+    private static $downloads = array(
+        'getFile', 'scoringGetFile', 'emailFinderGetFile', 'domainSearchGetFile', 'downloadSeeds', 'downloadStatistics',
+    );
+
+    /**
+     * Every JSON call, answered with $body under a JSON content type on a 200.
+     *
+     * @return array<string, callable>
+     */
+    private function corpusCalls($body)
+    {
+        $client = new CannedFileClient(200, 'application/json', $body);
+        $client->initialize('corpus-key');
+        $calls = array();
+        foreach ($this->sweepCalls($client, $this->dir . '/result.csv') as $name => $variants) {
+            foreach ($variants as $i => $call) {
+                $calls[$name . '#' . $i] = $call;
+            }
+        }
+        foreach ($this->warmupCalls(new CannedFileWarmup(200, 'application/json', $body)) as $name => $call) {
+            $calls['Warmup ' . $name . '#0'] = $call;
+        }
+        foreach (array_keys($calls) as $label) {
+            $name = preg_replace('/^Warmup | ?#\d+$/', '', $label);
+            if (in_array($name, self::$downloads, true)) {
+                unset($calls[$label]);
+            }
+        }
+        return $calls;
+    }
+
+    /**
+     * An empty 200 (zero bytes) is the documented empty success of the
+     * Warmup calls and of deleteInboxPlacementTest (check E8); a blank body
+     * is never empty.
+     */
+    private static function emptySuccess($label, $body)
+    {
+        return $body === ''
+            && (strpos($label, 'Warmup ') === 0 || strpos($label, 'deleteInboxPlacementTest#') === 0);
+    }
+
+    public function testTheCorpusHasBothVerdicts()
+    {
+        $verdicts = array_map(function ($row) { return $row[0]; }, self::strictJsonCorpus());
+        $this->assertSame(array('ACCEPT', 'REJECT'), array_values(array_unique(array_merge(array('ACCEPT'), $verdicts))));
+        $this->assertGreaterThan(30, count(array_keys($verdicts, 'REJECT', true)));
+    }
+
+    public function testEveryJsonCallRejectsEveryRejectBody()
+    {
+        $wrong = array();
+        foreach (self::strictJsonCorpus() as $row) {
+            list($verdict, $body) = $row;
+            if ($verdict !== 'REJECT') {
+                continue;
+            }
+            foreach ($this->corpusCalls($body) as $label => $call) {
+                if (self::emptySuccess($label, $body)) {
+                    continue;
+                }
+                try {
+                    $this->quietly($call);
+                    $wrong[] = $label . ' accepted ' . json_encode($body);
+                } catch (ZBApiException $e) {
+                    if ($e->getStatusCode() !== 200) {
+                        $wrong[] = $label . ' status ' . $e->getStatusCode() . ' for ' . json_encode($body);
+                    }
+                } catch (\Throwable $e) {
+                    $wrong[] = $label . ' ' . get_class($e) . ' for ' . json_encode($body);
+                }
+            }
+        }
+        $this->assertSame(array(), $wrong);
+    }
+
+    /**
+     * An ACCEPT body is parsed. A scalar ("0", "\"x\"") is valid JSON but no
+     * call's result, so the calls that need an object may still refuse it;
+     * every ACCEPT object or array is never refused as a body that is not
+     * valid JSON, and the parser itself takes every ACCEPT body.
+     */
+    public function testNoJsonCallRejectsAnAcceptBodyAsInvalid()
+    {
+        $wrong = array();
+        foreach (self::strictJsonCorpus() as $row) {
+            list($verdict, $body) = $row;
+            if ($verdict !== 'ACCEPT') {
+                continue;
+            }
+            $decoded = json_decode($body, true);
+            if ($decoded === null && trim($body) !== 'null') {
+                $wrong[] = 'json_decode refused ' . json_encode($body);
+            }
+            if (!is_array($decoded)) {
+                continue;
+            }
+            foreach ($this->corpusCalls($body) as $label => $call) {
+                try {
+                    $this->quietly($call);
+                } catch (ZBException $e) {
+                    if (strpos($e->getMessage(), 'not valid JSON') !== false) {
+                        $wrong[] = $label . ' refused ' . json_encode($body);
+                    }
+                }
+            }
+        }
+        $this->assertSame(array(), $wrong);
+    }
+
+    // -- S4/S7: redaction closed under encoding --------------------------------------
+
+    /** A secret with every character an encoding changes. */
+    const FUZZ_SECRET = "k y\"/\\+%&=<>'z";
+
+    /**
+     * The test's own decoder, independent of the SDK's: every view of $text
+     * after up to three decodings (URL %XX, URL +, JSON incl. \/ and \uXXXX).
+     *
+     * @return string[]
+     */
+    private static function fuzzViews($text)
+    {
+        $decoders = array(
+            'rawurldecode',
+            'urldecode',
+            function ($t) { return strtr($t, '+', ' '); },
+            function ($t) {
+                $simple = array('"' => '"', '\\' => '\\', '/' => '/', 'b' => "\x08", 'f' => "\f", 'n' => "\n", 'r' => "\r", 't' => "\t");
+                return preg_replace_callback('#\\\\(u[0-9a-fA-F]{4}|["\\\\/bfnrt])#', function ($m) use ($simple) {
+                    if ($m[1][0] !== 'u') {
+                        return $simple[$m[1]];
+                    }
+                    $decoded = json_decode('"\\' . $m[1] . '"');
+                    return is_string($decoded) ? $decoded : $m[0];
+                }, $t);
+            },
+        );
+        $views = array($text);
+        $frontier = array($text);
+        for ($layer = 0; $layer < 3; $layer++) {
+            $next = array();
+            foreach ($frontier as $view) {
+                foreach ($decoders as $decode) {
+                    $candidate = (string)call_user_func($decode, $view);
+                    if (!in_array($candidate, $views, true) && !in_array($candidate, $next, true)) {
+                        $next[] = $candidate;
+                    }
+                }
+            }
+            $views = array_merge($views, $next);
+            $frontier = $next;
+        }
+        return $views;
+    }
+
+    /**
+     * Every sequence of up to three encodings of $secret, and random ones
+     * (fixed seed).
+     *
+     * @return array<string, string> label => form
+     */
+    private static function fuzzForms($secret)
+    {
+        $encoders = array(
+            'URL %20' => 'rawurlencode',
+            'URL +' => 'urlencode',
+            'JSON' => function ($t) { return substr(json_encode($t, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), 1, -1); },
+            'JSON \/' => function ($t) { return substr(json_encode($t, JSON_UNESCAPED_UNICODE), 1, -1); },
+        );
+        $names = array_keys($encoders);
+        $sequences = array(array());
+        $all = array();
+        for ($depth = 1; $depth <= 3; $depth++) {
+            $longer = array();
+            foreach ($sequences as $sequence) {
+                foreach ($names as $name) {
+                    $longer[] = array_merge($sequence, array($name));
+                }
+            }
+            $all = array_merge($all, $longer);
+            $sequences = $longer;
+        }
+        mt_srand(8259);
+        for ($i = 0; $i < 60; $i++) {
+            $sequence = array();
+            for ($n = mt_rand(1, 3); $n > 0; $n--) {
+                $sequence[] = $names[mt_rand(0, 3)];
+            }
+            $all[] = $sequence;
+        }
+        $forms = array();
+        foreach ($all as $i => $sequence) {
+            $form = $secret;
+            foreach ($sequence as $name) {
+                $form = call_user_func($encoders[$name], $form);
+            }
+            $forms[$i . ': ' . implode(' > ', $sequence)] = $form;
+        }
+        return $forms;
+    }
+
+    /**
+     * @return array{0: int, 1: string, 2: string} status, content type, body
+     */
+    private static function fuzzBody($form, $shape)
+    {
+        $shapes = array(
+            array(400, 'text/plain', 'rejected: ' . $form),
+            array(200, 'application/json', '{"error":"Invalid API key ' . $form . '"}'),
+            array(200, 'application/json', '{"success":false,"message":"rejected ' . $form . '"}'),
+            array(400, 'application/json', '{"message":"bad request ' . $form . '"}'),
+            array(200, 'text/html', '<html><title>denied ' . $form . '</title></html>'),
+            array(200, 'application/json', '{"email_batch":[],"errors":[{"email_address":"all","error":"Invalid API key ' . $form . '"}]}'),
+        );
+        return $shapes[$shape % count($shapes)];
+    }
+
+    /**
+     * Where $secret survives in a decoded view of $e: message, string form
+     * and stack-trace arguments, down the previous chain.
+     *
+     * @return string[]
+     */
+    private function fuzzLeaks(\Throwable $e, $secret)
+    {
+        $found = array();
+        for ($error = $e; $error !== null; $error = $error->getPrevious()) {
+            $texts = array(
+                'message' => $error->getMessage(),
+                'string' => (string)$error,
+            );
+            // Each string in the trace's arguments as it is: var_export() and
+            // print_r() add their own escaping, which no decoder undoes.
+            foreach (self::stringsIn($error->getTrace()) as $i => $text) {
+                $texts['trace arg ' . $i] = $text;
+            }
+            foreach ($texts as $where => $text) {
+                foreach (self::fuzzViews($text) as $view) {
+                    if (strpos($view, $secret) !== false) {
+                        $found[] = get_class($error) . ' ' . $where;
+                        break;
+                    }
+                }
+            }
+        }
+        return $found;
+    }
+
+    /**
+     * Every string in $value: nested arrays and the properties of objects
+     * (private and protected ones too), as print_r() and var_export() show.
+     *
+     * @return string[]
+     */
+    private static function stringsIn($value, $depth = 0)
+    {
+        if (is_string($value)) {
+            return array($value);
+        }
+        if ($depth > 12 || $value instanceof \Closure) {
+            return array();
+        }
+        if (is_object($value)) {
+            $value = (array)$value;
+        }
+        $strings = array();
+        if (is_array($value)) {
+            foreach ($value as $item) {
+                $strings = array_merge($strings, self::stringsIn($item, $depth + 1));
+            }
+        }
+        return $strings;
+    }
+
+    /**
+     * Each form goes to eight calls drawn at random (fixed seed), so every
+     * call meets many forms without sending forms x calls requests.
+     *
+     * @param callable $build function (status, type, body): array<string, callable>
+     * @return string[]
+     */
+    private function fuzzSweep($secret, callable $build)
+    {
+        $leaks = array();
+        $shape = 0;
+        foreach (self::fuzzForms($secret) as $label => $form) {
+            list($status, $type, $body) = self::fuzzBody($form, $shape++);
+            $calls = call_user_func($build, $status, $type, $body);
+            mt_srand(crc32($label));
+            $names = array_keys($calls);
+            $chosen = array_rand($names, min(8, count($names)));
+            foreach ((array)$chosen as $index) {
+                $name = $names[$index];
+                try {
+                    $this->quietly($calls[$name]);
+                } catch (\Throwable $e) {
+                    foreach ($this->fuzzLeaks($e, $secret) as $where) {
+                        $leaks[] = $name . ' [' . $label . '] ' . $status . ': ' . $where;
+                    }
+                }
+            }
+        }
+        return $leaks;
+    }
+
+    public function testTheApiKeyNeverSurvivesAnyEncoding()
+    {
+        $previous = ini_set('zend.exception_ignore_args', '0');
+        try {
+            $out = $this->dir . '/result.csv';
+            $leaks = $this->fuzzSweep(self::FUZZ_SECRET, function ($status, $type, $body) use ($out) {
+                $client = new CannedFileClient($status, $type, $body);
+                $client->initialize(self::FUZZ_SECRET);
+                $calls = array();
+                foreach ($this->sweepCalls($client, $out) as $name => $variants) {
+                    foreach ($variants as $i => $call) {
+                        $calls[$name . '#' . $i] = $call;
+                    }
+                }
+                // validateBatch, whose JSON request body a server can quote back.
+                $calls['validateBatch#again'] = $calls['validateBatch#0'];
+                return $calls;
+            });
+            $this->assertSame(array(), $leaks);
+        } finally {
+            ini_set('zend.exception_ignore_args', $previous === false ? '0' : $previous);
+        }
+    }
+
+    public function testTheWarmupKeyAndSmtpCredentialsNeverSurviveAnyEncoding()
+    {
+        $previous = ini_set('zend.exception_ignore_args', '0');
+        try {
+            $leaks = $this->fuzzSweep(self::FUZZ_SECRET, function ($status, $type, $body) {
+                $warmup = new CannedFileWarmup($status, $type, $body, self::FUZZ_SECRET);
+                return $this->warmupCalls($warmup);
+            });
+            $this->assertSame(array(), $leaks);
+            foreach (array('password', 'username') as $which) {
+                $leaks = $this->fuzzSweep(self::FUZZ_SECRET, function ($status, $type, $body) use ($which) {
+                    $warmup = new CannedFileWarmup($status, $type, $body);
+                    return array($which => function () use ($warmup, $which) {
+                        $secret = self::FUZZ_SECRET;
+                        $which === 'password'
+                            ? $warmup->testSmtpConfiguration('a@b.com', 'u', $secret, 'smtp.example.com', 587)
+                            : $warmup->testSmtpConfiguration('a@b.com', $secret, 'p', 'smtp.example.com', 587);
+                    });
+                });
+                $this->assertSame(array(), $leaks, $which);
+            }
+        } finally {
+            ini_set('zend.exception_ignore_args', $previous === false ? '0' : $previous);
+        }
+    }
+
+    /**
+     * The audit's case: PHP sends the key JSON-escaped with "\/"; a server
+     * quoting that JSON request body without escaping "/" writes it twice
+     * escaped, mixed, which no generated spelling matches. It must not stay
+     * in the arguments of any frame of the validateBatch error (readJsonBody
+     * held the whole body).
+     */
+    public function testValidateBatchKeepsAMixedEscapedKeyOutOfItsTrace()
+    {
+        $previous = ini_set('zend.exception_ignore_args', '0');
+        try {
+            $once = substr(json_encode(self::FUZZ_SECRET), 1, -1);
+            $mixed = substr(json_encode($once, JSON_UNESCAPED_SLASHES), 1, -1);
+            foreach (array(
+                '{"email_batch":[],"errors":[{"email_address":"all","error":"Invalid API key ' . $mixed . '"}]}',
+                '{"success":false,"message":"bad body {\\"api_key\\":\\"' . $mixed . '\\"}"}',
+                '{"error":"echo {\\"api_key\\":\\"' . $mixed . '\\"}"',
+            ) as $body) {
+                $client = new CannedFileClient(200, 'application/json', $body);
+                $client->initialize(self::FUZZ_SECRET);
+                $e = $this->thrown(function () use ($client) { $client->validateBatch(array('a@example.com')); });
+                $this->assertSame(array(), $this->fuzzLeaks($e, self::FUZZ_SECRET), $body);
+                $this->assertNotContains($mixed, self::stringsIn($e->getTrace()), $body);
+            }
+        } finally {
+            ini_set('zend.exception_ignore_args', $previous === false ? '0' : $previous);
+        }
+    }
+
+    public function testAMessageWithoutASecretIsKept()
+    {
+        $this->assertSame('Invalid email a+b%20c\/d', ZBSecret::redact('Invalid email a+b%20c\/d', array(self::FUZZ_SECRET)));
+    }
 }
