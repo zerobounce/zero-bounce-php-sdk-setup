@@ -131,8 +131,8 @@ class ZBHttpError
     /**
      * For a call whose result is never a bare message - the email finder and
      * domain search - a body made only of message fields is a failure: an
-     * object with no "success" field whose keys are all message keys, at least
-     * one a non-empty string. LIVE: guessformat answers an invalid or drained
+     * object with no "success" field whose keys are all message keys, whatever
+     * their values (a blank, null or list message included). LIVE: guessformat answers an invalid or drained
      * key with an HTTP 200 and
      * {"Message": "Invalid API key or your account ran out of credits"}.
      * Not for validate: a repeated greylist_processing request answers
@@ -144,22 +144,45 @@ class ZBHttpError
      */
     public static function throwIfMessageOnly($decoded, $status = 200)
     {
-        if (!is_array($decoded) || self::isList($decoded) || array_key_exists('success', $decoded)) {
+        if (!is_array($decoded) || self::isList($decoded) || array_key_exists('success', $decoded) || $decoded === array()) {
             return;
         }
         $messageKeys = array('error', 'message', 'error_message', 'Message', 'Error', 'detail');
-        $text = '';
         foreach ($decoded as $key => $value) {
             if (!in_array((string)$key, $messageKeys, true)) {
                 return;
             }
-            if ($text === '' && is_string($value) && trim($value) !== '') {
-                $text = trim($value);
+        }
+        // Whatever the message's value (text, blank, null or a list), the body is a rejected request.
+        $text = '';
+        foreach ($messageKeys as $key) {
+            if (array_key_exists($key, $decoded)) {
+                $text = self::messageText($decoded[$key]);
+                if ($text !== '') {
+                    break;
+                }
             }
         }
-        if ($text !== '') {
-            throw new ZBApiException(self::stripPrefix($text), $status);
+        throw new ZBApiException(self::stripPrefix($text !== '' ? $text : 'Request failed'), $status);
+    }
+
+    /**
+     * The text of a message value: a non-blank string, or the first non-blank string of a list; else ''.
+     *
+     * @param mixed $value
+     * @return string
+     */
+    private static function messageText($value)
+    {
+        if (is_array($value)) {
+            foreach ($value as $item) {
+                if (is_string($item) && trim($item) !== '') {
+                    return trim($item);
+                }
+            }
+            return '';
         }
+        return is_string($value) ? trim($value) : '';
     }
 
     /**

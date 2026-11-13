@@ -269,6 +269,40 @@ class StandardParityTest extends TestCase
         $this->assertSame(200, $error->getStatusCode());
     }
 
+    public function testAMessageOnlyFinderAnswerIsAnErrorWhateverItsMessageValue()
+    {
+        // A body made only of message keys is a rejected request whatever the value: a blank, null or
+        // non-string message is still an error with status 200 (the same as the Python and Ruby SDKs).
+        $cases = array(
+            '{"message":null}' => 'Request failed',
+            '{"message":""}' => 'Request failed',
+            '{"message":"   "}' => 'Request failed',
+            '{"message":[]}' => 'Request failed',
+            '{"message":[null,"  "]}' => 'Request failed',
+            '{"message":["m"]}' => 'm',
+            '{"message":[" ","x"]}' => 'x',
+            '{"Error":null,"Message":"Invalid API key"}' => 'Invalid API key',
+            '{"error":"Error: Invalid API key"}' => 'Invalid API key',
+        );
+        foreach ($cases as $body => $text) {
+            $client = new CannedClient($body);
+            $client->initialize('parity-key');
+            $calls = array(
+                'guessFormat' => function () use ($client) { $client->guessFormat('example.com', null, null, null); },
+                'findEmail' => function () use ($client) { $client->findEmail('example.com', 'John', null, null, 'Doe'); },
+                'findEmailFormat' => function () use ($client) { $client->findEmailFormat('example.com'); },
+            );
+            foreach ($calls as $name => $call) {
+                $error = $this->thrown(function () use ($call) {
+                    $this->quietly($call);
+                });
+                $this->assertInstanceOf(ZBApiException::class, $error, $name . ' ' . $body);
+                $this->assertSame(200, $error->getStatusCode(), $name . ' ' . $body);
+                $this->assertSame($text, $error->getMessage(), $name . ' ' . $body);
+            }
+        }
+    }
+
     // -- transport -----------------------------------------------------------
 
     public function testARedirectIsReportedAsOne()

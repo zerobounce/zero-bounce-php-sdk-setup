@@ -291,8 +291,8 @@ class ZeroBounceWarmup
         if ($trimmed === '') {
             return 'Empty response from ZeroBounce (HTTP ' . $status . ')';
         }
-        $head = strtolower(substr($trimmed, 0, 2000));
-        if (strpos($head, '<!doctype html') !== false || strpos($head, '<html') !== false) {
+        // The same HTML sniff as every other call (every marker), so a page is never echoed as text.
+        if (ZBHttpError::isHtml($trimmed)) {
             return 'ZeroBounce returned an HTML error page instead of an API response.';
         }
         if ($trimmed[0] === '{' || $trimmed[0] === '[') {

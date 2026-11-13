@@ -606,6 +606,53 @@ return true;
         }
     }
 
+    /**
+     * E: each marker of the HTML sniff (ZBHttpError::isHtml) is tested on its own, so removing any one of them
+     * fails a test. The bodies are sent as text/csv (a download) and as text/plain (a JSON call), so only the
+     * body can tell them apart from a result.
+     */
+    public function testEachHtmlSniffMarkerOnItsOwnMakesTheAnswerAnError()
+    {
+        $markers = array(
+            '<!DOCTYPE html>' => "\nemail,status\na@example.com,valid\n",
+            '<html>' => "email,status\na@example.com,valid\n",
+            '<head>' => "email,status\na@example.com,valid\n",
+            '<body>' => "email,status\na@example.com,valid\n",
+        );
+        $path = $this->dir . '/result.csv';
+        foreach ($markers as $marker => $rest) {
+            $body = $marker . $rest;
+            $client = new CannedFileClient(200, 'text/csv', $body);
+            $client->initialize('guard-key');
+            foreach ($this->downloads($client, $path) as $name => $call) {
+                $error = $this->thrown($call);
+                $this->assertInstanceOf(ZBApiException::class, $error, $name . ' ' . $marker);
+                $this->assertSame(200, $error->getStatusCode(), $name . ' ' . $marker);
+                $this->assertFileDoesNotExist($path, $name . ' ' . $marker);
+            }
+            $client->answer['headers'] = array('HTTP/1.1 200 X', 'Content-Type: text/plain');
+            $client->answer['body'] = $body;
+            $error = $this->thrown(function () use ($client) { $client->getCredits(); });
+            $this->assertInstanceOf(ZBApiException::class, $error, 'getCredits ' . $marker);
+            $this->assertSame(200, $error->getStatusCode(), 'getCredits ' . $marker);
+        }
+    }
+
+    /**
+     * E, Warmup: the same four markers reach the Warmup error text too. A Warmup body that is HTML by any marker
+     * is named as an HTML page, never echoed.
+     */
+    public function testEachHtmlSniffMarkerIsNamedAsAnHtmlPageOnWarmup()
+    {
+        foreach (array('<!DOCTYPE html>', '<html>', '<head>', '<body>') as $marker) {
+            $client = new CannedFileWarmup(200, 'text/csv', $marker . "\nseed,provider\nx,y\n");
+            $error = $this->thrown(function () use ($client) { $client->downloadSeeds(); });
+            $this->assertInstanceOf(ZBApiException::class, $error, $marker);
+            $this->assertSame(200, $error->getStatusCode(), $marker);
+            $this->assertSame('ZeroBounce returned an HTML error page instead of an API response.', $error->getMessage(), $marker);
+        }
+    }
+
     private static function isDownload($name)
     {
         return stripos($name, 'getfile') !== false;

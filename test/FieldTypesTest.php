@@ -188,20 +188,98 @@ class FieldTypesTest extends TestCase
     }
 
     /**
-     * B: null in an optional list field reads as that type's empty value (standard.md section 3): an empty
-     * email_batch or errors list, never an error. The same holds for every other optional field of a typed answer.
+     * A: null in an optional list field is never an error. A dynamically typed SDK returns it as received, for
+     * every field alike, so email_batch and errors read as null (standard.md section 3).
      */
-    public function testNullListFieldsReadAsEmptyLists()
+    public function testNullListFieldsAreReturnedAsReceived()
     {
         $client = new CannedFileClient(200, 'application/json', '');
         $client->initialize('fieldtypes-key');
-        foreach (array('{"email_batch":null,"errors":null}', '{"email_batch":[],"errors":null}',
-            '{"email_batch":null,"errors":[]}') as $body) {
+        $cases = array(
+            '{"email_batch":null,"errors":null}' => array(null, null),
+            '{"email_batch":[],"errors":null}' => array(array(), null),
+            '{"email_batch":null,"errors":[]}' => array(null, array()),
+        );
+        foreach ($cases as $body => $expected) {
             $client->answer['body'] = $body;
             $result = $client->validateBatch(array('a@example.com'));
-            $this->assertSame(array(), $result->emailBatch, $body);
-            $this->assertSame(array(), $result->errors, $body);
+            $this->assertSame($expected[0], $result->emailBatch, $body);
+            $this->assertSame($expected[1], $result->errors, $body);
         }
+    }
+
+    /**
+     * D: json_decode(..., true) reads {} and [] alike, so an empty JSON object where the documentation says an
+     * array (or a non-empty object keyed 0, 1, ...) must be told apart from the array by the raw body.
+     */
+    public function testAnObjectWhereAnArrayIsDocumentedIsAnErrorWithStatus200()
+    {
+        $client = new CannedFileClient(200, 'application/json', '');
+        $client->initialize('fieldtypes-key');
+        $batch = function () use ($client) { $client->validateBatch(array('a@example.com')); };
+        foreach (array('{"email_batch":{},"errors":[]}', '{"email_batch":[],"errors":{}}',
+            '{"email_batch":{"0":{"address":"a@b.c","status":"valid"}},"errors":[]}',
+            '{"email_batch":[],"errors":{"0":["x","a@b.c"]}}') as $body) {
+            $client->answer['body'] = $body;
+            $this->errorFor($batch, $body);
+        }
+        $guess = function () use ($client) {
+            $this->quietly(function () use ($client) { $client->guessFormat('example.com', null, null, null); });
+        };
+        foreach (array('{"domain":"x.com","format":"f","other_domain_formats":{}}',
+            '{"domain":"x.com","format":"f","other_domain_formats":{"0":{"format":"first","confidence":"low"}}}') as $body) {
+            $client->answer['body'] = $body;
+            $this->errorFor($guess, $body);
+        }
+        $status = function () use ($client) { $client->fileStatus('f1'); };
+        foreach (array('{"success":true,"message":{},"file_status":"Processing"}',
+            '{"success":true,"message":{"0":"x"},"file_status":"Processing"}') as $body) {
+            $client->answer['body'] = $body;
+            $this->errorFor($status, $body);
+        }
+        // A row list checked only by its item shape (no field type) gets the same check.
+        $rows = new class extends ZBResponse {
+            protected function itemShapes()
+            {
+                return array('rows' => array('a' => array('string')));
+            }
+        };
+        foreach (array('{"rows":{}}', '{"rows":{"0":{"a":"x"}}}') as $body) {
+            $this->errorFor(function () use ($rows, $body) { $rows->Deserialize($body); }, $body);
+        }
+        $rows->Deserialize('{"rows":[{"a":"x"}]}');
+        $this->addToAssertionCount(1);
+        // The same fields as arrays are still results.
+        $client->answer['body'] = '{"email_batch":[],"errors":[]}';
+        $this->assertSame(array(), $client->validateBatch(array('a@example.com'))->errors);
+        $client->answer['body'] = '{"domain":"x.com","format":"f","other_domain_formats":[]}';
+        $guess();
+        $this->addToAssertionCount(1);
+    }
+
+    /**
+     * B: a file-job message may arrive as a list of strings. The public type is one string on the file status
+     * answer, so the list is joined with newlines there; the send and delete answers document an array, so the
+     * list is kept (standard.md section 3).
+     */
+    public function testAFileJobMessageListMatchesItsPublicType()
+    {
+        $client = new CannedFileClient(200, 'application/json', '');
+        $client->initialize('fieldtypes-key');
+        $client->answer['body'] = '{"success":true,"message":["Processing","Queued"],"file_id":"f1","file_status":"Processing"}';
+        $this->assertSame("Processing\nQueued", $client->fileStatus('f1')->message);
+        $client->answer['body'] = '{"success":true,"message":["Processing"],"file_id":"f1","file_status":"Processing"}';
+        $this->assertSame('Processing', $client->fileStatus('f1')->message);
+        $client->answer['body'] = '{"success":true,"message":"Processing","file_id":"f1","file_status":"Processing"}';
+        $this->assertSame('Processing', $client->fileStatus('f1')->message);
+        $client->answer['body'] = '{"success":true,"message":["File Deleted","Gone"],"file_id":"f1"}';
+        $this->assertSame(array('File Deleted', 'Gone'), $client->deleteFile('f1')->message);
+        $client->answer['body'] = '{"success":true,"message":"File Deleted","file_id":"f1"}';
+        $this->assertSame(array('File Deleted'), $client->deleteFile('f1')->message);
+        $client->answer['body'] = '{"success":true,"message":["File Accepted","Queued"],"file_name":"f.csv","file_id":"f1"}';
+        $sent = $client->sendFile(__DIR__ . '/email_file.csv', 1);
+        $this->assertSame(array('File Accepted', 'Queued'), $sent->message);
+        $this->assertStringContainsString('ZBFileStatusResponse', (string)$client->fileStatus('f1'));
     }
 
     public function testNullOptionalFieldsOfEveryTypedAnswerAreNotErrors()

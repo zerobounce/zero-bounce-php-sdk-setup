@@ -5,13 +5,14 @@ namespace ZeroBounce\SDK;
 class ZBBatchValidateResponse extends ZBResponse
 {
     /**
-     * The batch of email addresses you are validating.
-     * @var array
+     * The batch of email addresses you are validating. null when the API sent null.
+     * @var array|null
      */
     public $emailBatch = [];
 
     /**
-     * @var array
+     * null when the API sent null.
+     * @var array|null
      */
     public $errors = [];
 
@@ -38,9 +39,9 @@ class ZBBatchValidateResponse extends ZBResponse
     public function getValue($classKey, $value)
     {
         if ($classKey === 'emailBatch' || $classKey === 'errors') {
-            // null is accepted for an optional list and reads as the empty list (standard.md section 3).
+            // null is accepted for an optional list and is returned as received (standard.md section 3).
             if ($value === null) {
-                $value = array();
+                return null;
             }
             if (!is_array($value)) {
                 throw self::wrongShape();

@@ -70,6 +70,17 @@ class ZBFileStatusResponse extends ZBResponse
         );
     }
 
+    /**
+     * The public type of message is one string, so a list of strings is joined with newlines (standard.md section 3).
+     */
+    public function getValue($classKey, $value)
+    {
+        if ($classKey == "message" && is_array($value)) {
+            return implode("\n", $value);
+        }
+        return parent::getValue($classKey, $value);
+    }
+
     protected function boolFields()
     {
         return array('success');

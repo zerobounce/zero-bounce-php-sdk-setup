@@ -10,11 +10,15 @@ class ZBResponse
      */
     public function Deserialize($json)
     {
+        $raw = null;
         if (is_string($json)) {
             $decodedJson = json_decode($json, true);
             if (!\is_array($decodedJson)) {
                 throw new ZBException(sprintf('Invalid response "%s".', $json));
             }
+            // Decoded again with objects kept as stdClass: {} and [] both read as array() above, and the
+            // shape check needs to tell an empty object from an empty array (D).
+            $raw = json_decode($json);
             $json = $decodedJson;
         }
 
@@ -22,7 +26,7 @@ class ZBResponse
             throw new ZBException('Deserialize expects a JSON string or array, null or invalid type given.');
         }
 
-        $this->checkShape($json);
+        $this->checkShape($json, '', $raw);
 
         foreach ($json as $key => $value) {
             $classKey = $this->getClassKey($key);
@@ -88,19 +92,24 @@ class ZBResponse
     /**
      * @param array $json the decoded response
      * @param string $path where $json sits in the response, for the message
+     * @param mixed $raw the same JSON with objects as stdClass (see Deserialize), or null when not known
      * @throws ZBApiException (status 200) naming the field, never its value
      */
-    public function checkShape(array $json, $path = '')
+    public function checkShape(array $json, $path = '', $raw = null)
     {
         foreach ($this->requiredFields($json) as $name) {
             if (!isset($json[$name])) {
                 throw self::wrongField($path . $name . ' is missing');
             }
         }
-        self::checkTypes($json, $this->fieldTypes(), $path);
+        self::checkTypes($json, $this->fieldTypes(), $path, $raw);
         foreach ($this->itemShapes() as $name => $shape) {
             if (!isset($json[$name]) || !is_array($json[$name])) {
                 continue;
+            }
+            $rawRows = self::rawChild($raw, $name);
+            if ($rawRows instanceof \stdClass) {
+                throw self::wrongField($path . $name . ' has the wrong type');
             }
             foreach ($json[$name] as $index => $item) {
                 $row = $path . $name . '[' . $index . ']';
@@ -108,10 +117,11 @@ class ZBResponse
                 if (!is_array($item) || (count($item) > 0 && self::isList($item))) {
                     throw self::wrongField($row . ' is not an object');
                 }
+                $rawRow = is_array($rawRows) && array_key_exists($index, $rawRows) ? $rawRows[$index] : null;
                 if ($shape instanceof ZBResponse) {
-                    $shape->checkShape($item, $where);
+                    $shape->checkShape($item, $where, $rawRow);
                 } else {
-                    self::checkTypes($item, $shape, $where);
+                    self::checkTypes($item, $shape, $where, $rawRow);
                 }
             }
         }
@@ -122,18 +132,36 @@ class ZBResponse
      * @param array $json
      * @param array<string, string[]> $types
      * @param string $path
+     * @param mixed $raw the same object with objects as stdClass, or null when not known
      * @throws ZBApiException
      */
-    private static function checkTypes(array $json, array $types, $path)
+    private static function checkTypes(array $json, array $types, $path, $raw = null)
     {
         foreach ($types as $name => $kinds) {
             if (!array_key_exists($name, $json) || $json[$name] === null) {
                 continue;
             }
-            if (!self::jsonTypeOk($json[$name], $kinds)) {
+            // A JSON object is none of the documented types, even an empty one that reads as array().
+            if (self::rawChild($raw, $name) instanceof \stdClass || !self::jsonTypeOk($json[$name], $kinds)) {
                 throw self::wrongField($path . $name . ' has the wrong type');
             }
         }
+    }
+
+    /**
+     * @param mixed $raw an object as json_decode gives it with objects as stdClass, or null
+     * @param string $name
+     * @return mixed the member's raw value, or null
+     */
+    private static function rawChild($raw, $name)
+    {
+        if ($raw instanceof \stdClass && property_exists($raw, $name)) {
+            return $raw->{$name};
+        }
+        if (is_array($raw) && array_key_exists($name, $raw)) {
+            return $raw[$name];
+        }
+        return null;
     }
 
     /**
