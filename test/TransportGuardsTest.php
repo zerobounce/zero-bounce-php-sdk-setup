@@ -1707,7 +1707,9 @@ return true;
             if (in_array($name, self::$arrayCalls, true) || in_array($name, self::$eitherCalls, true)) {
                 return array();
             }
-            return array('[]', '[{"status":"valid"}]', ' [1]');
+            // Empty, one string, and positional arrays holding a call's own field values in order.
+            return array('[]', '["x"]', '[{"status":"valid"}]', ' [1]', '["a@example.com",10]', '[true,"3"]',
+                '["a@example.com","valid"]', '["2375323"]', '[2375323]');
         }));
     }
 

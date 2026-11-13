@@ -5,7 +5,11 @@ namespace ZeroBounce\SDK;
 class ZBGetCreditsResponse extends ZBResponse
 {
     /**
-     * @var string|null
+     * The credit balance as the API sends it: a string holding an integer
+     * ("-1" for a dead key), as the live API sends it, or an int (zerobounce.net's
+     * example is {"Credits":2375323}).
+     *
+     * @var string|int|null
      */
     public $credits;
 
@@ -20,7 +24,7 @@ class ZBGetCreditsResponse extends ZBResponse
     protected function fieldTypes()
     {
         return array(
-            'Credits' => array('string'),
+            'Credits' => array('string', 'int'),
         );
     }
 
@@ -30,12 +34,12 @@ class ZBGetCreditsResponse extends ZBResponse
     }
 
     /**
-     * Credits is documented as a JSON string holding an integer ("-1" for a
-     * dead key): a bare number, "abc" or "5.0" is the wrong shape.
+     * Credits is an integer, sent as a JSON string ("-1" for a dead key) or a
+     * JSON integer: "abc", "5.0", 5.5 or true is the wrong shape.
      */
     protected function checkValues(array $json)
     {
-        if (!preg_match('/\A-?[0-9]+\z/', $json['Credits'])) {
+        if (is_string($json['Credits']) && !preg_match('/\A-?[0-9]+\z/', $json['Credits'])) {
             throw self::wrongField('Credits is not an integer');
         }
     }

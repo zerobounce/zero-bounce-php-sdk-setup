@@ -254,22 +254,30 @@ class FieldTypesTest extends TestCase
         $this->fail('accepted ' . $body);
     }
 
-    public function testCreditsMustBeAStringHoldingAnInteger()
+    public function testCreditsMustBeAnIntegerAsAJsonStringOrNumber()
     {
         $client = new CannedFileClient(200, 'application/json', '');
         $client->initialize('fieldtypes-key');
         foreach (array(false, true) as $post) {
             $call = function () use ($client, $post) { return $client->getCredits($post); };
-            foreach (array('{}', '{"Credits":null}', '{"Credits":true}', '{"Credits":5}', '{"Credits":-1}',
+            foreach (array('{}', '{"Credits":null}', '{"Credits":true}', '{"Credits":false}', '{"Credits":5.5}',
+                '{"Credits":5.0}', '{"Credits":1e3}', '{"Credits":99999999999999999999}',
                 '{"Credits":"abc"}', '{"Credits":"5.0"}', '{"Credits":""}', '{"Credits":" 5"}', '{"Credits":"5\n"}',
                 '{"Credits":[1]}', '{"Credits":{"a":1}}') as $body) {
                 $client->answer['body'] = $body;
                 $this->errorFor($call, $body);
             }
+            // The live API sends a JSON string; zerobounce.net's example a JSON number. Both are kept as sent.
             $client->answer['body'] = '{"Credits":"-1"}';
             $this->assertSame('-1', $call()->credits);
             $client->answer['body'] = '{"Credits":"12345"}';
             $this->assertSame('12345', $call()->credits);
+            $client->answer['body'] = '{"Credits":2375323}';
+            $this->assertSame(2375323, $call()->credits);
+            $client->answer['body'] = '{"Credits":-1}';
+            $this->assertSame(-1, $call()->credits);
+            $client->answer['body'] = '{"Credits":0}';
+            $this->assertSame(0, $call()->credits);
         }
     }
 
@@ -300,6 +308,16 @@ class FieldTypesTest extends TestCase
         $call = function () use ($client) { return $client->validateBatch(array('a@example.com')); };
         foreach (array('{"email_batch":[{"address":"a@b.c","status":5}],"errors":[]}',
             '{"email_batch":[{"status":"valid"}],"errors":[]}',
+            '{"email_batch":[{"address":"a@b.c"}],"errors":[]}',
+            '{"email_batch":[{"address":null,"status":"valid"}],"errors":[]}',
+            '{"email_batch":[{"address":"a@b.c","status":null}],"errors":[]}',
+            '{"email_batch":[5],"errors":[]}',
+            '{"email_batch":[null],"errors":[]}',
+            '{"email_batch":["a@b.c"],"errors":[]}',
+            '{"email_batch":[["a@b.c","valid"]],"errors":[]}',
+            '{"email_batch":[],"errors":[5]}',
+            '{"email_batch":[],"errors":[null]}',
+            '{"email_batch":[],"errors":[["x","a@b.c"]]}',
             '{"email_batch":[],"errors":[{"error":5,"email_address":"a@b.c"}]}') as $body) {
             $client->answer['body'] = $body;
             $this->errorFor($call, $body);
@@ -368,5 +386,350 @@ class FieldTypesTest extends TestCase
             }
             $this->assertSame(array(), $wrong, $body);
         }
+    }
+
+    // -- Example responses copied verbatim from zerobounce.net/docs (the page each one is on is named above it).
+    // Success examples must parse; the documented error examples must be API errors with status 200.
+
+    private static function siteResults()
+    {
+        return array(
+            // _ai-scoring-api_ai-scoring-api__file-status_api-file-status-response.html
+            array('scoringFileStatus', <<<'JSON'
+{
+          "success": true,
+          "file_id": "aaaaaaaa-zzzz-xxxx-yyyy-5003727fffff",
+          "file_name": "Your file name.csv",
+          "upload_date": "2023-04-28T15:25:41Z",
+          "file_status": "Complete",
+          "complete_percentage": "100%",
+          "return_url": "Your return URL if provided when calling sendfile API"
+      }
+JSON
+            ),
+            // _ai-scoring-api_ai-scoring-api__send-file_api-send-file-response.html
+            array('scoringSendFile', <<<'JSON'
+{
+          "success": true,
+          "message": "File Accepted",
+          "file_name": "Your file name.csv",
+          "file_id": "aaaaaaaa-zzzz-xxxx-yyyy-5003727fffff"
+      }
+JSON
+            ),
+            // _ai-scoring-api_ai_scoring_delete_file_scoring__delete-file.html
+            array('scoringDeleteFile', <<<'JSON'
+{
+        "success": true,
+        "message": "File Deleted",
+        "file_name": "test2",
+        "file_id": "b222a0fd-90d5-416c-8f1a-9cc3851fc823"
+    }
+JSON
+            ),
+            // _email-validation-api-quickstart_v2-credit-balance_response.html
+            array('getCredits', <<<'JSON'
+{"Credits":2375323}
+JSON
+            ),
+            // _email-validation-api-quickstart_v2-delete-file_response.html
+            array('deleteFile', <<<'JSON'
+{
+    "success": true,
+    "message": "File Deleted",
+    "file_name": "test2",
+    "file_id": "b222a0fd-90d5-416c-8f1a-9cc3851fc823"
+  }
+JSON
+            ),
+            // _email-validation-api-quickstart_v2-file-status_response.html
+            array('fileStatus', <<<'JSON'
+{
+    "success": true,
+    "file_id": "aaaaaaaa-zzzz-xxxx-yyyy-5003727fffff",
+    "file_name": "Your file name.csv",
+    "upload_date": "2023-04-28T15:25:41Z",
+    "file_status": "Complete",
+    "file_phase_2_status": "N/A",
+    "complete_percentage": "100%",
+    "return_url": "Your return URL if provided when calling sendfile API"
+  }
+JSON
+            ),
+            // _email-validation-api-quickstart_v2-file-status_response.html
+            array('fileStatus', <<<'JSON'
+{
+    "success": true,
+    "file_id": "aaaaaaaa-zzzz-xxxx-yyyy-5003727fffff",
+    "file_name": "Your file name.csv",
+    "upload_date": "2023-04-28T15:25:41Z",
+    "file_status": "Complete",
+    "file_phase_2_status": "Complete",
+    "complete_percentage": "100%",
+    "return_url": "Your return URL if provided when calling sendfile API"
+  }
+JSON
+            ),
+            // _email-validation-api-quickstart_v2-send-file_response.html
+            array('sendFile', <<<'JSON'
+{
+      "success": true,
+      "message": "File Accepted",
+      "file_name": "Your file name.csv",
+      "file_id": "aaaaaaaa-zzzz-xxxx-yyyy-5003727fffff"
+    }
+JSON
+            ),
+            // _email-validation-api-quickstart_v2-validate-emails_response.html
+            array('validate', <<<'JSON'
+{
+      "address": "john.doe@zerobounce.net",
+      "status": "valid",
+      "sub_status": "",
+      "free_email": false,
+      "catchall_domain": true,
+      "did_you_mean": null,
+      "account": "johndoe",
+      "domain": "zerobounce.net",
+      "domain_age_days": "3431",
+      "active_in_days": "30",
+      "active_first_seen": "2026-02-25",
+      "smtp_provider": "g-suite",
+      "mx_found": "true",
+      "mx_record": "aspmx.l.google.com",
+      "firstname": "dan",
+      "lastname": "cotet",
+      "gender": "male",
+      "country": null,
+      "region": null,
+      "city": null,
+      "zipcode": null,
+      "processed_at": "2026-06-18 07:05:00.033"
+  }
+JSON
+            ),
+        );
+    }
+
+    private static function siteErrors()
+    {
+        return array(
+            // _ai-scoring-api_ai-scoring-api__file-status_api-file-status-response.html
+            array('scoringFileStatus', <<<'JSON'
+{
+          "success": false,
+          "message": "Error messages"
+      }
+JSON
+            ),
+            // _ai-scoring-api_ai-scoring-api__send-file_api-send-file-response.html
+            array('scoringSendFile', <<<'JSON'
+{
+          "success": false,
+          "message": [
+              "Error messages"
+          ]
+      }
+JSON
+            ),
+            // _ai-scoring-api_ai_scoring_delete_file_scoring__delete-file.html
+            array('scoringDeleteFile', <<<'JSON'
+{
+        "success": false,
+        "message": "File cannot be found."
+    }
+JSON
+            ),
+            // _email-validation-api-quickstart_v2-batch-validate-emails_response.html
+            array('validateBatch', <<<'JSON'
+{
+      "email_batch": [],
+      "errors": [
+          {
+              "error": "Invalid API Key or your account ran out of credits",
+              "email_address": "all"
+          }
+      ]
+    }
+JSON
+            ),
+            // _email-validation-api-quickstart_v2-delete-file_response.html
+            array('deleteFile', <<<'JSON'
+{
+    "success": false,
+    "error_message": "File cannot be found."
+  }
+JSON
+            ),
+            // _email-validation-api-quickstart_v2-file-status_response.html
+            array('fileStatus', <<<'JSON'
+{      
+    "success": false,
+    "error_message": "Error messages"
+  }
+JSON
+            ),
+            // _email-validation-api-quickstart_v2-get-api-usage_response.html
+            array('getApiUsage', <<<'JSON'
+{"error":"Invalid API Key"}
+JSON
+            ),
+            // _email-validation-api-quickstart_v2-get-api-usage_response.html
+            array('getApiUsage', <<<'JSON'
+{"error":"Invalid Date"}
+JSON
+            ),
+            // _email-validation-api-quickstart_v2-send-file_response.html
+            array('sendFile', <<<'JSON'
+{
+      "success": false,
+      "error_message": "Error messages"
+    }
+JSON
+            ),
+            // _email-validation-api-quickstart_v2-validate-emails_response.html
+            array('validate', <<<'JSON'
+{"error":"Invalid API Key or your account ran out of credits"}
+JSON
+            ),
+        );
+    }
+
+    public function testEveryZeroBounceNetResultParses()
+    {
+        $client = new CannedFileClient(200, 'application/json', '');
+        $client->initialize('fieldtypes-key');
+        $calls = $this->sweepCalls($client, $this->dir . '/result.csv');
+        foreach (self::siteResults() as $example) {
+            list($name, $body) = $example;
+            $this->assertArrayHasKey($name, $calls);
+            $client->answer['body'] = $body;
+            foreach ($calls[$name] as $call) {
+                $this->quietly($call);
+            }
+        }
+        $client->answer['body'] = '{"Credits":2375323}';
+        $this->assertSame(2375323, $client->getCredits()->credits);
+    }
+
+    public function testEveryZeroBounceNetErrorIsAnErrorWithStatus200()
+    {
+        $client = new CannedFileClient(200, 'application/json', '');
+        $client->initialize('fieldtypes-key');
+        $calls = $this->sweepCalls($client, $this->dir . '/result.csv');
+        foreach (self::siteErrors() as $example) {
+            list($name, $body) = $example;
+            $this->assertArrayHasKey($name, $calls);
+            $client->answer['body'] = $body;
+            foreach ($calls[$name] as $i => $call) {
+                try {
+                    $this->quietly($call);
+                    $this->fail("$name#$i accepted $body");
+                } catch (ZBApiException $e) {
+                    $this->assertSame(200, $e->getStatusCode(), $body);
+                }
+            }
+        }
+    }
+
+    // -- Nested paths: every wrong JSON type at every array item, row and row field --------------
+
+    /** Documented answers with nested values, by call: [body, model]. */
+    private static function nestedExamples()
+    {
+        return array(
+            'validateBatch' => array(self::$documented['validateBatch'], 'ZBBatchValidateResponse'),
+            'validateBatch ' => array('{"email_batch":[],"errors":[{"error":"Invalid email","email_address":"a@b.c"}]}', 'ZBBatchValidateResponse'),
+            'guessFormat' => array(self::$documented['guessFormat'], 'ZBGuessFormatResponse'),
+            'findEmailFormat' => array(self::$documented['findEmailFormat'], 'ZBFindEmailFormatResponse'),
+            'sendFile' => array('{"success":true,"message":["File Accepted"],"file_name":"f.csv","file_id":"f1"}', 'ZBSendFileResponse'),
+            'fileStatus' => array('{"success":true,"message":["Processing"],"file_id":"f1"}', 'ZBFileStatusResponse'),
+            'deleteFile' => array('{"success":true,"message":["File Deleted"],"file_id":"f1"}', 'ZBDeleteFileResponse'),
+        );
+    }
+
+    /**
+     * @return array[] [path, decoded body] for every wrong JSON type at every nested path of $data: an object in
+     *   place of an array of rows, each row that is not an object, each row field of a type its shape does not
+     *   allow (or null where required), and each item of a string array that is not a string
+     */
+    private static function nestedMutations(ZBResponse $model, array $data)
+    {
+        $out = array();
+        $shapes = self::call($model, 'itemShapes');
+        foreach (self::call($model, 'fieldTypes') as $name => $kinds) {
+            if (!isset($data[$name]) || !is_array($data[$name]) || count($data[$name]) === 0) {
+                continue;
+            }
+            $items = $data[$name];
+            if (!isset($shapes[$name])) {
+                foreach ($items as $index => $item) {
+                    foreach (array(5, 5.5, true, null, array('a' => 1), array(1)) as $wrong) {
+                        $copy = $items;
+                        $copy[$index] = $wrong;
+                        $out[] = array("{$name}[{$index}]", array_merge($data, array($name => $copy)));
+                    }
+                }
+                continue;
+            }
+            $shape = $shapes[$name];
+            $out[] = array($name . ' as an object', array_merge($data, array($name => array('a' => $items[0]))));
+            $rowTypes = $shape instanceof ZBResponse ? self::call($shape, 'fieldTypes') : $shape;
+            foreach ($items as $index => $item) {
+                foreach (array(5, 5.5, true, null, 'x', array(1), array('x', 'y')) as $wrong) {
+                    $copy = $items;
+                    $copy[$index] = $wrong;
+                    $out[] = array("{$name}[{$index}]", array_merge($data, array($name => $copy)));
+                }
+                $required = $shape instanceof ZBResponse ? self::call($shape, 'requiredFields', array($item)) : array();
+                foreach ($rowTypes as $field => $fieldKinds) {
+                    $wrongs = self::wrongValues($fieldKinds);
+                    if (in_array($field, $required, true)) {
+                        $wrongs[] = null;
+                    }
+                    foreach ($wrongs as $wrong) {
+                        $copy = $items;
+                        $copy[$index] = array_merge($item, array($field => $wrong));
+                        $out[] = array("{$name}[{$index}].{$field}", array_merge($data, array($name => $copy)));
+                    }
+                }
+            }
+        }
+        return $out;
+    }
+
+    public function testEveryNestedPathRejectsEveryWrongType()
+    {
+        $models = self::models();
+        $client = new CannedFileClient(200, 'application/json', '');
+        $client->initialize('fieldtypes-key');
+        $calls = $this->sweepCalls($client, $this->dir . '/result.csv');
+        $wrong = array();
+        $count = 0;
+        foreach (self::nestedExamples() as $name => $example) {
+            list($body, $model) = $example;
+            $name = trim($name);
+            foreach ($calls[$name] as $i => $call) {
+                $client->answer['body'] = $body;
+                $this->quietly($call);
+                foreach (self::nestedMutations($models[$model], json_decode($body, true)) as $mutation) {
+                    list($path, $data) = $mutation;
+                    $count++;
+                    $client->answer['body'] = json_encode($data);
+                    try {
+                        $this->quietly($call);
+                        $wrong[] = "$name#$i $path accepted " . $client->answer['body'];
+                    } catch (ZBApiException $e) {
+                        if ($e->getStatusCode() !== 200) {
+                            $wrong[] = "$name#$i $path status " . $e->getStatusCode();
+                        }
+                    } catch (\Throwable $e) {
+                        $wrong[] = "$name#$i $path " . get_class($e);
+                    }
+                }
+            }
+        }
+        $this->assertGreaterThan(200, $count);
+        $this->assertSame(array(), $wrong);
     }
 }
