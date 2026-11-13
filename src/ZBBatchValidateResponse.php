@@ -38,6 +38,10 @@ class ZBBatchValidateResponse extends ZBResponse
     public function getValue($classKey, $value)
     {
         if ($classKey === 'emailBatch' || $classKey === 'errors') {
+            // null is accepted for an optional list and reads as the empty list (standard.md section 3).
+            if ($value === null) {
+                $value = array();
+            }
             if (!is_array($value)) {
                 throw self::wrongShape();
             }

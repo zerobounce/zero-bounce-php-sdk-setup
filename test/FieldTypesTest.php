@@ -187,6 +187,46 @@ class FieldTypesTest extends TestCase
         }
     }
 
+    /**
+     * B: null in an optional list field reads as that type's empty value (standard.md section 3): an empty
+     * email_batch or errors list, never an error. The same holds for every other optional field of a typed answer.
+     */
+    public function testNullListFieldsReadAsEmptyLists()
+    {
+        $client = new CannedFileClient(200, 'application/json', '');
+        $client->initialize('fieldtypes-key');
+        foreach (array('{"email_batch":null,"errors":null}', '{"email_batch":[],"errors":null}',
+            '{"email_batch":null,"errors":[]}') as $body) {
+            $client->answer['body'] = $body;
+            $result = $client->validateBatch(array('a@example.com'));
+            $this->assertSame(array(), $result->emailBatch, $body);
+            $this->assertSame(array(), $result->errors, $body);
+        }
+    }
+
+    public function testNullOptionalFieldsOfEveryTypedAnswerAreNotErrors()
+    {
+        $client = new CannedFileClient(200, 'application/json', '');
+        $client->initialize('fieldtypes-key');
+        $calls = array(
+            'findEmailFormat' => function () use ($client) { return $client->findEmailFormat('example.com', 'Example'); },
+            'findEmail' => function () use ($client) { return $client->findEmail('example.com', 'Ann', 'Example'); },
+            'fileStatus' => function () use ($client) { return $client->fileStatus('f1'); },
+        );
+        $fields = array(
+            'findEmailFormat' => array('email', 'email_confidence', 'domain', 'company_name'),
+            'findEmail' => array('email', 'domain', 'company_name', 'failure_reason'),
+            'fileStatus' => array('file_id', 'upload_date', 'file_status', 'message', 'return_url'),
+        );
+        foreach ($calls as $name => $call) {
+            foreach ($fields[$name] as $field) {
+                $client->answer['body'] = '{"success":true,"' . $field . '":null}';
+                $result = $call();
+                $this->assertInstanceOf(ZBResponse::class, $result, "$name $field");
+            }
+        }
+    }
+
     /** @return string[] what each typed call does with $body, unless it is an error with status 200 */
     private function sweep($body)
     {
@@ -506,6 +546,129 @@ JSON
       "zipcode": null,
       "processed_at": "2026-06-18 07:05:00.033"
   }
+JSON
+            ),
+            // _email-validation-api-quickstart_v2-batch-validate-emails_response.html
+            array('validateBatch', <<<'JSON'
+{
+      "email_batch": [
+          {
+              "address": "john.doe@zerobounce.net",
+              "status": "valid",
+              "sub_status": "",
+              "free_email": false,
+              "catchall_domain": true,
+              "did_you_mean": null,
+              "account": "johndoe",
+              "domain": "zerobounce.net",
+              "domain_age_days": "3431",
+              "active_in_days": "30",
+              "active_first_seen": "2026-02-25",
+              "smtp_provider": "g-suite",
+              "mx_found": "true",
+              "mx_record": "aspmx.l.google.com",
+              "firstname": "dan",
+              "lastname": "cotet",
+              "gender": "male",
+              "country": null,
+              "region": null,
+              "city": null,
+              "zipcode": null,
+              "processed_at": "2026-06-18 07:05:00.033"
+          },
+          {
+              "address": "invalid@example.com",
+              "status": "invalid",
+              "sub_status": "mailbox_not_found",
+              "free_email": false,
+              "did_you_mean": null,
+              "account": null,
+              "domain": null,
+              "domain_age_days": "9692",
+              "active_in_days": "365",
+              "active_first_seen": "2026-02-25",
+              "smtp_provider": "example",
+              "mx_found": "true",
+              "mx_record": "mx.example.com",
+              "catchall_domain": false,
+              "firstname": "zero",
+              "lastname": "bounce",
+              "gender": "male",
+              "country": null,
+              "region": null,
+              "city": null,
+              "zipcode": null,
+              "processed_at": "2020-09-17 17:43:11.830"
+          },
+          {
+              "address": "disposable@example.com",
+              "status": "do_not_mail",
+              "sub_status": "disposable",
+              "free_email": false,
+              "did_you_mean": null,
+              "account": null,
+              "domain": null,
+              "domain_age_days": "9692",
+              "active_in_days": "365",
+              "active_first_seen": "2026-02-25",
+              "smtp_provider": "example",
+              "mx_found": "true",
+              "mx_record": "mx.example.com",
+              "catchall_domain": false,
+              "firstname": "zero",
+              "lastname": "bounce",
+              "gender": "male",
+              "country": null,
+              "region": null,
+              "city": null,
+              "zipcode": null,
+              "processed_at": "2020-09-17 17:43:11.830"
+          }
+      ],
+      "errors": []
+  }
+JSON
+            ),
+            // _email-validation-api-quickstart_v2-get-api-usage_response.html
+            array('getApiUsage', <<<'JSON'
+{
+      "total": 120,
+      "status_valid": 17,
+      "status_invalid": 69,
+      "status_catch_all": 9,
+      "status_do_not_mail": 16,
+      "status_spamtrap": 0,
+      "status_unknown": 6,
+      "sub_status_toxic": 0,
+      "sub_status_disposable": 1,
+      "sub_status_role_based": 1,
+      "sub_status_possible_trap": 0,
+      "sub_status_global_suppression": 14,
+      "sub_status_timeout_exceeded": 0,
+      "sub_status_mail_server_temporary_error": 0,
+      "sub_status_mail_server_did_not_respond": 0,
+      "sub_status_greylisted": 6,
+      "sub_status_antispam_system": 0,
+      "sub_status_does_not_accept_mail": 27,
+      "sub_status_exception_occurred": 0,
+      "sub_status_failed_syntax_check": 20,
+      "sub_status_mailbox_not_found": 12,
+      "sub_status_unroutable_ip_address": 0,
+      "sub_status_possible_typo": 0,
+      "sub_status_no_dns_entries": 10,
+      "sub_status_role_based_catch_all": 0,
+      "sub_status_mailbox_quota_exceeded": 0,
+      "sub_status_forcible_disconnect": 0,
+      "sub_status_failed_smtp_connection": 0,
+      "sub_status_leading_period_removed": 0,
+      "sub_status_alias_address": 2,
+      "sub_status_mx_forward": 0,
+      "sub_status_alternate": 0,
+      "sub_status_blocked": 0,
+      "sub_status_allowed": 0,
+      "start_date": "1/1/2023",
+      "end_date": "1/30/2024"
+    }
 JSON
             ),
         );

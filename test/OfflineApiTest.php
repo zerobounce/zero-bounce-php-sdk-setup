@@ -1883,6 +1883,31 @@ return true;
         $this->assertTrue($method->isPrivate());
     }
 
+    /** D closure: return_url is sent only when the caller gives one, on every sendfile call. */
+    public function testReturnUrlIsSentOnlyWhenGiven()
+    {
+        $api = new FakeApi();
+        $client = $this->client($api, 'file-key');
+        $stream = "email\na@example.com\n";
+        $sends = array(
+            'sendFile' => function ($url) use ($client) { $client->sendFile($this->csv, 0, $url); },
+            'scoringSendFile' => function ($url) use ($client) { $client->scoringSendFile($this->csv, 0, $url); },
+            'sendFileStream' => function ($url) use ($client, $stream) {
+                $client->sendFileStream($stream, 'emails.csv', 1, $url);
+            },
+            'scoringSendFileStream' => function ($url) use ($client, $stream) {
+                $client->scoringSendFileStream($stream, 'emails.csv', 1, $url);
+            },
+        );
+        foreach ($sends as $name => $send) {
+            $send(null);
+            $request = $this->only($api);
+            $this->assertArrayNotHasKey('return_url', $request['fields'], $name);
+            $send('https://example.com/done');
+            $this->assertSame('https://example.com/done', $this->only($api)['fields']['return_url'], $name);
+        }
+    }
+
     private function client(FakeApi $api, $key)
     {
         $client = new OfflineClient($api);
