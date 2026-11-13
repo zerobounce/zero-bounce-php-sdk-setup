@@ -46,6 +46,26 @@ class ZBFindEmailFormatResponse extends ZBResponse
      */
     public $otherDomainFormats = [];
 
+    protected function fieldTypes()
+    {
+        return array(
+            'domain' => array('string'),
+            'company_name' => array('string'),
+            'format' => array('string'),
+            'confidence' => array('string'),
+            'did_you_mean' => array('string'),
+            'failure_reason' => array('string'),
+            'other_domain_formats' => array('array'),
+        );
+    }
+
+    protected function itemShapes()
+    {
+        return array(
+            'other_domain_formats' => array('format' => array('string'), 'confidence' => array('string')),
+        );
+    }
+
     public function getValue($classKey, $value)
     {
         if ($classKey === "confidence") {

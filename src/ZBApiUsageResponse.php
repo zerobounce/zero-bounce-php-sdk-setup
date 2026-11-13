@@ -270,6 +270,51 @@ class ZBApiUsageResponse extends ZBResponse
             "}";
     }
 
+    protected function fieldTypes()
+    {
+        return array(
+            'total' => array('int'),
+            'status_valid' => array('int'),
+            'status_invalid' => array('int'),
+            'status_catch_all' => array('int'),
+            'status_do_not_mail' => array('int'),
+            'status_spamtrap' => array('int'),
+            'status_unknown' => array('int'),
+            'sub_status_toxic' => array('int'),
+            'sub_status_disposable' => array('int'),
+            'sub_status_role_based' => array('int'),
+            'sub_status_possible_trap' => array('int'),
+            'sub_status_global_suppression' => array('int'),
+            'sub_status_timeout_exceeded' => array('int'),
+            'sub_status_mail_server_temporary_error' => array('int'),
+            'sub_status_mail_server_did_not_respond' => array('int'),
+            'sub_status_greylisted' => array('int'),
+            'sub_status_antispam_system' => array('int'),
+            'sub_status_does_not_accept_mail' => array('int'),
+            'sub_status_exception_occurred' => array('int'),
+            'sub_status_failed_syntax_check' => array('int'),
+            'sub_status_mailbox_not_found' => array('int'),
+            'sub_status_unroutable_ip_address' => array('int'),
+            'sub_status_possible_typo' => array('int'),
+            'sub_status_no_dns_entries' => array('int'),
+            'sub_status_role_based_catch_all' => array('int'),
+            'sub_status_mailbox_quota_exceeded' => array('int'),
+            'sub_status_forcible_disconnect' => array('int'),
+            'sub_status_failed_smtp_connection' => array('int'),
+            'sub_status_accept_all' => array('int'),
+            'sub_status_mx_forward' => array('int'),
+            'sub_status_alternate' => array('int'),
+            'sub_status_allowed' => array('int'),
+            'sub_status_blocked' => array('int'),
+            'sub_status_gold' => array('int'),
+            'sub_status_role_based_accept_all' => array('int'),
+            'sub_status_leading_period_removed' => array('int'),
+            'sub_status_alias_address' => array('int'),
+            'start_date' => array('string'),
+            'end_date' => array('string'),
+        );
+    }
+
     /**
      * LIVE: four of these counters do not survive the snake_case to camelCase
      * conversion the base class does, so they were never populated and stayed

@@ -15,6 +15,22 @@ class ZBBatchValidateResponse extends ZBResponse
      */
     public $errors = [];
 
+    protected function fieldTypes()
+    {
+        return array(
+            'email_batch' => array('array'),
+            'errors' => array('array'),
+        );
+    }
+
+    protected function itemShapes()
+    {
+        return array(
+            'email_batch' => new ZBValidateResponse(),
+            'errors' => array('error' => array('string'), 'email_address' => array('string')),
+        );
+    }
+
     /**
      * @throws ZBApiException (status 200) when email_batch or errors is not an
      *     array of objects: JSON of the wrong shape for this call (E7)

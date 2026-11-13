@@ -60,6 +60,28 @@ class ZBGuessFormatResponse extends ZBResponse
      */
     public $otherDomainFormats = [];
 
+    protected function fieldTypes()
+    {
+        return array(
+            'email' => array('string'),
+            'domain' => array('string'),
+            'format' => array('string'),
+            'status' => array('string'),
+            'sub_status' => array('string'),
+            'confidence' => array('string'),
+            'did_you_mean' => array('string'),
+            'failure_reason' => array('string'),
+            'other_domain_formats' => array('array'),
+        );
+    }
+
+    protected function itemShapes()
+    {
+        return array(
+            'other_domain_formats' => array('format' => array('string'), 'confidence' => array('string')),
+        );
+    }
+
     public function getValue($classKey, $value)
     {
         if ($classKey === "status") {

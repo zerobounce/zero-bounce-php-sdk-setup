@@ -24,6 +24,16 @@ class ZBSendFileResponse extends ZBResponse
      */
     public $fileId;
 
+    protected function fieldTypes()
+    {
+        return array(
+            'success' => array('bool', 'string'),
+            'message' => array('string', 'strings'),
+            'file_name' => array('string'),
+            'file_id' => array('string'),
+        );
+    }
+
     public function getValue($classKey, $value)
     {
         if ($classKey == "message") {

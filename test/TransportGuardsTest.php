@@ -1909,6 +1909,40 @@ return true;
         }
     }
 
+    /**
+     * Every UTF-8 sequence length of the \uXXXX decoder (1, 2, 3 and 4 bytes,
+     * the last from a surrogate pair): a secret with such a character, every
+     * UTF-16 unit \u-escaped (a spelling no mask form covers), is found.
+     */
+    public function testEveryUtf8SequenceLengthIsDecoded()
+    {
+        foreach (array(1 => 'z', 2 => "\u{e9}", 3 => "\u{20ac}", 4 => "\u{1F600}") as $length => $char) {
+            $this->assertSame($length, strlen($char));
+            $secret = 'zq' . $char . 'ZQXMARK';
+            $units = str_split(bin2hex(mb_convert_encoding($secret, 'UTF-16BE', 'UTF-8')), 4);
+            $body = '\\u' . implode('\\u', $units);
+            $this->assertSame(ZBSecret::CREDENTIAL_OMITTED_MESSAGE, ZBSecret::redact('rejected ' . $body, array($secret)), "$length bytes");
+            // The same, URL-encoded on top.
+            $this->assertSame(
+                ZBSecret::CREDENTIAL_OMITTED_MESSAGE,
+                ZBSecret::redact('rejected ' . self::lowerHex($body), array($secret)),
+                "$length bytes, URL-encoded"
+            );
+        }
+    }
+
+    /**
+     * "+" as a space without %-decoding is a step of its own: a secret
+     * holding a literal %xx, echoed with only its space turned into +.
+     */
+    public function testPlusAsSpaceAloneIsADecodeStep()
+    {
+        $this->assertSame(
+            ZBSecret::CREDENTIAL_OMITTED_MESSAGE,
+            ZBSecret::redact('rejected zq+x%41ZQXMARK', array('zq x%41ZQXMARK'))
+        );
+    }
+
     public function testAUEscapedSurrogatePairIsJoined()
     {
         $secret = "pw\u{1F600}ZQXMARK";

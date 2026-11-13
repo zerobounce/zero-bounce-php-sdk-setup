@@ -284,7 +284,7 @@ scenario('error bodies', function () use ($tmp) {
 
 scenario('standard parity', function () {
     $response = new \ZeroBounce\SDK\ZBValidateResponse();
-    $response->Deserialize('{"mx_found":"false","catchall_domain":"unknown","free_email":"TRUE","status":"brand_new"}');
+    $response->Deserialize('{"address":"a@example.com","mx_found":"false","catchall_domain":"unknown","free_email":"TRUE","status":"brand_new"}');
     check($response->mxFound === false, 'mxFound "false" is false');
     check($response->catchallDomain === null, 'catchallDomain "unknown" is null');
     check($response->freeEmail === true, 'freeEmail "TRUE" is true');

@@ -14,6 +14,14 @@ class ZBScoreEmailResponse extends ZBResponse
      */
     public $score;
 
+    protected function fieldTypes()
+    {
+        return array(
+            'email' => array('string'),
+            'score' => array('int'),
+        );
+    }
+
     public function __toString()
     {
         return "ZBScoreEmailResponse{" .

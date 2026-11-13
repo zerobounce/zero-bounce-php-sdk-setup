@@ -178,6 +178,53 @@ class ZBValidateResponse extends ZBResponse
         return parent::getClassKey($key);
     }
 
+    protected function fieldTypes()
+    {
+        return array(
+            'address' => array('string'),
+            'status' => array('string'),
+            'sub_status' => array('string'),
+            'account' => array('string'),
+            'domain' => array('string'),
+            'did_you_mean' => array('string'),
+            'domain_age_days' => array('string'),
+            'active_in_days' => array('string'),
+            'active_first_seen' => array('string'),
+            'free_email' => array('bool', 'string'),
+            'mx_found' => array('bool', 'string'),
+            'mx_record' => array('string'),
+            'smtp_provider' => array('string'),
+            'catchall_domain' => array('bool', 'string'),
+            'firstname' => array('string'),
+            'lastname' => array('string'),
+            'gender' => array('string'),
+            'city' => array('string'),
+            'region' => array('string'),
+            'zipcode' => array('string'),
+            'country' => array('string'),
+            'processed_at' => array('string'),
+            'domain_website_exists' => array('string'),
+            'domain_registrant_company_name' => array('string'),
+            'Message' => array('string'),
+            'message' => array('string'),
+            'error' => array('string'),
+        );
+    }
+
+    /**
+     * address and status, except in the greylist answer {"Message": "..."},
+     * which is a result without either.
+     */
+    protected function requiredFields(array $json)
+    {
+        $greylist = (isset($json['Message']) && is_string($json['Message']))
+            || (isset($json['message']) && is_string($json['message']));
+        if ($greylist && !array_key_exists('address', $json) && !array_key_exists('status', $json)) {
+            return array();
+        }
+        return array('address', 'status');
+    }
+
     public function getValue($classKey, $value)
     {
         // A value this SDK version does not know is kept as the API sent it,

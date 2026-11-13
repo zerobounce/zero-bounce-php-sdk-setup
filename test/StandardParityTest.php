@@ -177,13 +177,13 @@ class StandardParityTest extends TestCase
     public function testValidateFlagsAreRealBooleans()
     {
         $response = new ZBValidateResponse();
-        $response->Deserialize('{"mx_found":"false","catchall_domain":"False","free_email":true,"status":"valid"}');
+        $response->Deserialize('{"address":"a@example.com","mx_found":"false","catchall_domain":"False","free_email":true,"status":"valid"}');
         $this->assertFalse($response->mxFound);
         $this->assertFalse($response->catchallDomain);
         $this->assertTrue($response->freeEmail);
 
         $response = new ZBValidateResponse();
-        $response->Deserialize('{"mx_found":"true","catchall_domain":"unknown","free_email":"FALSE"}');
+        $response->Deserialize('{"address":"a@example.com","status":"valid","mx_found":"true","catchall_domain":"unknown","free_email":"FALSE"}');
         $this->assertTrue($response->mxFound);
         $this->assertNull($response->catchallDomain);
         $this->assertFalse($response->freeEmail);
@@ -209,12 +209,12 @@ class StandardParityTest extends TestCase
     public function testUnknownStatusValuesAreKeptAsSent()
     {
         $response = new ZBValidateResponse();
-        $response->Deserialize('{"status":"brand_new","sub_status":"newer_still"}');
+        $response->Deserialize('{"address":"a@example.com","status":"brand_new","sub_status":"newer_still"}');
         $this->assertSame('brand_new', $response->status);
         $this->assertSame('newer_still', $response->subStatus);
 
         $response = new ZBValidateResponse();
-        $response->Deserialize('{"status":"unknown","sub_status":"greylisted"}');
+        $response->Deserialize('{"address":"a@example.com","status":"unknown","sub_status":"greylisted"}');
         $this->assertSame('unknown', $response->status);
         $this->assertSame('greylisted', $response->subStatus);
     }
@@ -222,7 +222,7 @@ class StandardParityTest extends TestCase
     public function testToStringNamesEveryActivityFieldAndPrintsFlags()
     {
         $response = new ZBValidateResponse();
-        $response->Deserialize('{"active_in_days":"30","active_first_seen":"2024-01-01","mx_found":"false"}');
+        $response->Deserialize('{"address":"a@example.com","status":"valid","active_in_days":"30","active_first_seen":"2024-01-01","mx_found":"false"}');
         $text = (string)$response;
         $this->assertStringContainsString("activeInDays='30'", $text);
         $this->assertStringContainsString("activeFirstSeen='2024-01-01'", $text);

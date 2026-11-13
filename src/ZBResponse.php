@@ -22,6 +22,8 @@ class ZBResponse
             throw new ZBException('Deserialize expects a JSON string or array, null or invalid type given.');
         }
 
+        $this->checkShape($json);
+
         foreach ($json as $key => $value) {
             $classKey = $this->getClassKey($key);
             if (!property_exists($this, $classKey)) {
@@ -35,6 +37,145 @@ class ZBResponse
     public function getClassKey($key)
     {
         return self::underlinesToCamelCase($key);
+    }
+
+    /**
+     * The JSON type every documented field may arrive as, by JSON key: a list
+     * of 'string', 'bool', 'int', 'number' or 'array'. Field types are part of
+     * the response shape (E7): a field of another JSON type is an API error
+     * with status 200, never coerced or defaulted. null is accepted for every
+     * field not in requiredFields().
+     *
+     * @return array<string, string[]>
+     */
+    protected function fieldTypes()
+    {
+        return array();
+    }
+
+    /**
+     * The fields that must be present and not null.
+     *
+     * @param array $json the decoded response
+     * @return string[]
+     */
+    protected function requiredFields(array $json)
+    {
+        return array();
+    }
+
+    /**
+     * The rows of array fields, by JSON key: a response object to check each
+     * row with, or the field types of a plain row.
+     *
+     * @return array<string, ZBResponse|array<string, string[]>>
+     */
+    protected function itemShapes()
+    {
+        return array();
+    }
+
+    /**
+     * Checks beyond the JSON type (e.g. a string that must hold an integer).
+     *
+     * @param array $json
+     * @throws ZBApiException
+     */
+    protected function checkValues(array $json)
+    {
+    }
+
+    /**
+     * @param array $json the decoded response
+     * @param string $path where $json sits in the response, for the message
+     * @throws ZBApiException (status 200) naming the field, never its value
+     */
+    public function checkShape(array $json, $path = '')
+    {
+        foreach ($this->requiredFields($json) as $name) {
+            if (!isset($json[$name])) {
+                throw self::wrongField($path . $name . ' is missing');
+            }
+        }
+        self::checkTypes($json, $this->fieldTypes(), $path);
+        foreach ($this->itemShapes() as $name => $shape) {
+            if (!isset($json[$name]) || !is_array($json[$name])) {
+                continue;
+            }
+            foreach ($json[$name] as $index => $item) {
+                $row = $path . $name . '[' . $index . ']';
+                $where = $row . '.';
+                if (!is_array($item) || (count($item) > 0 && self::isList($item))) {
+                    throw self::wrongField($row . ' is not an object');
+                }
+                if ($shape instanceof ZBResponse) {
+                    $shape->checkShape($item, $where);
+                } else {
+                    self::checkTypes($item, $shape, $where);
+                }
+            }
+        }
+        $this->checkValues($json);
+    }
+
+    /**
+     * @param array $json
+     * @param array<string, string[]> $types
+     * @param string $path
+     * @throws ZBApiException
+     */
+    private static function checkTypes(array $json, array $types, $path)
+    {
+        foreach ($types as $name => $kinds) {
+            if (!array_key_exists($name, $json) || $json[$name] === null) {
+                continue;
+            }
+            if (!self::jsonTypeOk($json[$name], $kinds)) {
+                throw self::wrongField($path . $name . ' has the wrong type');
+            }
+        }
+    }
+
+    /**
+     * @param mixed $value a json_decode(..., true) value
+     * @param string[] $kinds
+     * @return bool
+     */
+    public static function jsonTypeOk($value, array $kinds)
+    {
+        foreach ($kinds as $kind) {
+            if (($kind === 'string' && is_string($value))
+                || ($kind === 'bool' && is_bool($value))
+                || ($kind === 'int' && is_int($value))
+                || ($kind === 'number' && (is_int($value) || is_float($value)))
+                || ($kind === 'array' && is_array($value) && self::isList($value))
+                || ($kind === 'strings' && is_array($value) && self::isList($value)
+                    && count(array_filter($value, 'is_string')) === count($value))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @param array $value
+     * @return bool whether $value is a JSON array (keys 0..n-1); {} decodes as one too
+     */
+    private static function isList(array $value)
+    {
+        return $value === array() || array_keys($value) === range(0, count($value) - 1);
+    }
+
+    /**
+     * @param string $problem
+     * @return ZBApiException
+     */
+    protected static function wrongField($problem)
+    {
+        return new ZBApiException(
+            'ZeroBounce returned JSON of an unexpected shape for this call: ' . $problem . '.',
+            200
+        );
     }
 
     public function getValue($classKey, $value)

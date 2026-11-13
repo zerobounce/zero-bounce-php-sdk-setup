@@ -54,6 +54,22 @@ class ZBFileStatusResponse extends ZBResponse
      */
     public $returnUrl;
 
+    protected function fieldTypes()
+    {
+        return array(
+            'success' => array('bool', 'string'),
+            'message' => array('string', 'strings'),
+            'file_id' => array('string'),
+            'file_name' => array('string'),
+            'upload_date' => array('string'),
+            'file_status' => array('string'),
+            'file_phase_2_status' => array('string'),
+            'complete_percentage' => array('string'),
+            'error_reason' => array('string'),
+            'return_url' => array('string'),
+        );
+    }
+
     protected function boolFields()
     {
         return array('success');

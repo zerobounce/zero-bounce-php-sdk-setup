@@ -14,6 +14,15 @@ class ZBActivityResponse extends ZBResponse
      */
     public $activeInDays;
 
+    protected function fieldTypes()
+    {
+        return array(
+            'found' => array('bool', 'string'),
+            'active_in_days' => array('string'),
+            'active_first_seen' => array('string'),
+        );
+    }
+
     protected function boolFields()
     {
         return array('found');

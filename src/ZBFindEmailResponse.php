@@ -40,6 +40,18 @@ class ZBFindEmailResponse extends ZBResponse
      */
     public $failureReason;
 
+    protected function fieldTypes()
+    {
+        return array(
+            'email' => array('string'),
+            'domain' => array('string'),
+            'company_name' => array('string'),
+            'email_confidence' => array('string'),
+            'did_you_mean' => array('string'),
+            'failure_reason' => array('string'),
+        );
+    }
+
     public function getValue($classKey, $value)
     {
         if ($classKey === "emailConfidence") {
