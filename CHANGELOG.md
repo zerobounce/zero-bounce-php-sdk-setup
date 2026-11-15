@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [4.0.0] - 2026-11-15
 
 ### Changed
 
@@ -433,7 +433,7 @@ This release has breaking changes. Read the **Breaking** entries under Changed b
 
 - Initial release: `getCredits`, `getApiUsage`, `validate`, and the bulk file methods.
 
-[Unreleased]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v3.0.0...HEAD
+[4.0.0]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v3.0.0...v4.0.0
 [3.0.1]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v3.0.0...v3.0.1
 [3.0.0]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v2.2.0...v3.0.0
 [2.2.0]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v2.1.11...v2.2.0

@@ -19,7 +19,7 @@ final class ZeroBounce
      * against it (composer.json carries no "version"); CHANGELOG.md's newest release heading
      * must match it.
      */
-    const VERSION = "3.0.1";
+    const VERSION = "4.0.0";
 
     /**
      * Call this method to get singleton
