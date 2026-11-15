@@ -315,7 +315,7 @@ class ZeroBounceTest extends TestCase
             \"file_id\": \"fae8b155-da88-45fb-8058-0ccfad168812\"
         }";
         $response = ZeroBounce::Instance()->sendFile(
-            "./test/email_file.csv", 1, $hasHeaderRow = false);
+            "./test/email_file.csv", 1, null);
         $this->assertEquals($response->success, true);
         $this->assertEquals($response->fileName, "email_list.txt");
     }
@@ -446,7 +446,7 @@ class ZeroBounceTest extends TestCase
             \"file_id\": \"fae8b155-da88-45fb-8058-0ccfad168812\"
         }";
         $response = ZeroBounce::Instance()->scoringSendFile(
-            "./test/email_file.csv", 1, $hasHeaderRow = false);
+            "./test/email_file.csv", 1, null);
         $this->assertEquals($response->success, true);
         $this->assertEquals($response->fileName, "email_list.txt");
     }

@@ -66,6 +66,23 @@ final class ZBUrl
     }
 
     /**
+     * Whether $url is an absolute http:// or https:// URL with the same host,
+     * port and character rules as isSafeHttps(). For URLs the API calls back
+     * (return_url, callback_url, webhook URLs), which the API documents as
+     * http or https.
+     *
+     * @param mixed $url
+     * @return bool
+     */
+    public static function isSafeHttpOrHttps($url)
+    {
+        if (!is_string($url) || !preg_match('~^(https?)://(.*)$~is', $url, $m)) {
+            return false;
+        }
+        return self::isSafeHttps('https://' . $m[2]);
+    }
+
+    /**
      * Whether an API key or password carries whitespace, control or format
      * characters, or anything outside printable ASCII.
      *

@@ -252,6 +252,50 @@ class ZeroBounce
     }
 
     /**
+     * Whether $value is an ISO 8601 date (YYYY-MM-DD, a real day) or a
+     * date and time (T or space, HH:MM[:SS[.fraction]], optional Z or offset).
+     *
+     * @param mixed $value
+     * @return bool
+     */
+    private static function isIsoDateOrDateTime($value)
+    {
+        if (!is_string($value) || !preg_match(
+            '/\A(\d{4}-\d{2}-\d{2})(?:[Tt ]([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,9})?)?(?:[Zz]|[+-](?:[01]\d|2[0-3]):?[0-5]\d)?)?\z/',
+            $value,
+            $m
+        )) {
+            return false;
+        }
+        return self::isRealDate($m[1]);
+    }
+
+    /**
+     * A URL the API calls back (return_url, callback_url, a webhook URL): a
+     * string holding an http:// or https:// URL, refused before anything is sent.
+     *
+     * @param mixed $value
+     * @param string $name
+     * @return string
+     * @throws ZBMissingParameterException
+     */
+    private static function requireCallbackUrl($value, $name)
+    {
+        if ($value === null || (is_string($value) && trim($value) === '')) {
+            throw new ZBMissingParameterException($name . ' is required');
+        }
+        if (!is_string($value)) {
+            throw new ZBMissingParameterException($name . ' must be a string');
+        }
+        if (!ZBUrl::isSafeHttpOrHttps($value)) {
+            throw new ZBMissingParameterException(
+                $name . ' must be a valid http:// or https:// URL (a host, an optional port, no credentials, no whitespace)'
+            );
+        }
+        return $value;
+    }
+
+    /**
      * One path segment, or a clear error. A segment of "." or ".." would walk
      * the request up out of the endpoint it was meant for.
      *
@@ -262,6 +306,9 @@ class ZeroBounce
      */
     protected static function pathSegment($value, $name)
     {
+        if ($value !== null && !is_string($value) && !is_int($value)) {
+            throw new ZBMissingParameterException($name . ' must be a string');
+        }
         $trimmed = trim((string)$value);
         if ($trimmed === '') {
             throw new ZBMissingParameterException($name . ' is required');
@@ -355,8 +402,8 @@ class ZeroBounce
                     "callbackUrl requires greylistProcessing = true"
                 );
             }
-            if ($options->callbackUrl !== null && trim((string)$options->callbackUrl) === '') {
-                throw new ZBMissingParameterException("callbackUrl is required");
+            if ($options->callbackUrl !== null) {
+                self::requireCallbackUrl($options->callbackUrl, 'callbackUrl');
             }
         }
         $response = new ZBValidateResponse();
@@ -1960,9 +2007,9 @@ class ZeroBounce
                     $status
                 );
             }
-            if (strlen($head) >= self::DownloadSniffBytes && substr(ltrim(self::stripBom($head)), 0, 1) === '{') {
+            if (strlen($head) >= self::DownloadSniffBytes && in_array(substr(ltrim(self::stripBom($head)), 0, 1), array('{', '['), true)) {
                 // A JSON object longer than the sniff window cannot be parsed to
-                // tell an error from a file; no result file starts with "{", so
+                // tell an error from a file; no result file starts with "{" or "[", so
                 // it is an error with its status, as the same body under the
                 // window would be.
                 throw new ZBApiException(
@@ -2000,8 +2047,8 @@ class ZeroBounce
             'api_key' => $this->apiKey(),
             'email_address_column' => $emailAddressColumn,
         );
-        if ($returnUrl) {
-            $fields['return_url'] = $returnUrl;
+        if ($returnUrl !== null && $returnUrl !== '') {
+            $fields['return_url'] = self::requireCallbackUrl($returnUrl, 'return_url');
         }
         if ($this->isProvidedColumn($firstNameColumn, 'firstNameColumn')) {
             $fields['first_name_column'] = $firstNameColumn;

@@ -398,11 +398,12 @@ trait ZeroBouncePriority3
             throw new ZBMissingParameterException('file_name is required');
         }
         $returnUrl = isset($options['return_url']) ? $options['return_url'] : null;
-        if ($returnUrl === null || trim((string)$returnUrl) === '') {
+        if ($returnUrl === null || (is_string($returnUrl) && trim($returnUrl) === '')) {
             throw new ZBMissingParameterException(
                 'return_url is required: the API rejects a job without it'
             );
         }
+        $returnUrl = self::requireCallbackUrl($returnUrl, 'return_url');
 
         $fields = array('file_name' => $fileName);
         $this->appendOptionalBool($fields, 'has_header_row', isset($options['has_header_row']) ? $options['has_header_row'] : null);

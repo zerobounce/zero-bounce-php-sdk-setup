@@ -61,25 +61,44 @@ trait ZeroBounceInboxPlacement
         $providers = null,
         $webhookUrl = null
     ) {
-        if ($name === null || trim((string)$name) === '') {
+        if ($name === null || (is_string($name) && trim($name) === '')) {
             throw new ZBMissingParameterException("name is required");
         }
-        if (strlen((string)$name) > 64) {
+        if (!is_string($name)) {
+            throw new ZBMissingParameterException("name must be a string");
+        }
+        if (strlen($name) > 64) {
             throw new ZBMissingParameterException("name must be at most 64 characters");
         }
-        if ($testType !== null && !in_array((int)$testType, self::$iptTestTypes, true)) {
-            throw new ZBMissingParameterException("testType must be 1, 2 or 3");
+        if ($testType !== null) {
+            $testType = $this->iptWholeNumber($testType, 'testType must be 1, 2 or 3');
+            if (!in_array($testType, self::$iptTestTypes, true)) {
+                throw new ZBMissingParameterException("testType must be 1, 2 or 3");
+            }
         }
-        if ((int)$testType === 1 && ($senderEmail === null || trim((string)$senderEmail) === '')) {
+        if ($senderEmail !== null && !is_string($senderEmail)) {
+            throw new ZBMissingParameterException("senderEmail must be a string");
+        }
+        if ($testType === 1 && ($senderEmail === null || trim($senderEmail) === '')) {
             throw new ZBMissingParameterException("senderEmail is required when testType is 1");
+        }
+        $providerIds = $this->iptIdList($providerIds, 'providerIds');
+        $seedIds = $this->iptIdList($seedIds, 'seedIds');
+        if ($providers !== null && !is_array($providers)) {
+            throw new ZBMissingParameterException("providers must be an array");
         }
         foreach (($providers === null ? array() : $providers) as $provider) {
             if (!is_array($provider) || !isset($provider['id'])) {
                 throw new ZBMissingParameterException("each providers entry needs an id");
             }
-            if (isset($provider['maxSeeds']) && (int)$provider['maxSeeds'] < 1) {
+            $this->iptWholeNumber($provider['id'], 'each providers id must be a whole number');
+            if (isset($provider['maxSeeds'])
+                && $this->iptWholeNumber($provider['maxSeeds'], 'providers maxSeeds must be at least 1') < 1) {
                 throw new ZBMissingParameterException("providers maxSeeds must be at least 1");
             }
+        }
+        if ($webhookUrl !== null) {
+            self::requireCallbackUrl($webhookUrl, 'webhookUrl');
         }
 
         $body = array('name' => $name);
@@ -90,10 +109,10 @@ trait ZeroBounceInboxPlacement
             $body['senderEmail'] = $senderEmail;
         }
         if ($providerIds !== null) {
-            $body['providerIds'] = array_values($providerIds);
+            $body['providerIds'] = $providerIds;
         }
         if ($seedIds !== null) {
-            $body['seedIds'] = array_values($seedIds);
+            $body['seedIds'] = $seedIds;
         }
         if ($providers !== null) {
             $body['providers'] = array_values($providers);
@@ -137,11 +156,22 @@ trait ZeroBounceInboxPlacement
         if ($status !== null && !in_array($status, self::$iptTestStatuses, true)) {
             throw new ZBMissingParameterException("status must be running or finished");
         }
-        if ($page !== null && (int)$page < 1) {
-            throw new ZBMissingParameterException("page must be at least 1");
+        if ($page !== null) {
+            $page = $this->iptWholeNumber($page, 'page must be at least 1');
+            if ($page < 1) {
+                throw new ZBMissingParameterException("page must be at least 1");
+            }
         }
-        if ($pageSize !== null && ((int)$pageSize < 1 || (int)$pageSize > 100)) {
-            throw new ZBMissingParameterException("pageSize must be between 1 and 100");
+        if ($pageSize !== null) {
+            $pageSize = $this->iptWholeNumber($pageSize, 'pageSize must be between 1 and 100');
+            if ($pageSize < 1 || $pageSize > 100) {
+                throw new ZBMissingParameterException("pageSize must be between 1 and 100");
+            }
+        }
+        foreach (array('createdAfter' => $createdAfter, 'createdBefore' => $createdBefore) as $field => $value) {
+            if ($value !== null && !self::isIsoDateOrDateTime($value)) {
+                throw new ZBMissingParameterException($field . ' must be an ISO 8601 date or datetime');
+            }
         }
 
         $query = array();
@@ -196,10 +226,48 @@ trait ZeroBounceInboxPlacement
      */
     public function setInboxPlacementWebhook($webhookUrl)
     {
-        if ($webhookUrl === null || trim((string)$webhookUrl) === '') {
-            throw new ZBMissingParameterException("webhookUrl is required");
-        }
+        self::requireCallbackUrl($webhookUrl, 'webhookUrl');
         return $this->iptRequest('PUT', '/webhook', array(), array('webhookUrl' => $webhookUrl));
+    }
+
+    /**
+     * An integer, or the digits of one, as an int.
+     *
+     * @param mixed $value
+     * @param string $message
+     * @return int
+     * @throws ZBMissingParameterException
+     */
+    private function iptWholeNumber($value, $message)
+    {
+        if (is_int($value)) {
+            return $value;
+        }
+        if (is_string($value) && preg_match('/\A[0-9]{1,15}\z/', $value)) {
+            return (int)$value;
+        }
+        throw new ZBMissingParameterException($message);
+    }
+
+    /**
+     * @param mixed $list
+     * @param string $name
+     * @return array<int, int>|null
+     * @throws ZBMissingParameterException
+     */
+    private function iptIdList($list, $name)
+    {
+        if ($list === null) {
+            return null;
+        }
+        if (!is_array($list)) {
+            throw new ZBMissingParameterException($name . ' must be an array of whole numbers');
+        }
+        $ids = array();
+        foreach ($list as $id) {
+            $ids[] = $this->iptWholeNumber($id, $name . ' must be an array of whole numbers');
+        }
+        return $ids;
     }
 
     /**

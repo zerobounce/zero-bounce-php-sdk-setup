@@ -1908,6 +1908,164 @@ return true;
         }
     }
 
+    public function testCallbackUrlsMustBeHttpOrHttpsStrings()
+    {
+        $api = new FakeApi();
+        $client = $this->client($api, 'urls-key');
+        $bad = array('ftp://example.com/x', 'javascript:alert(1)', '//example.com/x', 'example.com', "http://exa mple.com",
+            'http://user@evil.example/x', "https://example.com/x\r\nX: y", 'http://', array('https://example.com'), 5, true, 1.5);
+        $calls = array(
+            'sendFile' => function ($v) use ($client) { $client->sendFile($this->csv, 1, $v); },
+            'scoringSendFile' => function ($v) use ($client) { $client->scoringSendFile($this->csv, 1, $v); },
+            'sendEmailFinderFile' => function ($v) use ($client) { $client->sendEmailFinderFile($this->csv, 1, array('return_url' => $v, 'file_name' => 'a.csv')); },
+            'validate callbackUrl' => function ($v) use ($client) {
+                $options = new \ZeroBounce\SDK\ZBValidateOptions();
+                $options->greylistProcessing = true;
+                $options->callbackUrl = $v;
+                $client->validate('a@example.com', null, $options);
+            },
+            'createInboxPlacementTest' => function ($v) use ($client) { $client->createInboxPlacementTest('t', null, null, null, null, null, $v); },
+            'setInboxPlacementWebhook' => function ($v) use ($client) { $client->setInboxPlacementWebhook($v); },
+        );
+        foreach ($calls as $label => $call) {
+            foreach ($bad as $i => $value) {
+                try {
+                    $call($value);
+                    $this->fail($label . ' #' . $i . ' was sent');
+                } catch (\ZeroBounce\SDK\ZBMissingParameterException $e) {
+                    $this->assertNotSame('', $e->getMessage());
+                } catch (\ZeroBounce\SDK\ZBException $e) {
+                    $this->assertNotSame('', $e->getMessage());
+                }
+            }
+        }
+        $this->assertSame(array(), $api->take(), 'nothing was sent');
+        foreach (array('http://example.com/done', 'HTTPS://example.com:8443/done?a=1') as $good) {
+            $client->setInboxPlacementWebhook($good);
+            $this->assertCount(1, $api->take());
+        }
+    }
+
+    public function testInboxPlacementRefusesWrongTypesBeforeSending()
+    {
+        $api = new FakeApi();
+        $client = $this->client($api, 'ipt-key');
+        $calls = array(
+            function () use ($client) { $client->createInboxPlacementTest(array('x')); },
+            function () use ($client) { $client->createInboxPlacementTest(null); },
+            function () use ($client) { $client->createInboxPlacementTest(5); },
+            function () use ($client) { $client->createInboxPlacementTest('t', 1.5); },
+            function () use ($client) { $client->createInboxPlacementTest('t', 'abc'); },
+            function () use ($client) { $client->createInboxPlacementTest('t', array(1)); },
+            function () use ($client) { $client->createInboxPlacementTest('t', true); },
+            function () use ($client) { $client->createInboxPlacementTest('t', 2, array('a@example.com')); },
+            function () use ($client) { $client->createInboxPlacementTest('t', null, null, 'x'); },
+            function () use ($client) { $client->createInboxPlacementTest('t', null, null, array('a')); },
+            function () use ($client) { $client->createInboxPlacementTest('t', null, null, array(1.5)); },
+            function () use ($client) { $client->createInboxPlacementTest('t', null, null, null, 'x'); },
+            function () use ($client) { $client->createInboxPlacementTest('t', null, null, null, array(array(1))); },
+            function () use ($client) { $client->createInboxPlacementTest('t', null, null, null, null, 'x'); },
+            function () use ($client) { $client->createInboxPlacementTest('t', null, null, null, null, array('x')); },
+            function () use ($client) { $client->createInboxPlacementTest('t', null, null, null, null, array(array('id' => 'a'))); },
+            function () use ($client) { $client->createInboxPlacementTest('t', null, null, null, null, array(array('id' => 1, 'maxSeeds' => 'x'))); },
+            function () use ($client) { $client->getInboxPlacementTest(null); },
+            function () use ($client) { $client->getInboxPlacementTest(''); },
+            function () use ($client) { $client->getInboxPlacementTest(array(1)); },
+            function () use ($client) { $client->getInboxPlacementTest(1.5); },
+            function () use ($client) { $client->getInboxPlacementTest(true); },
+            function () use ($client) { $client->deleteInboxPlacementTest(null); },
+            function () use ($client) { $client->deleteInboxPlacementTest(array(1)); },
+            function () use ($client) { $client->listInboxPlacementTests(array('running')); },
+            function () use ($client) { $client->listInboxPlacementTests('other'); },
+            function () use ($client) { $client->listInboxPlacementTests(null, 5); },
+            function () use ($client) { $client->listInboxPlacementTests(null, 'yesterday'); },
+            function () use ($client) { $client->listInboxPlacementTests(null, '2024-02-30'); },
+            function () use ($client) { $client->listInboxPlacementTests(null, null, array('2024-01-01')); },
+            function () use ($client) { $client->listInboxPlacementTests(null, null, '2024-01-01 25:00'); },
+            function () use ($client) { $client->listInboxPlacementTests(null, null, null, 'x'); },
+            function () use ($client) { $client->listInboxPlacementTests(null, null, null, 1.5); },
+            function () use ($client) { $client->listInboxPlacementTests(null, null, null, array(1)); },
+            function () use ($client) { $client->listInboxPlacementTests(null, null, null, 0); },
+            function () use ($client) { $client->listInboxPlacementTests(null, null, null, null, 'x'); },
+            function () use ($client) { $client->listInboxPlacementTests(null, null, null, null, 101); },
+            function () use ($client) { $client->setInboxPlacementWebhook(null); },
+            function () use ($client) { $client->setInboxPlacementWebhook(array('https://example.com')); },
+        );
+        foreach ($calls as $i => $call) {
+            try {
+                $call();
+                $this->fail('IPT call #' . $i . ' was sent');
+            } catch (\ZeroBounce\SDK\ZBException $e) {
+                $this->assertNotSame('', $e->getMessage());
+            }
+        }
+        $this->assertSame(array(), $api->take(), 'nothing was sent');
+        $client->createInboxPlacementTest('t', '2', null, array('1', 2), array(3), array(array('id' => '4', 'maxSeeds' => 2)), 'https://example.com/hook');
+        $client->listInboxPlacementTests('running', '2024-01-01', '2024-01-02T10:00:00Z', '2', '50');
+        $this->assertCount(2, $api->take());
+    }
+
+    public function testWarmupRefusesWrongTypesBeforeSending()
+    {
+        $api = new FakeWarmupApi();
+        $w = new OfflineWarmupClient($api);
+        $calls = array(
+            function () use ($w) { $w->listFromAddresses(array('a')); },
+            function () use ($w) { $w->listFromAddresses(1.5); },
+            function () use ($w) { $w->listFromAddresses(true); },
+            function () use ($w) { $w->listFromAddresses(null, '1'); },
+            function () use ($w) { $w->listFromAddresses(null, null, 1.5); },
+            function () use ($w) { $w->getSendingAccount(array('a@example.com')); },
+            function () use ($w) { $w->getSendingAccount(1.5); },
+            function () use ($w) { $w->getSendingAccount(true); },
+            function () use ($w) { $w->getSendingAccount(null); },
+            function () use ($w) { $w->getSendingAccount(''); },
+            function () use ($w) { $w->addSendingAccount('a@example.com', array('self_managed')); },
+            function () use ($w) { $w->addSendingAccount('a@example.com', 'self_managed', '1'); },
+            function () use ($w) { $w->addSendingAccount('a@example.com', 'self_managed', 1.0); },
+            function () use ($w) { $w->addSendingAccount('a@example.com', 'self_managed', 1, 'maybe'); },
+            function () use ($w) { $w->addSendingAccount('a@example.com', 'zb_managed', null, null, 'x'); },
+            function () use ($w) { $w->addSendingAccount('a@example.com', 'zb_managed', null, null, null, 'x'); },
+            function () use ($w) { $w->addSendingAccount('a@example.com', 'zb_managed', null, null, null, array('timezone_offset' => '3')); },
+            function () use ($w) { $w->addSendingAccount('a@example.com', 'zb_managed', null, null, null, array('weekdays_only' => 'maybe')); },
+            function () use ($w) { $w->addSendingAccount('a@example.com', 'zb_managed', null, null, null, array('warmup_start_date' => '2024-02-30')); },
+            function () use ($w) { $w->updateSendingAccount('a@example.com', 1, 1, 'true'); },
+            function () use ($w) { $w->updateSendingAccount('a@example.com', 1, 1, null); },
+            function () use ($w) { $w->updateSendingAccount('a@example.com', '1', 1, true); },
+            function () use ($w) { $w->updateSendingAccount('a@example.com', 1, 1.0, true); },
+            function () use ($w) { $w->changeFromAddress('a@example.com', array('b')); },
+            function () use ($w) { $w->changeFromAddress(null, 'b@example.com'); },
+            function () use ($w) { $w->setEngagementRule('a@example.com', '1'); },
+            function () use ($w) { $w->setEngagementRule(array('a'), 1); },
+            function () use ($w) { $w->createCustomEngagement('a@example.com', 10, 10, 10.5); },
+            function () use ($w) { $w->createCustomEngagement('a@example.com', '10', 10, 10); },
+            function () use ($w) { $w->createCustomEngagement(null, 10, 10, 10); },
+            function () use ($w) { $w->deleteCustomEngagement('a@example.com', null); },
+            function () use ($w) { $w->deleteCustomEngagement('a@example.com', '2'); },
+            function () use ($w) { $w->getStatisticsPerDay('a@example.com', array('2024-01-01'), '2024-01-02'); },
+            function () use ($w) { $w->getStatisticsPerDay('a@example.com', '2024-01-01', null); },
+            function () use ($w) { $w->getStatisticsPerDay('a@example.com', '2024-1-1', '2024-01-02'); },
+            function () use ($w) { $w->getStatisticsPerDay('a@example.com', 20240101, '2024-01-02'); },
+            function () use ($w) { $w->getStatisticsDetailed(array('a')); },
+            function () use ($w) { $w->downloadStatistics(1.5); },
+            function () use ($w) { $w->checkDomainDmarc(array('a@example.com')); },
+            function () use ($w) { $w->checkDomainDmarc('a@example.com', array('s')); },
+            function () use ($w) { $w->testSmtpConfiguration('a@example.com', 'u', 'p', 's', '587'); },
+            function () use ($w) { $w->testSmtpConfiguration('a@example.com', array('u'), 'p', 's', 587); },
+            function () use ($w) { $w->testSmtpConfiguration('a@example.com', 'u', null, 's', 587); },
+            function () use ($w) { $w->testSmtpConfiguration('a@example.com', 'u', 'p', true, 587); },
+        );
+        foreach ($calls as $i => $call) {
+            try {
+                $call();
+                $this->fail('Warmup call #' . $i . ' was sent');
+            } catch (\ZeroBounce\SDK\ZBException $e) {
+                $this->assertNotSame('', $e->getMessage());
+            }
+        }
+        $this->assertSame(array(), $api->take(), 'nothing was sent');
+    }
+
     private function client(FakeApi $api, $key)
     {
         $client = new OfflineClient($api);

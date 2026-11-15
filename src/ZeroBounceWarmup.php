@@ -562,7 +562,7 @@ class ZeroBounceWarmup
     {
         $query = array();
         if ($searchFrom !== null) {
-            if (!preg_match('/^[A-Za-z0-9.\-_@+]*$/', $searchFrom)) {
+            if (!is_string($searchFrom) || !preg_match('/\A[A-Za-z0-9.\-_@+]*\z/', $searchFrom)) {
                 throw new ZBMissingParameterException(
                     'search_from takes letters, digits and . - _ @ + only'
                 );

@@ -1907,6 +1907,28 @@ return true;
         $this->assertSame(array(), $this->leftovers());
     }
 
+    /**
+     * The streamed oversize check uses the same rule as the buffered sniff: a body
+     * that starts with "[" (after a BOM or whitespace) is a JSON container, so an
+     * array error body over the window is an error, not a saved file.
+     */
+    public function testAnArrayErrorBodyOverTheSniffWindowIsAnError()
+    {
+        $size = ZeroBounce::DownloadSniffBytes + 65536;
+        $stream = new ZBGetFileOptions();
+        $stream->stream = true;
+        foreach (array("[", "\xEF\xBB\xBF [", "  \n[") as $prefix) {
+            $client = new CannedFileClient(200, 'text/csv', $prefix . str_repeat('1,', $size) . '1]');
+            $client->initialize('size-key');
+            $e = $this->thrown(function () use ($client, $stream) {
+                $client->getFile('f1', $this->dir . '/out.csv', $stream);
+            });
+            $this->assertInstanceOf(ZBApiException::class, $e, bin2hex($prefix));
+            $this->assertSame(200, $e->getStatusCode());
+        }
+        $this->assertSame(array(), $this->leftovers());
+    }
+
     // -- S4: the redaction decode check ------------------------------------------------
 
     private static function threeTimes($text)
