@@ -1,9 +1,10 @@
 .git
 .gitignore
 
-# Docs not needed to run tests in the image
+# Docs not needed to run tests in the image (CHANGELOG.md is: a test reads it)
 *.md
 documentation*.md
+!CHANGELOG.md
 
 # Local Composer install (image runs composer install)
 vendor/

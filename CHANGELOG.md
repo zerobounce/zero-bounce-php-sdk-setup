@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Argument errors raised inside the redacting wrapper (bad `return_url`, a non-numeric `ipAddressColumn` such as `'1abc'`, in `sendFile`, `scoringSendFile`, `sendFileStream` and their kin) now stay `ZBMissingParameterException` (and keep their code) instead of becoming a plain `ZBException`; `ZBMissingApiKeyException` is preserved the same way.
+- A streamed `getFile` (`ZBGetFileOptions->stream`) no longer creates missing folders or the `.zb-download-*` temporary file before the request. The body is spooled to an anonymous temp file and written to the target only once the response is known to be a file, as the buffered path does; an error response leaves nothing behind.
 - **Behaviour change:** `return_url` (sendFile family, email finder and domain search jobs) must be a string holding an http:// or https:// URL, as in the Ruby and Python SDKs. Before only control characters were refused, so `ftp://...`, `javascript:...` or a bare word was sent; now a `ZBMissingParameterException` is thrown before anything is sent. `ZBValidateOptions::$callbackUrl` and the Inbox Placement `webhookUrl` (createInboxPlacementTest, setInboxPlacementWebhook) get the same check (before: any non-blank value, cast to string).
 - **Behaviour change:** the streamed-download oversize check treats a body starting with `[` (after a BOM or whitespace) like one starting with `{`: an array error body longer than the sniff window is an error with its HTTP status, not a saved file.
 - **Behaviour change:** every Inbox Placement method refuses wrong-type, blank or null required values before sending: name and senderEmail must be strings, testType a whole number 1 to 3, providerIds/seedIds arrays of whole numbers, providers entries with whole-number id/maxSeeds, page/pageSize whole numbers, createdAfter/createdBefore ISO 8601 dates or datetimes, and test ids strings or ints (an array used to raise "Array to string" warnings). Before, values were cast with (int)/(string) and sent. Warmup `listFromAddresses` refuses a non-string `searchFrom` (was a TypeError or a cast).
@@ -58,6 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- `unserialize()` of a crafted payload could plant callables in the client's private test-hook array (`request`, `checkedUrl`, `applyCurlOptions`, `rewriteUrl`, ...), which then ran with the request URL (including `api_key`) and skipped the https check. `ZeroBounce` and `ZeroBounceWarmup` now clear the array in `__wakeup()` (also run on PHP 7.4+); an unserialized client still has no key and works after `initialize()`.
 - **Behaviour change:** every base URL (`baseUrl`, `bulkBaseUrl`, list evaluator, Inbox Placement, Warmup `base_url`) is now parsed, at configuration and again on every send. It must be https with a valid host (DNS labels or `[IPv6]`) and a valid port, with no userinfo, backslash, whitespace, control or format characters. Before, a prefix test accepted `https://api.zerobounce.net@evil.example/v2`, which sent the key to evil.example, and `https://exa mple.com` or a bare `https://`. New error: "<name> must be a valid https:// URL ...".
 - Redaction and detection of the API key / SMTP password are now case-insensitive (Unicode case folding for non-ASCII passwords), in exception messages and in stack-trace arguments. Before, an upper-cased key in a JSON 400, a 200 `message`, an HTML `<title>` or `?API_KEY=` reached the exception.
 - Redaction also decodes HTML entities (`&#100;ummy...`, `&#x64...`, named) and masks HTML-escaped spellings of the key, and decodes JSON `\'`.
@@ -193,7 +196,7 @@ This release has breaking changes. Read the **Breaking** entries under Changed b
 
 - Development only: the GitHub Actions workflows' pinned actions were bumped (`actions/checkout` v7, `github/codeql-action` v4.36.3). No change to the SDK.
 
-## [2.1.10] - 2026-06-18
+## [2.1.10] - 2026-06-17
 
 ### Fixed
 
@@ -223,6 +226,30 @@ This release has breaking changes. Read the **Breaking** entries under Changed b
 
 - On PHP 8.5, reading response headers no longer touches the deprecated `$http_response_header` variable.
 
+## [2.1.5] - 2026-04-15
+
+### Changed
+
+- Development only: the Publish workflow calls the Packagist API with an encoded token and a structured body. No change to the SDK.
+
+## [2.1.4] - 2026-04-15
+
+### Changed
+
+- Development only: the Publish workflow's Packagist API call body and authentication were fixed, and the repository URL is fixed in the workflow. No change to the SDK.
+
+## [2.1.3] - 2026-04-15
+
+### Changed
+
+- Development only: the Publish workflow runs the tests, creates the release, then notifies Packagist. No change to the SDK.
+
+## [2.1.2] - 2026-04-15
+
+### Changed
+
+- Development only: a Publish workflow was added. No change to the SDK.
+
 ## [2.1.1] - 2026-04-15
 
 ### Fixed
@@ -236,6 +263,60 @@ This release has breaking changes. Read the **Breaking** entries under Changed b
 - `getFile` and `scoringGetFile` accept `ZBGetFileOptions`: `downloadType` (`phase_1`, `phase_2`, `combined`) and `activityData` (validation `getFile` only).
 - `sendFile` and `sendFileStream` accept `allowPhase2`, sent as `allow_phase_2` on validation bulk sendfile only.
 - `ZBFileStatusResponse.filePhase2Status`.
+
+## [2.0.10] - 2026-03-03
+
+### Changed
+
+- Development only: a CI check of the commit and tag workflow. No change to the SDK.
+
+## [2.0.9] - 2026-03-03
+
+### Changed
+
+- Development only: the publish documentation was updated. No change to the SDK.
+
+## [2.0.8] - 2026-03-03
+
+### Changed
+
+- Development only: the publish documentation was updated. No change to the SDK.
+
+## [2.0.7] - 2026-03-03
+
+### Changed
+
+- Development only: a Publish section was added to the README, with registry-submission notes. No change to the SDK.
+
+## [2.0.6] - 2026-03-03
+
+### Changed
+
+- Development only: the GitHub workflows got explicit permissions and a newer `actions/checkout`. No change to the SDK.
+
+## [2.0.5] - 2026-03-03
+
+### Changed
+
+- Development only: the GitHub workflows got explicit permissions and a newer `actions/checkout`. No change to the SDK.
+
+## [2.0.4] - 2026-03-03
+
+### Changed
+
+- Development only: the GitHub workflows were updated. No change to the SDK.
+
+## [2.0.3] - 2026-03-03
+
+### Changed
+
+- Development only: the GitHub workflows were updated. No change to the SDK.
+
+## [2.0.2] - 2026-03-03
+
+### Changed
+
+- Development only: the GitHub workflows were updated, and `CONTRIBUTING.md` and `SECURITY.md` were added or extended. No change to the SDK.
 
 ## [2.0.11] - 2026-03-03
 
@@ -361,10 +442,23 @@ This release has breaking changes. Read the **Breaking** entries under Changed b
 [2.1.9]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v2.1.8...v2.1.9
 [2.1.8]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v2.1.7...v2.1.8
 [2.1.7]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v2.1.6...v2.1.7
-[2.1.6]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v2.1.1...v2.1.6
+[2.1.6]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v2.1.5...v2.1.6
+[2.1.5]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v2.1.4...v2.1.5
+[2.1.4]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v2.1.3...v2.1.4
+[2.1.3]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v2.1.2...v2.1.3
+[2.1.2]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v2.1.1...v2.1.2
 [2.1.1]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v2.0.11...v2.1.0
-[2.0.11]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v2.0.0...v2.0.11
+[2.0.11]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v2.0.10...v2.0.11
+[2.0.10]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v2.0.9...v2.0.10
+[2.0.9]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v2.0.8...v2.0.9
+[2.0.8]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v2.0.7...v2.0.8
+[2.0.7]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v2.0.6...v2.0.7
+[2.0.6]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v2.0.5...v2.0.6
+[2.0.5]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v2.0.4...v2.0.5
+[2.0.4]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v2.0.3...v2.0.4
+[2.0.3]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v2.0.2...v2.0.3
+[2.0.2]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v2.0.0...v2.0.2
 [2.0.0]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v1.2.0...v2.0.0
 [1.2.0]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v1.1.4...v1.2.0
 [1.1.4]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v1.1.3...v1.1.4

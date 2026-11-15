@@ -33,6 +33,19 @@ final class ZeroBounceWarmup
     private $seam = array();
 
     /**
+     * unserialize() fills private properties without running the constructor,
+     * so a crafted payload could plant test-seam callables here. Drop them;
+     * the copy has no key and works after initialize(), as before. __wakeup()
+     * also runs on PHP 7.4+, which has no __unserialize() here.
+     *
+     * @return void
+     */
+    public function __wakeup()
+    {
+        $this->seam = array();
+    }
+
+    /**
      * @param string $apiKey your Warmup API key, sent in the API-Key header
      * @param string|null $baseUrl defaults to https://warmup-api.zerobounce.net
      * @throws ZBException

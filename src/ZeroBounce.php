@@ -80,6 +80,19 @@ final class ZeroBounce
      */
     private $seam = array();
 
+    /**
+     * unserialize() fills private properties without running the constructor,
+     * so a crafted payload could plant test-seam callables here. Drop them;
+     * the copy has no key and works after initialize(), as before. __wakeup()
+     * also runs on PHP 7.4+, which has no __unserialize() here.
+     *
+     * @return void
+     */
+    public function __wakeup()
+    {
+        $this->seam = array();
+    }
+
     /** @var string Overridable per instance; defaults to ListEvaluatorBaseUrl. */
     private $listEvaluatorBaseUrl = self::ListEvaluatorBaseUrl;
 
@@ -1434,8 +1447,9 @@ final class ZeroBounce
 
     /**
      * $e rebuilt with the API key masked out of its message. Rebuilt rather
-     * than rethrown so the message is redacted, but a ZBApiException stays one
-     * and keeps its HTTP status for callers that switch on it.
+     * than rethrown so the message is redacted, but the class stays: a
+     * ZBApiException keeps its HTTP status, ZBMissingParameterException and
+     * ZBMissingApiKeyException stay what callers catch.
      *
      * @param Exception $e
      * @return ZBException
@@ -1446,7 +1460,13 @@ final class ZeroBounce
         if ($e instanceof ZBApiException) {
             return new ZBApiException($message, $e->getStatusCode());
         }
-        return new ZBException($message);
+        if ($e instanceof ZBMissingParameterException) {
+            return new ZBMissingParameterException($message, $e->getCode());
+        }
+        if ($e instanceof ZBMissingApiKeyException) {
+            return new ZBMissingApiKeyException($message, $e->getCode());
+        }
+        return new ZBException($message, (int)$e->getCode());
     }
 
     /**
@@ -2018,16 +2038,17 @@ final class ZeroBounce
     private function streamBulkDownload($url, $downloadPath)
     {
         $target = self::downloadTarget($downloadPath);
-        $partial = $this->partialFileBeside($target);
-        $handle = $this->openDownloadFile($partial);
+        // The body goes to an anonymous temporary file first: the folders and
+        // the file beside $target are made only once the response is known to
+        // be a file, as for the buffered download.
+        $handle = @tmpfile();
         if ($handle === false) {
-            @unlink($partial);
-            $this->discardCreatedFolders();
             throw new ZBException('Could not write file');
         }
+        $partial = null;
 
         $transfer = $this->streamHttpToHandle($url, $handle);
-        $closed = @fclose($handle);
+        $closed = true;
         $head = (string)$transfer['head'];
         $headers = (array)$transfer['headers'];
         $status = (int)$transfer['status'];
@@ -2061,14 +2082,25 @@ final class ZeroBounce
                 // A full disk: the partial file is truncated.
                 throw new ZBException('Could not write file');
             }
-            if (!@rename($partial, $target)) {
+            $partial = $this->partialFileBeside($target);
+            $out = $this->openDownloadFile($partial);
+            if ($out === false || @rewind($handle) === false) {
+                throw new ZBException('Could not write file');
+            }
+            $copied = @stream_copy_to_stream($handle, $out);
+            $flushed = @fflush($out);
+            if (!@fclose($out) || !$flushed || $copied === false || !@rename($partial, $target)) {
                 throw new ZBException('Could not write file');
             }
         } catch (Exception $e) {
-            @unlink($partial);
+            if ($partial !== null) {
+                @unlink($partial);
+            }
+            @fclose($handle);
             $this->discardCreatedFolders();
             throw $e;
         }
+        @fclose($handle);
         $this->createdFolders = array();
 
         $response = new ZBGetFileResponse();
