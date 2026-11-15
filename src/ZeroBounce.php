@@ -15,6 +15,13 @@ class ZeroBounce
     use ZBStrictBool;
 
     /**
+     * The SDK's version: the one source of truth. The publish workflow checks the release tag
+     * against it (composer.json carries no "version"); CHANGELOG.md's newest release heading
+     * must match it.
+     */
+    const VERSION = "3.0.1";
+
+    /**
      * Call this method to get singleton
      *
      * @return ZeroBounce
@@ -78,8 +85,6 @@ class ZeroBounce
     /** @var bool The regional/bulk-host mismatch is reported once per client. */
     private $bulkRegionWarned = false;
 
-    /** Set only for the duration of an email finder or domain search call. */
-    private $messageOnlyIsFailure = false;
 
     /**
      * @var string The JSON shape the current call answers with: 'object' (every
@@ -198,10 +203,12 @@ class ZeroBounce
         if ($apiKey === null || trim((string)$apiKey) === '') {
             return $apiKey;
         }
-        if ($apiKey !== trim($apiKey) || preg_match('/[\x00-\x1f\x7f]/', $apiKey)) {
-            throw new ZBMissingParameterException(
-                'api_key has surrounding whitespace or control characters'
-            );
+        $apiKey = (string)$apiKey;
+        if (ZBUrl::hasInvisible($apiKey) || preg_match('/[\x00-\x20\x7f]/', $apiKey)) {
+            throw new ZBMissingParameterException(ZBUrl::KEY_CHARACTERS_PROBLEM);
+        }
+        if (ZBUrl::hasNonPrintableAscii($apiKey)) {
+            throw new ZBMissingParameterException(ZBUrl::KEY_HEADER_PROBLEM);
         }
         return $apiKey;
     }
@@ -235,6 +242,11 @@ class ZeroBounce
     {
         if (stripos((string)$url, 'https://') !== 0) {
             throw new ZBMissingParameterException($name . ' must be an https:// URL');
+        }
+        if (!ZBUrl::isSafeHttps($url)) {
+            throw new ZBMissingParameterException(
+                $name . ' must be a valid https:// URL (a host, an optional port, no credentials, no whitespace)'
+            );
         }
         return $url;
     }
@@ -325,7 +337,7 @@ class ZeroBounce
     public function validate($email, $ipAddress = NULL, $options = NULL)
     {
         $this->checkValidApiKey();
-        if (!$email) throw new ZBMissingParameterException("email is required");
+        $this->requireText($email, 'email');
         if ($options instanceof ZBValidateOptions) {
             $this->checkTimeout($options->timeout, false);
             // Parsed strictly up front, on a copy so the caller's object is untouched.
@@ -373,7 +385,7 @@ class ZeroBounce
             if ($options->callbackUrl !== null) {
                 $fields['callback_url'] = $options->callbackUrl;
             }
-            if ($options->usePost) {
+            if (self::strictBool($options->usePost, 'usePost')) {
                 $this->formPost($this->apiBaseUrl . "/validate", $fields, $response);
                 return $response;
             }
@@ -417,7 +429,24 @@ class ZeroBounce
     public function validateBatch($emails, $options = NULL)
     {
         $this->checkValidApiKey();
-        if (!$emails or !count($emails)) throw new ZBMissingParameterException("emails parameter is required");
+        if (!is_array($emails)) {
+            throw new ZBMissingParameterException("emails must be an array");
+        }
+        if (!count($emails)) throw new ZBMissingParameterException("emails parameter is required");
+        $emails = array_values($emails);
+        $tuples = is_array($emails[0]);
+        foreach ($emails as $entry) {
+            if (is_array($entry) !== $tuples) {
+                throw new ZBException('Unknown Parameter Type');
+            }
+            $address = $tuples ? (isset($entry[0]) ? $entry[0] : null) : $entry;
+            if (!is_string($address) || trim($address) === '') {
+                throw new ZBMissingParameterException("each email must be a non-blank string");
+            }
+            if ($tuples && isset($entry[1]) && !is_string($entry[1])) {
+                throw new ZBMissingParameterException("each ip_address must be a string");
+            }
+        }
         if ($options instanceof ZBValidateOptions) {
             $this->checkTimeout($options->timeout, true);
             $options = clone $options;
@@ -439,10 +468,11 @@ class ZeroBounce
         elseif (gettype($emails[0]) === 'array')
             $params = array_map(
                 function ($email) {
-                    return [
-                        'email_address' => $email[0],
-                        'ip_address' => $email[1]
-                    ];
+                    $row = ['email_address' => $email[0]];
+                    if (isset($email[1]) && $email[1] !== '') {
+                        $row['ip_address'] = $email[1];
+                    }
+                    return $row;
                 },
                 $emails
             );
@@ -528,7 +558,7 @@ class ZeroBounce
         if ($value instanceof DateTimeInterface) {
             return $value->format('Y-m-d');
         }
-        if (is_string($value) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+        if (self::isRealDate($value)) {
             return $value;
         }
         throw new ZBMissingParameterException($name . ' must be a DateTime or a YYYY-MM-DD string');
@@ -544,7 +574,7 @@ class ZeroBounce
     {
         $this->checkValidApiKey();
 
-        if (!$email) throw new ZBMissingParameterException("email is required");
+        $this->requireText($email, 'email');
 
         $response = new ZBActivityResponse();
         $this->getOrPostForm(
@@ -563,7 +593,7 @@ class ZeroBounce
     public function scoreEmail($email, $usePost = false)
     {
         $this->checkValidApiKey();
-        if (!$email) throw new ZBMissingParameterException("email is required");
+        $this->requireText($email, 'email');
 
         $response = new ZBScoreEmailResponse();
         $this->getOrPostForm(
@@ -582,7 +612,7 @@ class ZeroBounce
     public function scoreEmailPost($email)
     {
         $this->checkValidApiKey();
-        if (!$email) throw new ZBMissingParameterException("email is required");
+        $this->requireText($email, 'email');
 
         $response = new ZBScoreEmailResponse();
         $this->formPost($this->apiBaseUrl . "/scoring", array('email' => $email), $response);
@@ -708,7 +738,7 @@ class ZeroBounce
 
         $this->checkValidApiKey();
         $this->requireProvided($filepath, "filePath is required");
-        $this->requireProvided($emailAddressColumn, "emailAddressColumn is required");
+        $this->requireColumn($emailAddressColumn, 'emailAddressColumn');
 
         try {
             $fields = $this->multipartFileFields(
@@ -717,7 +747,7 @@ class ZeroBounce
             );
 
             $files = array();
-            $files[$filepath] = file_get_contents($filepath);
+            $files[$filepath] = self::readUploadFile($filepath);
 
             $response = $this->curl($url, $fields, $files);
 
@@ -751,7 +781,7 @@ class ZeroBounce
     {
         $this->checkValidApiKey();
         $this->requireProvided($fileName, "fileName is required");
-        $this->requireProvided($emailAddressColumn, "emailAddressColumn is required");
+        $this->requireColumn($emailAddressColumn, 'emailAddressColumn');
 
         try {
             $fields = $this->multipartFileFields(
@@ -789,7 +819,7 @@ class ZeroBounce
             120
         );
 
-        $json = $this->readJsonBody($result);
+        $json = $this->readJsonBody($result, self::messageOnlyMode($response));
         $response->Deserialize($json);
         return (int)$result['status'];
     }
@@ -813,7 +843,7 @@ class ZeroBounce
             120
         );
 
-        $json = $this->readJsonBody($result);
+        $json = $this->readJsonBody($result, self::messageOnlyMode($response));
         $response->Deserialize($json);
         return (int)$result['status'];
     }
@@ -831,7 +861,7 @@ class ZeroBounce
      */
     protected function getOrPostForm($url, array $params, $response, $usePost)
     {
-        if ($usePost) {
+        if (self::strictBool($usePost, 'usePost')) {
             return $this->formPost($url, $params, $response);
         }
         $params['api_key'] = $this->apiKey();
@@ -852,12 +882,31 @@ class ZeroBounce
      */
     private function getOrPostFinder($url, array $params, $response, $usePost)
     {
-        $this->messageOnlyIsFailure = true;
-        try {
-            return $this->getOrPostForm($url, $params, $response, $usePost);
-        } finally {
-            $this->messageOnlyIsFailure = false;
+        return $this->getOrPostForm($url, $params, $response, $usePost);
+    }
+
+    /**
+     * The bytes of a file to upload. A missing, unreadable or directory path
+     * is refused here, before anything is sent: file_get_contents() only
+     * warns, and an empty file part would be uploaded and accepted.
+     *
+     * @param string $filepath
+     * @return string
+     * @throws ZBException
+     */
+    protected static function readUploadFile($filepath)
+    {
+        if (!is_string($filepath) || $filepath === '' || strpos($filepath, "\0") !== false) {
+            throw new ZBException('filePath cannot be read');
         }
+        if (is_dir($filepath)) {
+            throw new ZBException('filePath is a folder, not a file');
+        }
+        $content = (is_file($filepath) && is_readable($filepath)) ? @file_get_contents($filepath) : false;
+        if ($content === false) {
+            throw new ZBException('filePath cannot be read');
+        }
+        return $content;
     }
 
     /**
@@ -919,7 +968,7 @@ class ZeroBounce
     {
         $this->checkValidApiKey();
 
-        $this->requireProvided($fileId, "fileId is required");
+        $this->requireText($fileId, 'fileId');
 
         $response = new ZBFileStatusResponse();
         $this->request($this->bulkApiBaseUrl
@@ -972,8 +1021,10 @@ class ZeroBounce
     {
         $this->checkValidApiKey();
 
-        $this->requireProvided($fileId, "fileId is required");
+        $this->requireText($fileId, 'fileId');
         $this->requireProvided($downloadPath, "downloadPath is required");
+        // A target that cannot take the file is refused before anything is sent.
+        self::downloadTarget($downloadPath);
 
         try {
             $query = array(
@@ -1072,11 +1123,11 @@ class ZeroBounce
      */
     public static function getFileJsonIndicatesError($body)
     {
-        $t = ltrim($body);
+        $t = ltrim(self::stripBom($body));
         if ($t === '' || $t[0] !== '{') {
             return false;
         }
-        $o = json_decode($body, true);
+        $o = json_decode($t, true);
         if (!is_array($o)) {
             return false;
         }
@@ -1106,11 +1157,52 @@ class ZeroBounce
      */
     protected static function shouldTreatGetFileBodyAsError($body, $contentType)
     {
-        $ct = strtolower($contentType);
-        if (strpos($ct, 'application/json') !== false) {
+        if (self::isJsonContentType($contentType)) {
             return true;
         }
-        return self::getFileJsonIndicatesError($body);
+        return self::getFileJsonIndicatesError($body) || self::isJsonContainer($body);
+    }
+
+    /**
+     * application/json, text/json and any structured-syntax +json type
+     * (application/problem+json, application/vnd.api+json).
+     *
+     * @param string $contentType
+     * @return bool
+     */
+    protected static function isJsonContentType($contentType)
+    {
+        $ct = strtolower(trim((string)$contentType));
+        return strpos($ct, 'application/json') !== false || strpos($ct, 'text/json') !== false
+            || preg_match('#^[a-z0-9.+_-]+/[a-z0-9.+_-]*\+json$#', $ct) === 1;
+    }
+
+    /**
+     * Without a leading UTF-8 byte order mark.
+     *
+     * @param string $body
+     * @return string
+     */
+    protected static function stripBom($body)
+    {
+        $body = (string)$body;
+        return strncmp($body, "\xEF\xBB\xBF", 3) === 0 ? (string)substr($body, 3) : $body;
+    }
+
+    /**
+     * Whether a body is a JSON object or array: no result file is, so under
+     * any content type it is an error body.
+     *
+     * @param string $body
+     * @return bool
+     */
+    protected static function isJsonContainer($body)
+    {
+        $t = trim(self::stripBom($body));
+        if ($t === '' || ($t[0] !== '{' && $t[0] !== '[')) {
+            return false;
+        }
+        return is_array(json_decode($t, true));
     }
 
     /**
@@ -1119,6 +1211,7 @@ class ZeroBounce
      */
     protected static function formatGetFileErrorMessage($body)
     {
+        $body = self::stripBom($body);
         $o = json_decode($body, true);
         if (!is_array($o)) {
             return ZBHttpError::message(0, $body);
@@ -1171,7 +1264,7 @@ class ZeroBounce
     {
         $this->checkValidApiKey();
 
-        $this->requireProvided($fileId, "fileId is required");
+        $this->requireText($fileId, 'fileId');
 
         $response = new ZBDeleteFileResponse();
         $this->request($this->bulkApiBaseUrl
@@ -1253,7 +1346,7 @@ class ZeroBounce
     {
         try {
             $result = $this->executeHttp('GET', $this->checkedUrl($url), array(), null, 120);
-            $json = $this->readJsonBody($result);
+            $json = $this->readJsonBody($result, self::messageOnlyMode($response));
             $response->Deserialize($json);
             return (int)$result['status'];
         } catch (Exception $e) {
@@ -1284,7 +1377,57 @@ class ZeroBounce
      */
     protected function isProvided($value)
     {
-        return $value !== null && $value !== '';
+        return $value !== null && (!is_string($value) || trim($value) !== '');
+    }
+
+    /**
+     * A required text argument (an email, a file id, a path): a non-blank
+     * string, or an integer. A float, boolean, array or object is rejected
+     * here, before anything is sent, instead of as a PHP TypeError.
+     *
+     * @param mixed $value
+     * @param string $name
+     * @throws ZBMissingParameterException
+     */
+    protected function requireText($value, $name)
+    {
+        if (!$this->isProvided($value)) {
+            throw new ZBMissingParameterException($name . ' is required');
+        }
+        if (!is_string($value) && !is_int($value)) {
+            throw new ZBMissingParameterException($name . ' must be a string');
+        }
+    }
+
+    /**
+     * A column number: a non-negative integer, or its digits as a string.
+     *
+     * @param mixed $value
+     * @param string $name
+     * @return bool true when a column was given; false for null or ''
+     * @throws ZBMissingParameterException
+     */
+    protected function requireColumn($value, $name)
+    {
+        $this->requireProvided($value, $name . ' is required');
+        $this->isProvidedColumn($value, $name);
+    }
+
+    /**
+     * @param mixed $value
+     * @param string $name
+     * @return bool
+     * @throws ZBMissingParameterException
+     */
+    protected function isProvidedColumn($value, $name)
+    {
+        if ($value === null || $value === '') {
+            return false;
+        }
+        if (is_int($value) ? $value >= 0 : (is_string($value) && preg_match('/\A[0-9]+\z/', $value))) {
+            return true;
+        }
+        throw new ZBMissingParameterException($name . ' must be a column number');
     }
 
     /**
@@ -1296,6 +1439,11 @@ class ZeroBounce
     {
         if (!$this->isProvided($value)) {
             throw new ZBMissingParameterException($message);
+        }
+        if (!is_string($value) && !is_int($value)) {
+            $suffix = ' is required';
+            $name = substr($message, -strlen($suffix)) === $suffix ? substr($message, 0, -strlen($suffix)) : $message;
+            throw new ZBMissingParameterException($name . ' must be a string');
         }
     }
 
@@ -1312,7 +1460,7 @@ class ZeroBounce
         $message = $batch
             ? 'Invalid parameter: timeout (must be between 10 and 120 seconds)'
             : 'Invalid parameter: timeout (must be between 3 and 60 seconds)';
-        if (!is_numeric($timeout)) {
+        if (!is_numeric($timeout) || (float)$timeout != floor((float)$timeout)) {
             throw new ZBException($message);
         }
         $timeout = (int)$timeout;
@@ -1340,13 +1488,30 @@ class ZeroBounce
      *     body, or {"success": false}; getStatusCode() is the HTTP status
      * @throws ZBException a bare account-level error (invalid key, no credits)
      */
-    private function readJsonBody(array $result)
+    private function readJsonBody(array $result, $messageOnly = 'strict')
     {
         try {
-            return $this->checkedJsonBody($result);
+            return $this->checkedJsonBody($result, $messageOnly);
         } catch (ZBException $e) {
             throw $this->redactedException($e);
         }
+    }
+
+    /**
+     * How a body made only of message fields is treated for $response:
+     * 'exempt' for the raw-JSON calls (filters) and the list evaluator result,
+     * whose documented success can be a message; 'greylist' for validate,
+     * where only {"Message": "<text>"} is a result; else 'strict' (an error).
+     *
+     * @param mixed $response
+     * @return string
+     */
+    private static function messageOnlyMode($response)
+    {
+        if ($response instanceof ZBRawJsonResponse || $response instanceof ZBListEvaluatorResponse) {
+            return 'exempt';
+        }
+        return $response instanceof ZBValidateResponse ? 'greylist' : 'strict';
     }
 
     /**
@@ -1355,7 +1520,7 @@ class ZeroBounce
      * @param array{status?: int, headers?: string[], body?: string} $result
      * @return string
      */
-    private function checkedJsonBody(array $result)
+    private function checkedJsonBody(array $result, $messageOnly = 'strict')
     {
         $status = isset($result['status']) ? (int)$result['status'] : 0;
         $body = isset($result['body']) ? (string)$result['body'] : '';
@@ -1380,11 +1545,12 @@ class ZeroBounce
         }
         ZBHttpError::throwIfBareAccountError($decoded, $status);
         ZBHttpError::throwIfSuccessIsFalse($decoded, $status, $body, $headers);
-        if ($this->messageOnlyIsFailure) {
-            ZBHttpError::throwIfMessageOnly($decoded, $status);
-        }
         // json_decode(..., true) reads [] and {} alike: the body says which it was.
         $isArray = substr(ltrim($body, " \t\r\n"), 0, 1) === '[';
+        $greylist = $messageOnly === 'greylist' && ZBHttpError::isGreylistMessage($decoded);
+        if ($messageOnly !== 'exempt' && !$greylist) {
+            ZBHttpError::throwIfMessageOnly($decoded, $status, !$isArray);
+        }
         $fits = $this->jsonShape === 'array' ? $isArray
             : ($this->jsonShape === 'files' ? ($isArray || (isset($decoded['files']) && is_array($decoded['files'])))
             : !$isArray);
@@ -1463,24 +1629,34 @@ class ZeroBounce
         $headers = (isset($result['headers']) && is_array($result['headers'])) ? $result['headers'] : array();
         $code = self::parseHttpStatusFromHeaders($headers);
         $contentType = self::parseContentTypeFromHeaders($headers);
-        if (trim($body) === '' || $code > 299 || ZBHttpError::isHtml($body, $headers) || self::shouldTreatGetFileBodyAsError($body, $contentType)) {
-            throw new ZBApiException($this->redactApiKey(ZBHttpError::message($code, $body, $headers)), $code);
+        $text = self::stripBom($body);
+        if (trim($text) === '' || $code > 299 || ZBHttpError::isHtml($text, $headers) || self::shouldTreatGetFileBodyAsError($text, $contentType)) {
+            throw new ZBApiException($this->redactApiKey(ZBHttpError::message($code, $text, $headers)), $code);
         }
-        // Written beside $downloadPath and moved into place once complete, so
+        // Written beside the target and moved into place once complete, so
         // a failed write (a full disk, a read-only folder) leaves no partial
-        // file and keeps a file already at $downloadPath.
-        $partial = self::partialFileBeside($downloadPath);
+        // file and keeps a file already there.
+        $target = self::downloadTarget($downloadPath);
+        try {
+            $partial = $this->partialFileBeside($target);
+        } catch (Exception $e) {
+            $this->discardCreatedFolders();
+            throw $e;
+        }
         $handle = $this->openDownloadFile($partial);
         if ($handle === false) {
             @unlink($partial);
+            $this->discardCreatedFolders();
             throw new ZBException('Could not write file');
         }
         $written = self::writeAll($handle, $body);
         $flushed = @fflush($handle);
-        if (!@fclose($handle) || !$flushed || !$written || !@rename($partial, $downloadPath)) {
+        if (!@fclose($handle) || !$flushed || !$written || !@rename($partial, $target)) {
             @unlink($partial);
+            $this->discardCreatedFolders();
             throw new ZBException('Could not write file');
         }
+        $this->createdFolders = array();
         $response = new ZBGetFileResponse();
         $response->localFilePath = $downloadPath;
         return $response;
@@ -1578,21 +1754,98 @@ class ZeroBounce
         return $data === '' || @fwrite($handle, $data) === strlen($data);
     }
 
+    /** @var string[] folders a download created, removed again if it fails */
+    private $createdFolders = array();
+
+    private function discardCreatedFolders()
+    {
+        foreach (array_reverse($this->createdFolders) as $folder) {
+            @rmdir($folder);
+        }
+        $this->createdFolders = array();
+    }
+
     /**
-     * An empty temporary file in $downloadPath's folder (created if missing),
-     * for a download to be written to and then renamed over $downloadPath.
+     * The path a download is finally written to, checked before anything is
+     * sent: a symbolic link is followed (the file behind it is replaced, the
+     * link stays), and a folder, a path ending in a separator, a folder that
+     * cannot take a new file and a file used as a folder are refused. Missing
+     * folders are not created here.
      *
      * @param string $downloadPath
      * @return string
+     * @throws ZBException
+     */
+    private static function downloadTarget($downloadPath)
+    {
+        $path = (string)$downloadPath;
+        if ($path === '' || strpos($path, "\0") !== false) {
+            throw new ZBException('Could not write file');
+        }
+        $last = substr($path, -1);
+        if ($last === '/' || $last === DIRECTORY_SEPARATOR) {
+            throw new ZBException('downloadPath is a folder, not a file');
+        }
+        $viaLink = false;
+        for ($hops = 0; is_link($path); $hops++) {
+            $viaLink = true;
+            $link = @readlink($path);
+            if ($link === false || $hops >= 40) {
+                throw new ZBException('Could not write file');
+            }
+            $absolute = $link[0] === '/' || (DIRECTORY_SEPARATOR === '\\' && preg_match('#^[A-Za-z]:[\\\\/]#', $link) === 1);
+            $path = $absolute ? $link : dirname($path) . DIRECTORY_SEPARATOR . $link;
+        }
+        if (is_dir($path)) {
+            throw new ZBException('downloadPath is a folder, not a file');
+        }
+        $folder = dirname($path);
+        if ($viaLink && !is_dir($folder)) {
+            // A link's folder is not made up for it.
+            throw new ZBException('Could not write file');
+        }
+        $existing = $folder;
+        while (!file_exists($existing) && !is_link($existing)) {
+            $parent = dirname($existing);
+            if ($parent === $existing) {
+                break;
+            }
+            $existing = $parent;
+        }
+        if (!is_dir($existing) || !is_writable($existing)) {
+            throw new ZBException('Could not write file');
+        }
+        return $path;
+    }
+
+    /**
+     * An empty temporary file in $target's folder (created if missing), for a
+     * download to be written to and then renamed over $target. It has the
+     * mode of the file it replaces, or the usual mode for a new file.
+     *
+     * @param string $target a path from downloadTarget()
+     * @return string
      * @throws ZBException when the folder cannot take a new file
      */
-    private static function partialFileBeside($downloadPath)
+    private function partialFileBeside($target)
     {
-        $folder = dirname($downloadPath);
+        $folder = dirname($target);
         if ($folder === '' || $folder === '.') {
             $folder = '.';
         } elseif (!file_exists($folder)) {
-            @mkdir($folder, 0777, true);
+            $missing = array();
+            for ($dir = $folder; !file_exists($dir); $dir = dirname($dir)) {
+                array_unshift($missing, $dir);
+                if (dirname($dir) === $dir) {
+                    break;
+                }
+            }
+            foreach ($missing as $dir) {
+                if (!@mkdir($dir, 0777) && !is_dir($dir)) {
+                    throw new ZBException('Could not write file');
+                }
+                $this->createdFolders[] = $dir;
+            }
         }
         // @: tempnam() falls back to the system temp folder, with a notice,
         // when $folder is not writable; a file there is refused below.
@@ -1603,8 +1856,9 @@ class ZeroBounce
             }
             throw new ZBException('Could not write file');
         }
-        // tempnam() creates the file 0600; a download gets the usual mode.
-        @chmod($partial, 0666 & ~umask());
+        // tempnam() creates the file 0600, before anything is written to it.
+        $mode = is_file($target) ? (@fileperms($target) & 0777) : (0666 & ~umask());
+        @chmod($partial, $mode);
         return $partial;
     }
 
@@ -1676,10 +1930,12 @@ class ZeroBounce
      */
     protected function streamBulkDownload($url, $downloadPath)
     {
-        $partial = self::partialFileBeside($downloadPath);
+        $target = self::downloadTarget($downloadPath);
+        $partial = $this->partialFileBeside($target);
         $handle = $this->openDownloadFile($partial);
         if ($handle === false) {
             @unlink($partial);
+            $this->discardCreatedFolders();
             throw new ZBException('Could not write file');
         }
 
@@ -1696,7 +1952,7 @@ class ZeroBounce
                 throw new ZBException($this->redactApiKey($error));
             }
             $contentType = self::parseContentTypeFromHeaders($headers);
-            $sample = substr($head, 0, self::DownloadMaxErrorBytes);
+            $sample = self::stripBom(substr($head, 0, self::DownloadMaxErrorBytes));
             if (trim($sample) === '' || $status > 299 || ZBHttpError::isHtml($sample, $headers)
                 || self::shouldTreatGetFileBodyAsError($sample, $contentType)) {
                 throw new ZBApiException(
@@ -1704,7 +1960,7 @@ class ZeroBounce
                     $status
                 );
             }
-            if (strlen($head) >= self::DownloadSniffBytes && substr(ltrim($head), 0, 1) === '{') {
+            if (strlen($head) >= self::DownloadSniffBytes && substr(ltrim(self::stripBom($head)), 0, 1) === '{') {
                 // A JSON object longer than the sniff window cannot be parsed to
                 // tell an error from a file; no result file starts with "{", so
                 // it is an error with its status, as the same body under the
@@ -1718,13 +1974,15 @@ class ZeroBounce
                 // A full disk: the partial file is truncated.
                 throw new ZBException('Could not write file');
             }
-            if (!@rename($partial, $downloadPath)) {
+            if (!@rename($partial, $target)) {
                 throw new ZBException('Could not write file');
             }
         } catch (Exception $e) {
             @unlink($partial);
+            $this->discardCreatedFolders();
             throw $e;
         }
+        $this->createdFolders = array();
 
         $response = new ZBGetFileResponse();
         $response->localFilePath = $downloadPath;
@@ -1745,16 +2003,16 @@ class ZeroBounce
         if ($returnUrl) {
             $fields['return_url'] = $returnUrl;
         }
-        if ($this->isProvided($firstNameColumn)) {
+        if ($this->isProvidedColumn($firstNameColumn, 'firstNameColumn')) {
             $fields['first_name_column'] = $firstNameColumn;
         }
-        if ($this->isProvided($lastNameColumn)) {
+        if ($this->isProvidedColumn($lastNameColumn, 'lastNameColumn')) {
             $fields['last_name_column'] = $lastNameColumn;
         }
-        if ($this->isProvided($genderColumn)) {
+        if ($this->isProvidedColumn($genderColumn, 'genderColumn')) {
             $fields['gender_column'] = $genderColumn;
         }
-        if ($this->isProvided($ipAddressColumn)) {
+        if ($this->isProvidedColumn($ipAddressColumn, 'ipAddressColumn')) {
             $fields['ip_address_column'] = $ipAddressColumn;
         }
         if ($hasHeaderRow !== null) {
@@ -1777,6 +2035,17 @@ class ZeroBounce
         if (!$this->apiKey()) throw new ZBMissingApiKeyException("ZeroBounce SDK is not initialized. Please call ZeroBounce::Instance()->initialize(\"API_KEY\") first");
     }
 
+    /**
+     * A header parameter value: raw UTF-8, a quote as %22, CR and LF removed.
+     *
+     * @param string $text
+     * @return string
+     */
+    private static function quoteMultipart($text)
+    {
+        return str_replace(array("\r", "\n", '"'), array('', '', '%22'), (string)$text);
+    }
+
     private function build_data_files($boundary, $fields, $files)
     {
         $data = '';
@@ -1785,14 +2054,17 @@ class ZeroBounce
         $delimiter = '-------------' . $boundary;
 
         foreach ($fields as $name => $content) {
+            if ($name === 'return_url' && preg_match('/[\x00-\x1f\x7f]/', (string)$content)) {
+                throw new ZBException('return_url must be a single-line URL');
+            }
             $data .= "--" . $delimiter . $eol
-                . 'Content-Disposition: form-data; name="' . $name . "\"" . $eol . $eol
+                . 'Content-Disposition: form-data; name="' . self::quoteMultipart($name) . "\"" . $eol . $eol
                 . $content . $eol;
         }
 
 
         foreach ($files as $path => $content) {
-            $name = str_replace(array('"', "\r", "\n"), array('%22', '%0D', '%0A'), basename($path));
+            $name = self::quoteMultipart(basename($path));
             $data .= "--" . $delimiter . $eol
                 . 'Content-Disposition: form-data; name="file"; filename="' . $name . '"' . $eol
                 //. 'Content-Type: image/png'.$eol
@@ -1823,7 +2095,7 @@ class ZeroBounce
 
         $this->checkValidApiKey();
 
-        if (!$domain) throw new ZBMissingParameterException("domain is required");
+        $this->requireText($domain, 'domain');
 
         $response = new ZBGuessFormatResponse();
         $args = [
@@ -1838,12 +2110,7 @@ class ZeroBounce
 
         // Like findEmail and findEmailFormat: a body made only of message fields
         // (LIVE: {"Message": ...} for a dead key) is an error, not a result.
-        $this->messageOnlyIsFailure = true;
-        try {
-            $this->request($this->apiBaseUrl . "/guessformat?$query", $response);
-        } finally {
-            $this->messageOnlyIsFailure = false;
-        }
+        $this->request($this->apiBaseUrl . "/guessformat?$query", $response);
         return $response;
     }
 
@@ -1865,7 +2132,12 @@ class ZeroBounce
     {
         $this->checkValidApiKey();
 
-        if (!$domain && !$companyName) {
+        foreach (array('domain' => $domain, 'companyName' => $companyName) as $name => $given) {
+            if ($given !== null && !is_string($given)) {
+                throw new ZBMissingParameterException($name . ' must be a string');
+            }
+        }
+        if (!$this->isProvided($domain) && !$this->isProvided($companyName)) {
             throw new ZBMissingParameterException('domain or companyName is required');
         }
 
@@ -1901,7 +2173,12 @@ class ZeroBounce
     {
         $this->checkValidApiKey();
 
-        if (!$domain && !$companyName) {
+        foreach (array('domain' => $domain, 'companyName' => $companyName) as $name => $given) {
+            if ($given !== null && !is_string($given)) {
+                throw new ZBMissingParameterException($name . ' must be a string');
+            }
+        }
+        if (!$this->isProvided($domain) && !$this->isProvided($companyName)) {
             throw new ZBMissingParameterException('domain or companyName is required');
         }
 

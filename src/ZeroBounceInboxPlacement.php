@@ -248,7 +248,7 @@ trait ZeroBounceInboxPlacement
             && $status >= 200 && $status < 300 && (isset($result['body']) ? (string)$result['body'] : '') === '') {
             return $response;
         }
-        $response->Deserialize($this->readJsonBody($result));
+        $response->Deserialize($this->readJsonBody($result, 'exempt'));
         return $response;
     }
 }

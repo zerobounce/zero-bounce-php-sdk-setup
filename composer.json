@@ -1,6 +1,5 @@
 {
   "name": "zero-bounce/sdk",
-  "version": "3.0.1",
   "description": "Official ZeroBounce PHP SDK: email validation, AI scoring, bulk files, email finder and domain search",
   "keywords": [
     "zerobounce",
@@ -18,8 +17,8 @@
     "docs": "https://www.zerobounce.net/docs/"
   },
   "scripts": {
-    "dumpautoload": "composer dumpautoload -o",
-    "lint": "find src test live -name '*.php' -exec php -l {} \\;",
+    "dump-autoload-optimized": "@composer dump-autoload -o",
+    "lint": "find src test live -name '*.php' -print0 | xargs -0 -n1 php -l",
     "test": "phpunit --colors=always",
     "test:live": "php live/live_api.php"
   },

@@ -138,7 +138,7 @@ class OfflineApiTest extends TestCase
         $this->assertStringNotContainsString('bulkapi', $request['url']);
         $this->assertSame('batch-key', $request['fields']['api_key']);
         $this->assertStringContainsString('"email_address":"a@example.com"', $request['fields']['__json']);
-        $this->assertStringContainsString('"ip_address":""', $request['fields']['__json']);
+        $this->assertStringNotContainsString('"ip_address":""', $request['fields']['__json']);
         $this->assertStringContainsString('"ip_address":"203.0.113.9"', $request['fields']['__json']);
         $this->assertArrayNotHasKey('timeout', $request['fields']);
         $this->assertArrayNotHasKey('activity_data', $request['fields']);
@@ -1959,9 +1959,19 @@ return true;
         $this->assertStringNotContainsString('developers.cloudflare.com', $message);
     }
 
+    public function testVersionConstantIsTheSourceOfTruth()
+    {
+        $composer = json_decode(file_get_contents(dirname(__DIR__) . '/composer.json'), true);
+        $this->assertArrayNotHasKey('version', $composer);
+        $this->assertMatchesRegularExpression('/^\d+\.\d+\.\d+$/', ZeroBounce::VERSION);
+        // Newest released heading of the changelog (not [Unreleased]).
+        preg_match('/^## \[(\d+\.\d+\.\d+)\]/m', file_get_contents(dirname(__DIR__) . '/CHANGELOG.md'), $m);
+        $this->assertSame($m[1], ZeroBounce::VERSION);
+    }
+
     private function assertNoUserAgentOrMatchingVersion(array $request)
     {
-        $version = json_decode(file_get_contents(dirname(__DIR__) . '/composer.json'))->version;
+        $version = ZeroBounce::VERSION;
         foreach ($request['headers'] as $header) {
             if (stripos($header, 'User-Agent:') === 0) {
                 $this->assertStringContainsString($version, $header);

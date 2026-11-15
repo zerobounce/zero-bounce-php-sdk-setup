@@ -50,7 +50,7 @@ trait ZeroBouncePriority3
         $fullNameColumn = null,
         $hasHeaderRow = null
     ) {
-        $this->requireProvided($domainColumn, 'domainColumn is required');
+        $this->requireColumn($domainColumn, 'domainColumn');
         $fields = $this->buildEmailFinderFields($domainColumn, $firstNameColumn, $lastNameColumn, $middleNameColumn, $fullNameColumn, $hasHeaderRow);
         return $this->sendBulkRootMultipartFile($this->emailFinderBulkBaseUrl . '/sendfile', $filepath, $fields);
     }
@@ -65,7 +65,7 @@ trait ZeroBouncePriority3
         $fullNameColumn = null,
         $hasHeaderRow = null
     ) {
-        $this->requireProvided($domainColumn, 'domainColumn is required');
+        $this->requireColumn($domainColumn, 'domainColumn');
         $fields = $this->buildEmailFinderFields($domainColumn, $firstNameColumn, $lastNameColumn, $middleNameColumn, $fullNameColumn, $hasHeaderRow);
         return $this->sendBulkRootMultipartContent($this->emailFinderBulkBaseUrl . '/sendfile', $fileName, $streamContent, $fields);
     }
@@ -87,7 +87,7 @@ trait ZeroBouncePriority3
 
     public function sendDomainSearchFile($filepath, $domainColumn, $hasHeaderRow = null)
     {
-        $this->requireProvided($domainColumn, 'domainColumn is required');
+        $this->requireColumn($domainColumn, 'domainColumn');
         $fields = array('domain_column' => $domainColumn);
         if ($hasHeaderRow !== null) {
             $fields['has_header_row'] = self::wireBool($hasHeaderRow, 'has_header_row');
@@ -97,7 +97,7 @@ trait ZeroBouncePriority3
 
     public function sendDomainSearchFileStream($streamContent, $fileName, $domainColumn, $hasHeaderRow = null)
     {
-        $this->requireProvided($domainColumn, 'domainColumn is required');
+        $this->requireColumn($domainColumn, 'domainColumn');
         $fields = array('domain_column' => $domainColumn);
         if ($hasHeaderRow !== null) {
             $fields['has_header_row'] = self::wireBool($hasHeaderRow, 'has_header_row');
@@ -122,14 +122,14 @@ trait ZeroBouncePriority3
 
     public function sendListEvaluatorFile($filepath, $emailAddressColumn)
     {
-        $this->requireProvided($emailAddressColumn, 'emailAddressColumn is required');
+        $this->requireColumn($emailAddressColumn, 'emailAddressColumn');
         $fields = array('email_address_column' => $emailAddressColumn);
         return $this->sendBulkRootMultipartFile($this->listEvaluatorBaseUrl . '/', $filepath, $fields);
     }
 
     public function sendListEvaluatorFileStream($streamContent, $fileName, $emailAddressColumn)
     {
-        $this->requireProvided($emailAddressColumn, 'emailAddressColumn is required');
+        $this->requireColumn($emailAddressColumn, 'emailAddressColumn');
         $fields = array('email_address_column' => $emailAddressColumn);
         return $this->sendBulkRootMultipartContent($this->listEvaluatorBaseUrl . '/', $fileName, $streamContent, $fields);
     }
@@ -147,7 +147,7 @@ trait ZeroBouncePriority3
     public function getListEvaluatorResult($fileId)
     {
         $this->checkValidApiKey();
-        $this->requireProvided($fileId, 'fileId is required');
+        $this->requireText($fileId, 'fileId');
         $url = $this->listEvaluatorBaseUrl . '/' . self::pathSegment($fileId, 'fileId')
             . '/?api_key=' . urlencode($this->apiKey());
         $response = new ZBListEvaluatorResponse();
@@ -170,9 +170,7 @@ trait ZeroBouncePriority3
      */
     public function sendEvaluatedFile($fileId)
     {
-        if ($fileId === null || trim((string)$fileId) === '') {
-            throw new ZBMissingParameterException('file_id is required');
-        }
+        $this->requireText($fileId, 'file_id');
         return $this->postBulkRootFormAt(
             $this->bulkApiBaseUrl . '/send-evaluated-file/',
             array('file_id' => (string)$fileId)
@@ -248,7 +246,7 @@ trait ZeroBouncePriority3
      */
     public function exportS3File($fileId, $exportBucket = null)
     {
-        $this->requireProvided($fileId, 'fileId is required');
+        $this->requireText($fileId, 'fileId');
         if ($exportBucket !== null && trim((string)$exportBucket) === '') {
             throw new ZBMissingParameterException('exportBucket is required');
         }
@@ -279,7 +277,7 @@ trait ZeroBouncePriority3
     {
         $this->checkValidApiKey();
         return $this->withJsonShape('array', function () use ($usePost) {
-            if ($usePost) {
+            if (self::strictBool($usePost, 'usePost')) {
                 return $this->filterFormPost($this->apiBaseUrl . '/filters/list', array());
             }
             $url = $this->apiBaseUrl . '/filters/list?api_key=' . urlencode($this->apiKey());
@@ -314,16 +312,16 @@ trait ZeroBouncePriority3
     private function buildValidateS3Fields(array $options)
     {
         $fields = $this->buildScoreS3Fields($options);
-        if (isset($options['first_name_column']) && $this->isProvided($options['first_name_column'])) {
+        if (isset($options['first_name_column']) && $this->isProvidedColumn($options['first_name_column'], 'first_name_column')) {
             $fields['first_name_column'] = $options['first_name_column'];
         }
-        if (isset($options['last_name_column']) && $this->isProvided($options['last_name_column'])) {
+        if (isset($options['last_name_column']) && $this->isProvidedColumn($options['last_name_column'], 'last_name_column')) {
             $fields['last_name_column'] = $options['last_name_column'];
         }
-        if (isset($options['gender_column']) && $this->isProvided($options['gender_column'])) {
+        if (isset($options['gender_column']) && $this->isProvidedColumn($options['gender_column'], 'gender_column')) {
             $fields['gender_column'] = $options['gender_column'];
         }
-        if (isset($options['ip_address_column']) && $this->isProvided($options['ip_address_column'])) {
+        if (isset($options['ip_address_column']) && $this->isProvidedColumn($options['ip_address_column'], 'ip_address_column')) {
             $fields['ip_address_column'] = $options['ip_address_column'];
         }
         $this->appendOptionalBool($fields, 'allow_phase_2', isset($options['allow_phase_2']) ? $options['allow_phase_2'] : null);
@@ -499,7 +497,7 @@ trait ZeroBouncePriority3
      */
     public function exportSFTPFile($fileId, $exportPath = null)
     {
-        $this->requireProvided($fileId, 'fileId is required');
+        $this->requireText($fileId, 'fileId');
         if ($exportPath !== null && trim((string)$exportPath) === '') {
             throw new ZBMissingParameterException('exportPath is required');
         }
@@ -514,23 +512,23 @@ trait ZeroBouncePriority3
     {
         // The endpoint needs a name to search for: either the split first name
         // column or the full name column.
-        if (!$this->isProvided($firstNameColumn) && !$this->isProvided($fullNameColumn)) {
+        if (!$this->isProvidedColumn($firstNameColumn, 'firstNameColumn') && !$this->isProvidedColumn($fullNameColumn, 'fullNameColumn')) {
             throw new ZBMissingParameterException('firstNameColumn or fullNameColumn is required');
         }
         $fields = array('domain_column' => $domainColumn);
         if ($hasHeaderRow !== null) {
             $fields['has_header_row'] = self::wireBool($hasHeaderRow, 'has_header_row');
         }
-        if ($this->isProvided($firstNameColumn)) {
+        if ($this->isProvidedColumn($firstNameColumn, 'firstNameColumn')) {
             $fields['first_name_column'] = $firstNameColumn;
         }
-        if ($this->isProvided($lastNameColumn)) {
+        if ($this->isProvidedColumn($lastNameColumn, 'lastNameColumn')) {
             $fields['last_name_column'] = $lastNameColumn;
         }
-        if ($this->isProvided($middleNameColumn)) {
+        if ($this->isProvidedColumn($middleNameColumn, 'middleNameColumn')) {
             $fields['middle_name_column'] = $middleNameColumn;
         }
-        if ($this->isProvided($fullNameColumn)) {
+        if ($this->isProvidedColumn($fullNameColumn, 'fullNameColumn')) {
             $fields['full_name_column'] = $fullNameColumn;
         }
         return $fields;
@@ -544,7 +542,7 @@ trait ZeroBouncePriority3
             throw new ZBMissingParameterException('filePath is required');
         }
         $fields['api_key'] = $this->apiKey();
-        $files = array($filepath => file_get_contents($filepath));
+        $files = array($filepath => self::readUploadFile($filepath));
         $response = $this->curl($url, $fields, $files);
         $rsp = new ZBSendFileResponse();
         $rsp->Deserialize($response);
@@ -566,7 +564,7 @@ trait ZeroBouncePriority3
     private function bulkRootFileStatus($baseUrl, $fileId)
     {
         $this->checkValidApiKey();
-        $this->requireProvided($fileId, 'fileId is required');
+        $this->requireText($fileId, 'fileId');
         $response = new ZBFileStatusResponse();
         $this->request(
             $baseUrl . '/filestatus?api_key=' . urlencode($this->apiKey()) . '&file_id=' . urlencode($fileId),
@@ -578,7 +576,7 @@ trait ZeroBouncePriority3
     private function bulkRootDeleteFile($baseUrl, $fileId)
     {
         $this->checkValidApiKey();
-        $this->requireProvided($fileId, 'fileId is required');
+        $this->requireText($fileId, 'fileId');
         $response = new ZBDeleteFileResponse();
         $this->request(
             $baseUrl . '/deletefile?api_key=' . urlencode($this->apiKey()) . '&file_id=' . urlencode($fileId),
@@ -590,8 +588,9 @@ trait ZeroBouncePriority3
     private function bulkRootGetFile($baseUrl, $fileId, $downloadPath)
     {
         $this->checkValidApiKey();
-        $this->requireProvided($fileId, 'fileId is required');
+        $this->requireText($fileId, 'fileId');
         $this->requireProvided($downloadPath, 'downloadPath is required');
+        self::downloadTarget($downloadPath);
         $url = $baseUrl . '/getfile?api_key=' . urlencode($this->apiKey()) . '&file_id=' . urlencode($fileId);
         return $this->saveBulkDownload($this->getBulkFileHttp($url), $downloadPath);
     }

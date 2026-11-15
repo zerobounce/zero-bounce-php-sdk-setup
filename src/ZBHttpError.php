@@ -138,13 +138,20 @@ class ZBHttpError
      * Not for validate: a repeated greylist_processing request answers
      * {"Message": "Greylist validation still in progress..."}, a result.
      *
+     * An empty object {} is message-only too (no result at all); pass
+     * $emptyIsObject = false for a body that was an empty JSON list [].
+     *
      * @param mixed $decoded the parsed body
      * @param int $status the HTTP status, carried by the exception
+     * @param bool $emptyIsObject whether an empty $decoded was the JSON object {}
      * @throws ZBApiException
      */
-    public static function throwIfMessageOnly($decoded, $status = 200)
+    public static function throwIfMessageOnly($decoded, $status = 200, $emptyIsObject = true)
     {
-        if (!is_array($decoded) || self::isList($decoded) || array_key_exists('success', $decoded) || $decoded === array()) {
+        if (!is_array($decoded) || array_key_exists('success', $decoded)) {
+            return;
+        }
+        if ($decoded === array() ? !$emptyIsObject : self::isList($decoded)) {
             return;
         }
         $messageKeys = array('error', 'message', 'error_message', 'Message', 'Error', 'detail');
@@ -167,7 +174,20 @@ class ZBHttpError
     }
 
     /**
-     * The text of a message value: a non-blank string, or the first non-blank string of a list; else ''.
+     * The greylist answer: exactly {"Message": "<text>"} with non-blank text,
+     * the one message-only body that is a result.
+     *
+     * @param mixed $decoded
+     * @return bool
+     */
+    public static function isGreylistMessage($decoded)
+    {
+        return is_array($decoded) && count($decoded) === 1 && isset($decoded['Message'])
+            && is_string($decoded['Message']) && trim($decoded['Message']) !== '';
+    }
+
+    /**
+     * The text of a message value: a non-blank string, or the non-blank strings of a list joined with a newline; else ''.
      *
      * @param mixed $value
      * @return string
@@ -175,12 +195,13 @@ class ZBHttpError
     private static function messageText($value)
     {
         if (is_array($value)) {
+            $parts = array();
             foreach ($value as $item) {
                 if (is_string($item) && trim($item) !== '') {
-                    return trim($item);
+                    $parts[] = trim($item);
                 }
             }
-            return '';
+            return implode("\n", $parts);
         }
         return is_string($value) ? trim($value) : '';
     }
@@ -219,7 +240,14 @@ class ZBHttpError
         if (is_bool($value)) {
             return !$value;
         }
-        return is_string($value) && strcasecmp(trim($value), 'false') === 0;
+        if ($value === 0) {
+            return true;
+        }
+        if (is_string($value)) {
+            $text = strtolower(trim($value));
+            return $text === 'false' || $text === '0';
+        }
+        return false;
     }
 
     public static function stripPrefix($message)
@@ -277,8 +305,11 @@ class ZBHttpError
             if (is_string($decoded[$key]) && trim($decoded[$key]) !== '') {
                 return trim($decoded[$key]);
             }
-            if (is_array($decoded[$key]) && isset($decoded[$key][0]) && is_string($decoded[$key][0]) && trim($decoded[$key][0]) !== '') {
-                return trim($decoded[$key][0]);
+            if (is_array($decoded[$key])) {
+                $text = self::messageText($decoded[$key]);
+                if ($text !== '') {
+                    return $text;
+                }
             }
         }
         return '';

@@ -11,6 +11,11 @@ on:
 permissions:
   contents: read
 
+# One publish at a time; a second run waits instead of cancelling a running upload.
+concurrency:
+  group: publish-${{ github.workflow }}
+  cancel-in-progress: false
+
 jobs:
   validate-tag:
     outputs:
@@ -35,9 +40,10 @@ jobs:
           ref: refs/tags/${{ github.event.inputs.tag }}
 
           persist-credentials: false
-      - name: Verify tag and composer version
+      - name: Verify tag and SDK version
+        env:
+          TAG: ${{ github.event.inputs.tag }}
         run: |
-          TAG="${{ github.event.inputs.tag }}"
           if [ -z "$TAG" ]; then
             echo "Error: Tag is required."
             exit 1
@@ -47,12 +53,13 @@ jobs:
             exit 1
           fi
           TAG_VERSION="${TAG#v}"
-          PKG_VERSION=$(php -r 'echo json_decode(file_get_contents("composer.json"))->version;')
-          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
-            echo "Error: composer.json version ($PKG_VERSION) does not match tag ($TAG)."
+          # The version lives in ZeroBounce::VERSION (composer.json has no "version" field).
+          PKG_VERSION=$(sed -n 's/^[[:space:]]*const VERSION = "\([^"]*\)";.*/\1/p' src/ZeroBounce.php)
+          if [ -z "$PKG_VERSION" ] || [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "Error: ZeroBounce::VERSION ($PKG_VERSION) does not match tag ($TAG)."
             exit 1
           fi
-          
+
       - name: Record tag commit SHA
         id: tag_sha
         env:
@@ -66,13 +73,23 @@ jobs:
     needs: [validate-tag]
     if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
     runs-on: ubuntu-latest
-    environment: release
     steps:
       - name: Checkout tag
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: refs/tags/${{ github.event.inputs.tag }}
           persist-credentials: false
+      # The tag is checked out by name (v* tags are protected by the tag ruleset), then
+      # pinned: the job stops unless it is the commit validate-tag checked.
+      - name: Confirm the validated commit
+        env:
+          EXPECTED: ${{ needs.validate-tag.outputs.tag_sha }}
+        run: |
+          ACTUAL=$(git rev-parse HEAD)
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "Error: tag moved: checked out $ACTUAL, validated $EXPECTED"
+            exit 1
+          fi
       - name: Set up PHP
         uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
         with:
@@ -82,7 +99,7 @@ jobs:
         run: composer install --no-interaction --no-progress
 
       - name: PHP syntax check
-        run: find src test -name '*.php' -exec php -l {} \;
+        run: find src test -name '*.php' -print0 | xargs -0 -n1 php -l
 
       - name: Run tests
         run: vendor/bin/phpunit --colors=always
@@ -92,7 +109,6 @@ jobs:
     needs: [validate-tag, test]
     if: ${{ !cancelled() && !failure() }}
     runs-on: ubuntu-latest
-    environment: release
     permissions:
       contents: write
     steps:
@@ -106,8 +122,8 @@ jobs:
       - name: Create release if missing
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tag }}
         run: |
-          TAG="${{ github.event.inputs.tag }}"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release $TAG already exists, skipping."
           else
@@ -122,8 +138,8 @@ jobs:
     needs: [release]
     if: ${{ !cancelled() && !failure() }}
     runs-on: ubuntu-latest
-    # Uses PACKAGIST_API_TOKEN, so it runs in the release environment like the other publish
-    # jobs (and gets that environment's protection rules and secrets).
+    # The only job that uses PACKAGIST_API_TOKEN, so the only one in the release environment
+    # (it gets that environment's protection rules and secrets).
     environment: release
     steps:
       # Same shape as Packagist’s manual update curl:

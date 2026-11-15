@@ -191,7 +191,6 @@ class RequestPayloadsTest extends TestCase
                       ),
                       1 => array (
                         'email_address' => 'b@example.com',
-                        'ip_address' => NULL,
                       ),
                     ),
                     'timeout' => '30',

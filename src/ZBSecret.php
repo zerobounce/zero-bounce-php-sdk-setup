@@ -143,6 +143,12 @@ final class ZBSecret
             foreach ($flagSets as $flags) {
                 $escaped[] = self::jsonEscaped($secret, $flags);
             }
+            // HTML spellings (an error page quoting the key).
+            $escaped[] = htmlspecialchars($secret, ENT_QUOTES, 'UTF-8');
+            $escaped[] = htmlspecialchars($secret, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+            if (\defined('ENT_HTML5')) {
+                $escaped[] = htmlspecialchars($secret, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            }
             $candidates = array();
             foreach ($escaped as $form) {
                 if ($form !== null) {
@@ -198,7 +204,7 @@ final class ZBSecret
         array $secrets
     ) {
         $forms = self::forms($secrets);
-        $text = $forms ? str_replace($forms, '***', (string)$text) : (string)$text;
+        $text = self::mask((string)$text, $forms);
         return self::holdsSecret($text, $secrets) ? self::CREDENTIAL_OMITTED_MESSAGE : $text;
     }
 
@@ -222,15 +228,81 @@ final class ZBSecret
             return false;
         }
         // Nothing to decode: the text is its only view.
-        $views = strpbrk($text, '%+\\') === false ? array($text) : self::decodedViews($text);
+        $views = strpbrk($text, '%+\\&') === false ? array($text) : self::decodedViews($text);
         foreach ($views as $view) {
             foreach ($secrets as $secret) {
-                if (strpos($view, $secret) !== false) {
+                if (self::contains($view, $secret)) {
                     return true;
                 }
             }
         }
         return false;
+    }
+
+    /**
+     * Whether $text holds $secret in any letter case: Unicode case folding
+     * when both are UTF-8 (a password with non-ASCII letters), ASCII
+     * otherwise.
+     *
+     * @param string $text
+     * @param string $secret
+     * @return bool
+     */
+    private static function contains(
+        $text,
+        #[\SensitiveParameter]
+        $secret
+    ) {
+        if (strpos($text, $secret) !== false) {
+            return true;
+        }
+        $unicode = self::isUtf8($text) && self::isUtf8($secret);
+        if (@preg_match('~' . preg_quote($secret, '~') . '~i' . ($unicode ? 'u' : ''), $text) === 1) {
+            return true;
+        }
+        if ($unicode && \function_exists('mb_convert_case') && \defined('MB_CASE_FOLD')) {
+            // Full folding (the German sharp s is "ss"), which PCRE does not do.
+            return strpos(mb_convert_case($text, MB_CASE_FOLD, 'UTF-8'), mb_convert_case($secret, MB_CASE_FOLD, 'UTF-8')) !== false;
+        }
+        return false;
+    }
+
+    /**
+     * @param string $text
+     * @return bool
+     */
+    private static function isUtf8($text)
+    {
+        return preg_match('//u', $text) === 1;
+    }
+
+    /**
+     * $text with every form replaced by ***, in any letter case.
+     *
+     * @param string $text
+     * @param string[] $forms
+     * @return string
+     */
+    private static function mask($text, array $forms)
+    {
+        if (!$forms) {
+            return $text;
+        }
+        $unicode = self::isUtf8($text);
+        $parts = array();
+        foreach ($forms as $form) {
+            if ($unicode && !self::isUtf8($form)) {
+                // A key that is not UTF-8 cannot be folded with the text: ASCII folding for all.
+                $unicode = false;
+            }
+            $parts[] = preg_quote($form, '~');
+        }
+        $masked = @preg_replace('~' . implode('|', $parts) . '~i' . ($unicode ? 'u' : ''), '***', $text);
+        if (!is_string($masked)) {
+            // The pattern failed (too big): fall back to the exact forms.
+            return str_replace($forms, '***', $text);
+        }
+        return $masked;
     }
 
     /** How many layers of encoding the check undoes: the SDK's own request encoding plus three echo layers. */
@@ -253,7 +325,7 @@ final class ZBSecret
         for ($layer = 0; $layer < $layers && $frontier; $layer++) {
             $next = array();
             foreach ($frontier as $view) {
-                $decoded = array(rawurldecode($view), urldecode($view), str_replace('+', ' ', $view), self::jsonUnescape($view));
+                $decoded = array(rawurldecode($view), urldecode($view), str_replace('+', ' ', $view), self::jsonUnescape($view), self::htmlDecode($view));
                 foreach ($decoded as $candidate) {
                     if (!isset($views[$candidate])) {
                         $views[$candidate] = true;
@@ -264,6 +336,22 @@ final class ZBSecret
             $frontier = $next;
         }
         return array_map('strval', array_keys($views));
+    }
+
+    /**
+     * $text with HTML entities decoded: named ones, and numeric ones with or
+     * without the closing semicolon (`&#100;ummy`, `&#x64ummy`).
+     *
+     * @param string $text
+     * @return string
+     */
+    private static function htmlDecode($text)
+    {
+        $text = preg_replace_callback('/&#(?:[xX]([0-9a-fA-F]{1,6})|([0-9]{1,7}));?/', function ($m) {
+            $code = (isset($m[2]) && $m[2] !== '') ? (int)$m[2] : hexdec($m[1]);
+            return ($code > 0 && $code <= 0x10ffff && ($code < 0xd800 || $code > 0xdfff)) ? self::utf8($code) : $m[0];
+        }, $text);
+        return html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
     }
 
     /**
@@ -278,8 +366,8 @@ final class ZBSecret
         $text = preg_replace_callback('/\\\\u(d[89ab][0-9a-f]{2})\\\\u(d[c-f][0-9a-f]{2})/i', function ($m) {
             return self::utf8(0x10000 + ((hexdec($m[1]) - 0xd800) << 10) + (hexdec($m[2]) - 0xdc00));
         }, $text);
-        $simple = array('"' => '"', '\\' => '\\', '/' => '/', 'b' => "\x08", 'f' => "\f", 'n' => "\n", 'r' => "\r", 't' => "\t");
-        return preg_replace_callback('/\\\\(?:u([0-9a-fA-F]{4})|(["\\\\\/bfnrt]))/', function ($m) use ($simple) {
+        $simple = array('"' => '"', '\\' => '\\', '/' => '/', 'b' => "\x08", 'f' => "\f", 'n' => "\n", 'r' => "\r", 't' => "\t", "'" => "'");
+        return preg_replace_callback('/\\\\(?:u([0-9a-fA-F]{4})|(["\\\\\/bfnrt\']))/', function ($m) use ($simple) {
             return (isset($m[2]) && $m[2] !== '') ? $simple[$m[2]] : self::utf8(hexdec($m[1]));
         }, $text);
     }
@@ -322,7 +410,7 @@ final class ZBSecret
             return 'object(' . get_class($value) . ')';
         }
         if (is_string($value)) {
-            $value = str_replace($forms, '***', $value);
+            $value = self::mask($value, $forms);
             return self::holdsSecret($value, $secrets) ? '***' : $value;
         }
         if (is_array($value)) {

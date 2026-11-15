@@ -366,7 +366,8 @@ class FieldTypesTest extends TestCase
             $call();
         } catch (ZBApiException $e) {
             $this->assertSame(200, $e->getStatusCode(), $body);
-            $this->assertStringContainsString('unexpected shape', $e->getMessage(), $body);
+            // {} carries no result: the message-only rule, not a shape error.
+            $this->assertStringContainsString($body === '{}' ? 'Request failed' : 'unexpected shape', $e->getMessage(), $body);
             return;
         }
         $this->fail('accepted ' . $body);

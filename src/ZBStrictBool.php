@@ -9,6 +9,22 @@ namespace ZeroBounce\SDK;
 trait ZBStrictBool
 {
     /**
+     * Whether $value is a real calendar date written YYYY-MM-DD (no trailing
+     * newline, no 2024-13-45).
+     *
+     * @param mixed $value
+     * @return bool
+     */
+    protected static function isRealDate($value)
+    {
+        if (!is_string($value) || !preg_match('/\A\d{4}-\d{2}-\d{2}\z/', $value)) {
+            return false;
+        }
+        $date = \DateTime::createFromFormat('!Y-m-d', $value);
+        return $date instanceof \DateTime && $date->format('Y-m-d') === $value;
+    }
+
+    /**
      * A boolean option, parsed strictly: true/false, "true"/"false" in any
      * case, or 1/0. Anything else is rejected, so "false" is never sent as
      * true and a typo is not taken as a flag.

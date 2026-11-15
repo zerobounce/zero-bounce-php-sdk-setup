@@ -268,6 +268,38 @@ class FullDiskStream
     }
 }
 
+/** Records every request body it is asked to send and answers with a JSON success. */
+class CapturingClient extends ZeroBounce
+{
+    /** @var string[] */
+    public $bodies = array();
+
+    public function __construct()
+    {
+        parent::__construct();
+    }
+
+    protected function checkedUrl($url)
+    {
+        return $url;
+    }
+
+    protected function executeHttp($method, $url, array $headers = array(), $body = null, $timeout = 120)
+    {
+        $this->bodies[] = (string)$body;
+        return array(
+            'status' => 200,
+            'headers' => array('HTTP/1.1 200 OK', 'Content-Type: application/json'),
+            'body' => '{"success":true,"message":"File Accepted","file_name":"f.csv","file_id":"f1"}',
+        );
+    }
+
+    public function __debugInfo()
+    {
+        return array();
+    }
+}
+
 class TransportGuardsTest extends TestCase
 {
     use RequestSweep;
@@ -1398,7 +1430,9 @@ return true;
                 try {
                     $this->quietly($call);
                 } catch (ZBApiException $e) {
-                    if ($e->getStatusCode() !== 200 || strpos($e->getMessage(), 'unexpected shape') === false) {
+                    $ok = strpos($e->getMessage(), 'unexpected shape') !== false
+                        || ($body === '{}' && strpos($e->getMessage(), 'Request failed') !== false);
+                    if ($e->getStatusCode() !== 200 || !$ok) {
                         $wrong[] = $label . ' ' . $e->getStatusCode() . ' ' . $e->getMessage() . ' for ' . json_encode($body);
                     }
                 } catch (\Throwable $e) {
@@ -1412,7 +1446,7 @@ return true;
     // -- S4/S7: redaction closed under encoding --------------------------------------
 
     /** A secret with every character an encoding changes. */
-    const FUZZ_SECRET = "k y\"/\\+%&=<>'z";
+    const FUZZ_SECRET = "k_y\"/\\+%&=<>'z";
 
     /**
      * The test's own decoder, independent of the SDK's: every view of $text
@@ -1908,7 +1942,7 @@ return true;
 
     public function testEveryCallOmitsARequestUrlEchoedUnderThreeMoreEncodings()
     {
-        $secret = 'probe"key/ZQXMARK01+23&ab c\\xyz';
+        $secret = 'probe"key/ZQXMARK01+23&ab_c\\xyz';
         $root = $this->serve('<?php
             header("Content-Type: text/plain", true, 400);
             echo rawurlencode(rawurlencode(rawurlencode($_SERVER["REQUEST_URI"])));
@@ -1998,5 +2032,381 @@ return true;
         $once = substr(json_encode($secret), 1, -1); // pw😀ZQXMARK
         $body = self::uEscaped($once);
         $this->assertSame(ZBSecret::CREDENTIAL_OMITTED_MESSAGE, ZBSecret::redact($body, array($secret)));
+    }
+
+    // -- result-file sniffing, permissions, targets, uploads, multipart ----------
+
+    /** Bodies no result file looks like, under the content types the API or a proxy may use. */
+    public function testEveryJsonShapeUnderAnyContentTypeIsNotSavedAsAResultFile()
+    {
+        $bodies = array(
+            'BOM object' => array('text/csv', "\xEF\xBB\xBF" . '{"success":false,"message":"Bad file."}'),
+            'array' => array('text/csv', '[{"error":"Bad file."}]'),
+            'BOM array' => array('text/csv', "\xEF\xBB\xBF" . '[{"error":"Bad file."}]'),
+            'object without a known key' => array('text/csv', '{"title":"Bad file."}'),
+            'problem+json' => array('application/problem+json', '{"title":"Bad file."}'),
+            'vnd.api+json' => array('application/vnd.api+json', 'not json at all'),
+            'text/json' => array('text/json', 'not json at all'),
+        );
+        $stream = new ZBGetFileOptions();
+        $stream->stream = true;
+        foreach ($bodies as $label => $answer) {
+            $client = new CannedFileClient(200, $answer[0], $answer[1]);
+            $client->initialize('guard-key');
+            $path = $this->dir . '/result.csv';
+            $calls = 0;
+            foreach ($this->sweepCalls($client, $path) as $name => $variants) {
+                if (!self::isDownload($name)) {
+                    continue;
+                }
+                foreach ($variants as $call) {
+                    $calls++;
+                    $error = $this->thrown($call);
+                    $this->assertInstanceOf(ZBApiException::class, $error, $name . ' ' . $label);
+                    $this->assertFileDoesNotExist($path, $name . ' ' . $label);
+                    $this->assertSame(array(), $this->leftovers(), $name . ' ' . $label);
+                }
+            }
+            $this->assertGreaterThanOrEqual(4, $calls);
+            // A result file that merely begins like one is still written.
+            $good = new CannedFileClient(200, 'text/csv', "\xEF\xBB\xBF" . "email,status\na@b.com,valid\n");
+            $good->initialize('guard-key');
+            $good->getFile('f1', $path);
+            $this->assertSame("\xEF\xBB\xBF" . "email,status\na@b.com,valid\n", file_get_contents($path));
+            unlink($path);
+        }
+    }
+
+    public function testAWarmupCsvThatIsJsonUnderAnyContentTypeIsAnError()
+    {
+        $bodies = array(
+            array('text/csv', "\xEF\xBB\xBF" . '{"success":false,"message":"Bad."}'),
+            array('text/csv', '[{"error":"Bad."}]'),
+            array('text/csv', '{"title":"Bad."}'),
+            array('application/problem+json', 'plain words'),
+        );
+        foreach ($bodies as $answer) {
+            $warmup = new CannedFileWarmup(200, $answer[0], $answer[1]);
+            foreach (array('downloadSeeds', 'downloadStatistics') as $method) {
+                $call = function () use ($warmup, $method) {
+                    $method === 'downloadSeeds' ? $warmup->downloadSeeds() : $warmup->downloadStatistics('a@b.com');
+                };
+                $this->assertInstanceOf(ZBApiException::class, $this->thrown($call), $method . ' ' . $answer[0]);
+            }
+        }
+        $ok = new CannedFileWarmup(200, 'text/csv', "\xEF\xBB\xBF" . "seed,provider\na@b.com,gmail\n");
+        $this->assertSame("\xEF\xBB\xBF" . "seed,provider\na@b.com,gmail\n", $ok->downloadSeeds());
+    }
+
+    public function testADownloadOverAnExistingFileKeepsItsMode()
+    {
+        if (DIRECTORY_SEPARATOR !== '/') {
+            $this->markTestSkipped('POSIX modes');
+        }
+        $csv = "email\na@example.com\n";
+        $client = new CannedFileClient(200, 'text/csv', $csv);
+        $client->initialize('guard-key');
+        $calls = $this->downloadsOverExistingFiles($client, $this->dir);
+        foreach ($calls as $name => $call) {
+            chmod($call[1], 0600);
+            $call[0]();
+            clearstatcache();
+            $this->assertSame($csv, file_get_contents($call[1]), $name);
+            $this->assertSame(0600, fileperms($call[1]) & 0777, $name);
+        }
+    }
+
+    public function testADownloadThroughASymlinkWritesTheTargetAndKeepsTheLink()
+    {
+        if (DIRECTORY_SEPARATOR !== '/') {
+            $this->markTestSkipped('symlinks');
+        }
+        $csv = "email\na@example.com\n";
+        $client = new CannedFileClient(200, 'text/csv', $csv);
+        $client->initialize('guard-key');
+        $stream = new ZBGetFileOptions();
+        $stream->stream = true;
+        foreach (array('plain' => null, 'streamed' => $stream) as $how => $options) {
+            $real = $this->dir . '/real-' . $how . '.csv';
+            $link = $this->dir . '/link-' . $how . '.csv';
+            file_put_contents($real, "old\n");
+            symlink(basename($real), $link);
+            $client->getFile('f1', $link, $options);
+            $this->assertTrue(is_link($link), $how . ' replaced the link');
+            $this->assertSame($csv, file_get_contents($real), $how);
+            // A dangling link is written through too.
+            $dangling = $this->dir . '/dangling-' . $how . '.csv';
+            symlink($this->dir . '/created-' . $how . '.csv', $dangling);
+            $client->getFile('f1', $dangling, $options);
+            $this->assertTrue(is_link($dangling));
+            $this->assertSame($csv, file_get_contents($this->dir . '/created-' . $how . '.csv'), $how);
+            unlink($dangling);
+            unlink($this->dir . '/created-' . $how . '.csv');
+            unlink($link);
+            unlink($real);
+        }
+        // A dangling link into a missing folder is refused, and nothing is created.
+        $gone = $this->dir . '/gone';
+        symlink($gone . '/deeper/x.csv', $this->dir . '/bad-link');
+        $before = 0;
+        $error = $this->thrown(function () use ($client) { $client->getFile('f1', $this->dir . '/bad-link'); });
+        $this->assertSame('Could not write file', $error->getMessage());
+        $this->assertFileDoesNotExist($gone);
+        unlink($this->dir . '/bad-link');
+    }
+
+    /** Refused before a request is sent: nothing is recorded by curl, and no folder appears. */
+    public function testARefusedDownloadTargetIsRefusedBeforeAnythingIsSent()
+    {
+        $client = new LoopbackClient();
+        $client->initialize('guard-key');
+        $client->pointAt('http://127.0.0.1:' . $this->freePort());
+        $stream = new ZBGetFileOptions();
+        $stream->stream = true;
+        $folder = $this->dir . '/a-folder';
+        mkdir($folder);
+        file_put_contents($this->dir . '/a-file', 'x');
+        $targets = array(
+            'directory' => $folder,
+            'trailing separator' => $this->dir . '/newfolder/',
+            'file used as a folder' => $this->dir . '/a-file/x.csv',
+            'file used as an ancestor' => $this->dir . '/a-file/deeper/x.csv',
+        );
+        if (function_exists('posix_geteuid') && posix_geteuid() !== 0) {
+            mkdir($this->dir . '/ro', 0555);
+            $targets['unwritable folder'] = $this->dir . '/ro/x.csv';
+            $targets['missing folder under an unwritable one'] = $this->dir . '/ro/new/x.csv';
+        }
+        foreach ($targets as $label => $target) {
+            foreach (array('getFile', 'scoringGetFile', 'emailFinderGetFile', 'domainSearchGetFile') as $name) {
+                foreach (array(null, $stream) as $options) {
+                    $before = count($client->options);
+                    $error = $this->thrown(function () use ($client, $name, $target, $options) {
+                        $client->$name('f1', $target, $options);
+                    });
+                    $this->assertSame($before, count($client->options), $label . ' ' . $name . ' sent a request');
+                    $this->assertNotSame('', $error->getMessage());
+                }
+            }
+        }
+        $this->assertFileDoesNotExist($this->dir . '/newfolder');
+        $this->assertFileDoesNotExist($this->dir . '/ro/new');
+        if (is_dir($this->dir . '/ro')) {
+            chmod($this->dir . '/ro', 0755);
+            rmdir($this->dir . '/ro');
+        }
+        rmdir($folder);
+    }
+
+    public function testAMissingFolderIsCreatedOnlyForADownloadThatSucceeds()
+    {
+        $client = new CannedFileClient(200, 'text/csv', "email\na@example.com\n");
+        $client->initialize('guard-key');
+        $bad = new CannedFileClient(404, 'text/plain', 'File cannot be found.');
+        $bad->initialize('guard-key');
+        $stream = new ZBGetFileOptions();
+        $stream->stream = true;
+        foreach (array(null, $stream) as $options) {
+            $this->thrown(function () use ($bad, $options) { $bad->getFile('f1', $this->dir . '/n1/n2/x.csv', $options); });
+            $this->assertFileDoesNotExist($this->dir . '/n1', 'a failed download left a folder');
+            $client->getFile('f1', $this->dir . '/n1/n2/x.csv', $options);
+            $this->assertFileExists($this->dir . '/n1/n2/x.csv');
+            unlink($this->dir . '/n1/n2/x.csv');
+            rmdir($this->dir . '/n1/n2');
+            rmdir($this->dir . '/n1');
+        }
+    }
+
+    public function testAnUnreadableUploadIsRefusedBeforeAnythingIsSent()
+    {
+        $client = new LoopbackClient();
+        $client->initialize('guard-key');
+        $client->pointAt('http://127.0.0.1:' . $this->freePort());
+        $missing = $this->dir . '/missing.csv';
+        $folder = $this->dir . '/a-folder';
+        mkdir($folder);
+        $paths = array('missing' => $missing, 'directory' => $folder);
+        if (function_exists('posix_geteuid') && posix_geteuid() !== 0) {
+            file_put_contents($this->dir . '/locked.csv', "a@b.com\n");
+            chmod($this->dir . '/locked.csv', 0000);
+            $paths['unreadable'] = $this->dir . '/locked.csv';
+        }
+        $calls = array(
+            'sendFile' => function ($p) use ($client) { $client->sendFile($p, 1); },
+            'scoringSendFile' => function ($p) use ($client) { $client->scoringSendFile($p, 1); },
+            'sendEmailFinderFile' => function ($p) use ($client) { $client->sendEmailFinderFile($p, 1, 2); },
+            'sendDomainSearchFile' => function ($p) use ($client) { $client->sendDomainSearchFile($p, 1); },
+            'sendListEvaluatorFile' => function ($p) use ($client) { $client->sendListEvaluatorFile($p, 1); },
+        );
+        $warnings = array();
+        set_error_handler(function ($level, $message) use (&$warnings) { $warnings[] = $message; return true; });
+        try {
+            foreach ($paths as $label => $path) {
+                foreach ($calls as $name => $call) {
+                    $before = count($client->options);
+                    $error = $this->thrown(function () use ($call, $path) { $call($path); });
+                    $this->assertSame($before, count($client->options), $name . ' ' . $label . ' sent a request');
+                    $this->assertNotSame('', $error->getMessage());
+                }
+            }
+        } finally {
+            restore_error_handler();
+        }
+        $this->assertSame(array(), $warnings, 'a PHP warning leaked');
+        @chmod($this->dir . '/locked.csv', 0644);
+        @unlink($this->dir . '/locked.csv');
+        rmdir($folder);
+    }
+
+    public function testTheMultipartBodyIsByteExact()
+    {
+        $client = new CapturingClient();
+        $client->initialize('guard-key');
+        $file = $this->dir . "/we\"ird\r\nname-é.csv";
+        file_put_contents($file, "a@b.com\n");
+        $client->sendFile($file, 1, 'https://example.com/done');
+        $body = $client->bodies[0];
+        $this->assertSame(1, preg_match('/^--(-------------[0-9a-f]{32})\r\n/', $body, $m));
+        $d = '--' . $m[1];
+        $expected = $d . "\r\n" . 'Content-Disposition: form-data; name="api_key"' . "\r\n\r\nguard-key\r\n"
+            . $d . "\r\n" . 'Content-Disposition: form-data; name="email_address_column"' . "\r\n\r\n1\r\n"
+            . $d . "\r\n" . 'Content-Disposition: form-data; name="return_url"' . "\r\n\r\nhttps://example.com/done\r\n"
+            . $d . "\r\n" . 'Content-Disposition: form-data; name="file"; filename="we%22irdname-é.csv"' . "\r\n"
+            . "Content-Transfer-Encoding: binary\r\n\r\na@b.com\n\r\n"
+            . $d . "--\r\n";
+        $this->assertSame($expected, $body);
+
+        $error = $this->thrown(function () use ($client, $file) {
+            $client->sendFile($file, 1, "https://example.com/\r\n--x");
+        });
+        $this->assertStringContainsString('return_url', $error->getMessage());
+        $this->assertCount(1, $client->bodies, 'a bad return_url was sent');
+        unlink($file);
+    }
+
+    // -- raw sockets: refused, cut short, chunked, redirected ---------------------
+
+    /**
+     * A server that speaks HTTP by hand, answering every request according to
+     * $mode: "length" promises 1000 bytes and sends a few, "chunked" sends one
+     * chunk and closes without the end chunk, "redirect" answers 302 with a Location.
+     *
+     * @return string the server's root URL
+     */
+    private function rawServe($mode)
+    {
+        $port = $this->freePort();
+        $file = tempnam(sys_get_temp_dir(), 'zb-raw-');
+        file_put_contents($file, <<<'PHP'
+<?php
+$server = stream_socket_server('tcp://127.0.0.1:' . $argv[1]);
+$mode = $argv[2];
+while (($c = @stream_socket_accept($server, 120)) !== false) {
+    $head = '';
+    while (strpos($head, "\r\n\r\n") === false) {
+        $part = fread($c, 8192);
+        if ($part === '' || $part === false) {
+            break;
+        }
+        $head .= $part;
+    }
+    $split = strpos($head, "\r\n\r\n");
+    $have = $split === false ? 0 : strlen($head) - $split - 4;
+    $need = preg_match('/content-length:\s*(\d+)/i', $head, $m) ? (int)$m[1] - $have : 0;
+    while ($need > 0) {
+        $part = fread($c, min(65536, $need));
+        if ($part === '' || $part === false) {
+            break;
+        }
+        $need -= strlen($part);
+    }
+    $csv = preg_match('#^\S+ \S*(getfile|download)#i', $head) === 1;
+    $type = $csv ? 'text/csv' : 'application/json';
+    $text = $csv ? "email,status\na@b.com,valid\n" : '{"Credits":"1","a":1,"b":"cccccccccc"}';
+    if ($mode === 'length') {
+        fwrite($c, "HTTP/1.1 200 OK\r\nContent-Type: $type\r\nContent-Length: 1000\r\nConnection: close\r\n\r\n" . $text);
+    } elseif ($mode === 'chunked') {
+        fwrite($c, "HTTP/1.1 200 OK\r\nContent-Type: $type\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n"
+            . dechex(strlen($text)) . "\r\n" . $text . "\r\n");
+    } else {
+        fwrite($c, "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:1/landed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+    }
+    fclose($c);
+}
+PHP
+        );
+        $pipes = array();
+        $process = proc_open(
+            array(PHP_BINARY, $file, (string)$port, $mode),
+            array(0 => array('pipe', 'r'), 1 => array('file', '/dev/null', 'w'), 2 => array('file', '/dev/null', 'w')),
+            $pipes
+        );
+        $this->assertIsResource($process);
+        $this->servers[] = array('process' => $process, 'pipes' => $pipes, 'files' => array($file));
+        for ($i = 0; $i < 100; $i++) {
+            $connection = @fsockopen('127.0.0.1', $port, $errno, $errstr, 0.1);
+            if ($connection) {
+                fclose($connection);
+                return 'http://127.0.0.1:' . $port;
+            }
+            usleep(20000);
+        }
+        $this->fail('raw server did not start');
+    }
+
+    /** Every request method, over a transport that fails in each way: an error, no file, nothing left behind. */
+    public function testEveryRequestFailsOnARefusedConnectionACutBodyAndACutChunkedBody()
+    {
+        $roots = array(
+            'refused' => 'http://127.0.0.1:' . $this->freePort(),
+            'cut short' => $this->rawServe('length'),
+            'chunked cut' => $this->rawServe('chunked'),
+        );
+        foreach ($roots as $kind => $root) {
+            $client = new LoopbackClient();
+            $client->initialize('guard-key');
+            $client->pointAt($root);
+            $path = $this->dir . '/out.csv';
+            $calls = $this->sweepCalls($client, $path);
+            $this->assertSame(array(), array_values(array_diff($this->requestMethodNames(), array_keys($calls))));
+            foreach ($calls as $name => $variants) {
+                foreach ($variants as $call) {
+                    $error = $this->thrown($call);
+                    $label = $name . ' (' . $kind . ')';
+                    $this->assertNotSame('', $error->getMessage(), $label);
+                    $this->assertStringNotContainsString('guard-key', $error->getMessage(), $label);
+                    if ($kind === 'refused' && $error instanceof ZBApiException) {
+                        $this->assertSame(0, $error->getStatusCode(), $label);
+                    }
+                    $this->assertFileDoesNotExist($path, $label);
+                    $this->assertSame(array(), $this->leftovers(), $label);
+                }
+            }
+        }
+    }
+
+    public function testEveryWarmupRequestFailsOnAChunkedBodyCutMidStream()
+    {
+        $warmup = new LoopbackWarmup();
+        $warmup->loopback = $this->rawServe('chunked');
+        foreach ($this->warmupCalls($warmup) as $name => $call) {
+            $error = $this->thrown($call);
+            $this->assertNotSame('', $error->getMessage(), $name);
+            $this->assertStringNotContainsString('guard-key', $error->getMessage(), $name);
+        }
+    }
+
+    public function testARawRedirectIsNotFollowedOnAnyRequest()
+    {
+        $client = new LoopbackClient();
+        $client->initialize('guard-key');
+        $client->pointAt($this->rawServe('redirect'));
+        foreach ($this->sweepCalls($client, $this->dir . '/out.csv') as $name => $variants) {
+            foreach ($variants as $call) {
+                $error = $this->thrown($call);
+                $this->assertInstanceOf(ZBApiException::class, $error, $name);
+                $this->assertSame(302, $error->getStatusCode(), $name);
+            }
+        }
     }
 }

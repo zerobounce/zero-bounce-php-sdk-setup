@@ -244,6 +244,8 @@ class StrictBooleanSweepTest extends TestCase
         // weekdays_only is a key of Warmup's managedSending array:
         // OfflineWarmupTest::testAddSendingAccountParsesWeekdaysOnlyStrictly.
         $known[] = 'weekdays_only';
+        // usePost: ErrorHandlingTest::testUsePostIsStrict.
+        $known[] = 'usePost';
         $this->assertSame(array(), array_values(array_diff($parsed, $known)));
     }
 

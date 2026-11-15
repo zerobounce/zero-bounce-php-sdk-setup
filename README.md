@@ -12,6 +12,8 @@ This SDK contains methods for interacting easily with ZeroBounce API.
 More information about ZeroBounce can be find in the [official documentation](https://www.zerobounce.net/docs/).
 
 ## Installation
+Requires PHP 7.0 or newer with the `curl` and `json` extensions (`ext-curl`, `ext-json`).
+
 To install the SDK you will need to use [composer](https://getcomposer.org/) in your project.
 If you're not using composer, you can install it like so:
 ```bash

@@ -19,7 +19,7 @@ Guidance for AI coding agents working in this repository.
 - `test/OfflineApiTest.php`: offline suite. `test/OfflineHttp.php` records every request and answers without the network.
 - `test/OfflineWarmupTest.php`: the same for the Warmup client.
 - `live/live_api.php`: the opt-in live suite. `phpunit.xml` only includes `test/`, so `composer test` and CI never run it.
-- `composer.json`: the only version field, `"version": "x.y.z"`. `composer.lock` lists dependencies, not this package's version. There is no runtime version constant and no User-Agent.
+- `src/ZeroBounce.php`: `ZeroBounce::VERSION`, the only version field (`composer.json` has no `"version"`; Packagist reads the tag). There is no User-Agent.
 
 ## Commands
 
@@ -30,7 +30,7 @@ composer test     # phpunit
 composer audit    # check dependencies against the security advisories
 ```
 
-`php -l` is the syntax check. There is no separate typechecker. CI (`.github/workflows/sdk_ci.yml`, PHP 8.2) installs dependencies, runs `php -l`, then `vendor/bin/phpunit`.
+`php -l` is the syntax check. There is no separate typechecker. CI (`.github/workflows/sdk_ci.yml`, PHP 8.4 and 8.5, plus an offline smoke run on the PHP 7.0 floor) installs dependencies, runs `php -l`, then `vendor/bin/phpunit`.
 
 The live suite is opt-in and never runs in CI:
 
@@ -84,6 +84,6 @@ Publishing and pushing tags need a maintainer's explicit approval. Do not bump t
 **Run the live suite by hand before every release.** The offline suite proves the SDK sends what we think it sends; only the live suite proves the API accepts it. Run it with real keys, including `ZEROBOUNCE_LIVE_SPEND=1` and `ZEROBOUNCE_LIVE_CHANGES=1`, and do not release on a failure.
 
 1. Move `[Unreleased]` entries under `## [x.y.z] - YYYY-MM-DD`, leave an empty `[Unreleased]` section, and update the compare links at the bottom of `CHANGELOG.md`.
-2. Set the same version in `composer.json` (`"version"`). The publish workflow fails if it differs from the tag. That is the only version field.
+2. Set the same version in `ZeroBounce::VERSION` (`src/ZeroBounce.php`). The publish workflow fails if it differs from the tag, and a test checks it against the newest `CHANGELOG.md` heading. That is the only version field.
 3. `composer lint` and `composer test`.
 4. Tag `vx.y.z` on that commit and run the Publish workflow with that tag. It creates the GitHub release and tells Packagist to update `zero-bounce/sdk`.

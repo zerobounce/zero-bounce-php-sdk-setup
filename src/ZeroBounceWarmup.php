@@ -47,14 +47,21 @@ class ZeroBounceWarmup
             }
             // A key with surrounding whitespace or control characters would be
             // quoted, unredacted, in the HTTP library's own error.
-            if ($apiKey !== trim($apiKey) || preg_match('/[\x00-\x1f\x7f]/', $apiKey)) {
-                throw new ZBMissingParameterException(
-                    'api_key has surrounding whitespace or control characters'
-                );
+            $apiKey = (string)$apiKey;
+            if (ZBUrl::hasInvisible($apiKey) || preg_match('/[\x00-\x20\x7f]/', $apiKey)) {
+                throw new ZBMissingParameterException(ZBUrl::KEY_CHARACTERS_PROBLEM);
+            }
+            if (ZBUrl::hasNonPrintableAscii($apiKey)) {
+                throw new ZBMissingParameterException(ZBUrl::KEY_HEADER_PROBLEM);
             }
             $base = ($baseUrl === null || trim((string)$baseUrl) === '') ? self::DefaultBaseUrl : $baseUrl;
             if (stripos($base, 'https://') !== 0) {
                 throw new ZBMissingParameterException('base_url must be an https:// URL');
+            }
+            if (!ZBUrl::isSafeHttps($base)) {
+                throw new ZBMissingParameterException(
+                    'base_url must be a valid https:// URL (a host, an optional port, no credentials, no whitespace)'
+                );
             }
         } catch (\Exception $e) {
             throw ZBSecret::withoutSecretInTrace($e, $apiKey);
@@ -123,6 +130,11 @@ class ZeroBounceWarmup
                 'refusing to send the API key to a URL that is not https://'
             );
         }
+        if (!ZBUrl::isSafeHttps($url)) {
+            throw new ZBMissingParameterException(
+                'refusing to send the API key to a URL that is not a valid https:// URL'
+            );
+        }
 
         $headers = array('API-Key: ' . $this->apiKey(), 'Accept: application/json');
         $content = null;
@@ -188,7 +200,9 @@ class ZeroBounceWarmup
     private function csv($path, array $query = array())
     {
         $result = $this->send('GET', $path, $query);
-        $text = (string)$result['body'];
+        $csv = (string)$result['body'];
+        // A byte order mark in front of an error body hides it from the sniff.
+        $text = strncmp($csv, "\xEF\xBB\xBF", 3) === 0 ? (string)substr($csv, 3) : $csv;
         $contentType = '';
         foreach ((array)$result['headers'] as $header) {
             if (stripos((string)$header, 'content-type:') === 0) {
@@ -196,14 +210,26 @@ class ZeroBounceWarmup
             }
         }
         // An HTML page on a 200 (a proxy's "Access denied") is not CSV either.
-        if (trim($text) === '' || strpos($contentType, 'application/json') !== false
+        if (trim($text) === '' || self::isJsonContentType($contentType)
             || ZBHttpError::isHtml($text, (array)$result['headers']) || self::isJsonBody($text)) {
             throw new ZBApiException(
                 $this->redact($this->messageFromBody($text, (int)$result['status'])),
                 (int)$result['status']
             );
         }
-        return $text;
+        return $csv;
+    }
+
+    /**
+     * application/json, text/json and any +json type.
+     *
+     * @param string $contentType
+     * @return bool
+     */
+    private static function isJsonContentType($contentType)
+    {
+        return strpos($contentType, 'application/json') !== false || strpos($contentType, 'text/json') !== false
+            || preg_match('#^[a-z0-9.+_-]+/[a-z0-9.+_-]*\+json$#', $contentType) === 1;
     }
 
     /**
@@ -342,8 +368,11 @@ class ZeroBounceWarmup
 
     private function required($value, $name)
     {
-        if ($value === null || trim((string)$value) === '') {
+        if ($value === null || (is_string($value) && trim($value) === '')) {
             throw new ZBMissingParameterException($name . ' is required');
+        }
+        if (!is_string($value) && !is_int($value)) {
+            throw new ZBMissingParameterException($name . ' must be a string');
         }
         return $value;
     }
@@ -364,7 +393,7 @@ class ZeroBounceWarmup
         if ($value instanceof \DateTimeInterface) {
             return $value->format('Y-m-d');
         }
-        if (is_string($value) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+        if (self::isRealDate($value)) {
             return $value;
         }
         throw new ZBMissingParameterException($name . ' must be YYYY-MM-DD');
