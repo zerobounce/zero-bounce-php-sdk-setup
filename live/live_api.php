@@ -51,16 +51,27 @@ const SANDBOX = 'valid@example.com';
 
 /**
  * LIVE: the bulk API refuses to delete a just-uploaded file for far longer
- * than a status of "Complete" suggests -- observed runs have needed anywhere
- * from ~10 to ~50 minutes before the delete was accepted, so "Complete" is not
- * a sufficient precondition. The suite waits DELETE_WINDOW seconds before
- * giving up, and every file it could not delete is retried once more and named
- * at the end of the run, so a test CSV is never silently left on the live
- * account. Raise it for a slower account:
+ * than a status of "Complete" suggests, and reports the refusal as
+ * "File cannot be found." on an HTTP 200. Measured on this account over seven
+ * uploads, the delete was accepted 133s, 133s, 148s, 148s, 148s, 274s and 385s
+ * after upload -- so the old 120s ceiling sat below even the fastest case, and
+ * "Complete" is not a sufficient precondition (files still reporting "Queued"
+ * deleted fine, while the 385s one only went through once it had reached
+ * "Processing"). Slower runs
+ * than any of these have been seen on this API, so the window is an educated
+ * ceiling rather than a guarantee: the check retries until it is spent and
+ * then FAILS, naming the file. Raise it for a slower account:
  *
- *   ZEROBOUNCE_LIVE_DELETE_SECONDS=3000
+ *   ZEROBOUNCE_LIVE_DELETE_SECONDS=1800
  */
 define('DELETE_WINDOW', max(0, (int)getenv('ZEROBOUNCE_LIVE_DELETE_SECONDS') ?: 600));
+/**
+ * Whatever the check gave up on is swept again at the end of the run, where
+ * the rest of the suite has already bought it several more minutes. Keeping
+ * that budget separate is what lets the check fail at a sane 10 minutes
+ * without the run leaving a CSV behind on the live account.
+ */
+const SWEEP_WINDOW = 300;
 const DELETE_INTERVAL = 10;
 
 $passed = 0;
@@ -109,21 +120,23 @@ function check($condition, $message)
 }
 
 /**
- * Deletes an uploaded bulk file, retrying until DELETE_WINDOW is spent, and
- * throws naming the file that is still on the account. Anything it gives up on
- * is swept again at the end of the run.
+ * Deletes an uploaded bulk file, retrying until $window seconds are spent and
+ * returning as soon as the API accepts it. Hands back null on success, or a
+ * message naming the file that is still on the account.
  *
- * @throws \RuntimeException
+ * @param ZeroBounce $client
+ * @param string $fileId
+ * @param int $window
+ * @return string|null
  */
-function deleteUploadedFile(ZeroBounce $client, $fileId)
+function deleteUploadedFile(ZeroBounce $client, $fileId, $window)
 {
-    global $leftovers;
-    $deadline = time() + DELETE_WINDOW;
+    $deadline = time() + $window;
     $lastError = '';
     while (true) {
         try {
             $client->deleteFile($fileId);
-            return;
+            return null;
         } catch (\Throwable $e) {
             $lastError = redact($e->getMessage());
         }
@@ -132,26 +145,29 @@ function deleteUploadedFile(ZeroBounce $client, $fileId)
         }
         sleep(DELETE_INTERVAL);
     }
-    $leftovers[] = $fileId;
-    throw new \RuntimeException(
-        'could not delete ' . $fileId . ' after retrying for ' . DELETE_WINDOW . 's: ' . $lastError
-    );
+    return 'could not delete ' . $fileId . ' after retrying for ' . $window . 's: ' . $lastError;
 }
 
 /**
- * A rejected request still deserializes into a response object with every
- * field null -- the API answers a bad key with a bare {"Message": "..."} body
- * that carries no payload key for the SDK to reject -- so a "not null" check
- * passes on a rejection and proves nothing. An answered /guessformat response
- * echoes the domain it was asked about.
+ * A rejected /guessformat request still deserializes into a response object
+ * with every field null: the API answers a bad key with a bare
+ * {"Message": "..."} body, which carries neither an "error" key nor a payload
+ * key for the SDK to reject, so it throws nothing and a "not null" check
+ * passes on a rejection and proves nothing. An answered domain search echoes
+ * the domain it was asked about and names a format.
  *
- * @param ZBFindEmailResponse|ZBFindEmailFormatResponse $response
+ * Only the domain-search shape is checked here: asked to guess an address,
+ * /guessformat answers with "domain": "" and puts the domain in the address
+ * instead, so the email finder asserts on its own response below.
+ *
+ * @param ZBFindEmailFormatResponse $response
  * @param string $domain
  */
-function checkGuessFormatAnswered($response, $domain)
+function checkDomainSearchAnswered($response, $domain)
 {
     check($response !== null, 'no response');
     check($response->domain === $domain, 'the response did not echo the domain: ' . $response);
+    check(is_string($response->format) && $response->format !== '', 'no format in the response: ' . $response);
 }
 
 /** Run $call, expecting it to fail, and hand back the (redacted) message. */
@@ -238,7 +254,7 @@ function validationFree()
         $start = (new DateTime())->modify('-7 days');
         check((int)$client->getCredits(true)->credits > 0, 'no credit balance over POST');
         check($client->getApiUsage($start, $end, true)->total !== null, 'no usage total over POST');
-        checkGuessFormatAnswered($client->findEmailFormat('example.com', null, true), 'example.com');
+        checkDomainSearchAnswered($client->findEmailFormat('example.com', null, true), 'example.com');
     });
 
     test('an unknown file id is a short, clean error', function () use ($client) {
@@ -341,15 +357,21 @@ function validationSpend()
     });
 
     test('email finder', function () use ($client) {
+        // A rejection deserializes into an all-null object that "not null"
+        // happily accepts (see checkDomainSearchAnswered), so the guessed
+        // address is what proves the request was actually answered. This
+        // endpoint leaves "domain" empty when it is given a name to guess.
         $response = $client->findEmail('example.com', 'John', null, null, 'Doe');
-        checkGuessFormatAnswered($response, 'example.com');
-        check(is_string($response->email), 'no email in the response: ' . $response);
+        check($response !== null, 'no response');
+        check(is_string($response->email) && $response->email !== '', 'no email in the response: ' . $response);
+        check(
+            substr($response->email, -strlen('@example.com')) === '@example.com',
+            'the guess was not for the domain asked about: ' . $response
+        );
     });
 
     test('domain search', function () use ($client) {
-        $response = $client->findEmailFormat('example.com');
-        checkGuessFormatAnswered($response, 'example.com');
-        check(is_string($response->format), 'no format in the response: ' . $response);
+        checkDomainSearchAnswered($client->findEmailFormat('example.com'), 'example.com');
     });
 
     // Not a free call: on an account with an S3 integration this complete
@@ -384,7 +406,12 @@ function validationSpend()
     test('the uploaded validation job is deleted again', function () use ($client, &$fileId) {
         // LIVE: a just-accepted job answers "File cannot be found" for a long
         // while, so the delete is retried rather than leaving the job behind.
-        deleteUploadedFile($client, $fileId);
+        global $leftovers;
+        $problem = deleteUploadedFile($client, $fileId, DELETE_WINDOW);
+        if ($problem !== null) {
+            $leftovers[] = $fileId;
+            throw new \RuntimeException($problem);
+        }
     }, $fileId !== null, 'upload did not produce a file id');
 }
 
@@ -546,12 +573,12 @@ if (!empty($leftovers)) {
     echo "\nLeftover uploaded files\n";
     $sweeper = sdk();
     foreach ($leftovers as $fileId) {
-        try {
-            $sweeper->deleteFile($fileId);
+        $problem = deleteUploadedFile($sweeper, $fileId, SWEEP_WINDOW);
+        if ($problem !== null) {
+            echo '  ! ' . $fileId . ' is STILL on the live account, delete it by hand: '
+                . $problem . "\n";
+        } else {
             echo '  + ' . $fileId . " deleted on a later attempt\n";
-        } catch (\Throwable $e) {
-            echo '  ! ' . $fileId . ' is STILL on the account, delete it by hand: '
-                . redact($e->getMessage()) . "\n";
         }
     }
 }
