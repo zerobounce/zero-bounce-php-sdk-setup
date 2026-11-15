@@ -1375,12 +1375,12 @@ return true;
         // initialize() checks the base URL; checkedUrl() checks the URL actually sent.
         $api = new FakeApi();
         $client = $this->client($api, 'ipt-key');
-        $ref = new ReflectionClass($client);
+        $ref = new ReflectionClass(real_client($client));
         $prop = $ref->getProperty('inboxPlacementBaseUrl');
         if (\PHP_VERSION_ID < 80100) {
             $prop->setAccessible(true);
         }
-        $prop->setValue($client, 'http://bulkapi.zerobounce.net/api/ipt');
+        $prop->setValue(real_client($client), 'http://bulkapi.zerobounce.net/api/ipt');
         $this->assertRejected(function () use ($client) { $client->getInboxPlacementProviders(); }, 'https://');
         $this->assertSame(0, $api->count());
     }
@@ -2139,6 +2139,7 @@ return true;
 
     private function forceBaseUrl($client, $url)
     {
+        $client = real_client($client);
         $ref = new ReflectionClass($client);
         if ($ref->hasProperty('apiBaseUrl')) {
             $prop = $ref->getProperty('apiBaseUrl');

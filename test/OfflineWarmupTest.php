@@ -76,20 +76,21 @@ class FakeWarmupApi
     }
 }
 
-class OfflineWarmupClient extends ZeroBounceWarmup
+class OfflineWarmupClient extends ClientDouble
 {
     /** @var FakeWarmupApi */
     public $fake;
 
     public function __construct(FakeWarmupApi $fake, $apiKey = 'warmup-key', $baseUrl = null)
     {
-        parent::__construct($apiKey, $baseUrl);
+        $this->client = new ZeroBounceWarmup($apiKey, $baseUrl);
         $this->fake = $fake;
-    }
-
-    protected function executeHttp($method, $url, array $headers = array(), $body = null, $timeout = 120)
-    {
-        return $this->fake->handle($method, $url, $headers, $body, $timeout);
+        $api = $fake;
+        $this->hook(array(
+            'executeHttp' => function ($method, $url, array $headers, $body, $timeout) use ($api) {
+                return $api->handle($method, $url, $headers, $body, $timeout);
+            },
+        ));
     }
 }
 

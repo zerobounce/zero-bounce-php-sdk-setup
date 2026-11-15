@@ -10,7 +10,7 @@ namespace ZeroBounce\SDK;
  * parameter. Use ZeroBounceWarmup with a Warmup API key; ZeroBounce stays for
  * the validation API key.
  */
-class ZeroBounceWarmup
+final class ZeroBounceWarmup
 {
     use ZBStrictBool;
 
@@ -28,6 +28,9 @@ class ZeroBounceWarmup
     private $apiKey;
     /** @var string */
     private $root;
+
+    /** @internal Test seam; see ZeroBounce::$seam. @var array<string, callable> */
+    private $seam = array();
 
     /**
      * @param string $apiKey your Warmup API key, sent in the API-Key header
@@ -254,8 +257,15 @@ class ZeroBounceWarmup
      *
      * @return array{status:int, headers:array, body:string}
      */
-    protected function executeHttp($method, $url, array $headers = array(), $body = null, $timeout = 120)
+    private function executeHttp($method, $url, array $headers = array(), $body = null, $timeout = 120)
     {
+        if (isset($this->seam['executeHttp'])) {
+            return call_user_func($this->seam['executeHttp'], $method, $url, $headers, $body, $timeout);
+        }
+        if (isset($this->seam['rewriteUrl'])) {
+            // Runs after the https check of the caller: only moves the real curl call to a test server.
+            $url = call_user_func($this->seam['rewriteUrl'], $url);
+        }
         $curl = curl_init();
         $options = array(
             CURLOPT_URL => $url,
@@ -305,8 +315,11 @@ class ZeroBounceWarmup
      * @param array<int, mixed> $options
      * @return void
      */
-    protected function applyCurlOptions($curl, array $options)
+    private function applyCurlOptions($curl, array $options)
     {
+        if (isset($this->seam['applyCurlOptions'])) {
+            call_user_func($this->seam['applyCurlOptions'], $options);
+        }
         curl_setopt_array($curl, $options);
     }
 

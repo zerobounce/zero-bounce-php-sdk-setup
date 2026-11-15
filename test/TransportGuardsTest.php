@@ -13,13 +13,14 @@ use ZeroBounce\SDK\ZeroBounce;
 use ZeroBounce\SDK\ZeroBounceWarmup;
 
 require_once __DIR__ . '/RequestSweep.php';
+require_once __DIR__ . '/Seams.php';
 
 /**
  * Real curl requests to plain-http loopback servers: the https check is
- * skipped, every base URL points at one root, and the curl options and the
- * download file can be watched or replaced.
+ * skipped (the checkedUrl hook), every base URL points at one root, and the
+ * curl options and the download file can be watched or replaced.
  */
-class LoopbackClient extends ZeroBounce
+class LoopbackClient extends ClientDouble
 {
     /** @var array<int, array<int, mixed>> */
     public $options = array();
@@ -29,54 +30,24 @@ class LoopbackClient extends ZeroBounce
 
     public function __construct()
     {
-        parent::__construct();
-    }
-
-    protected function checkedUrl($url)
-    {
-        return $url;
-    }
-
-    protected function applyCurlOptions($curl, array $options)
-    {
-        $this->options[] = $options;
-        parent::applyCurlOptions($curl, $options);
-    }
-
-    protected function openDownloadFile($path)
-    {
-        return $this->openFile === null ? parent::openDownloadFile($path) : call_user_func($this->openFile, $path);
-    }
-
-    /**
-     * Without what this fake records or answers with (request URLs, an
-     * answer quoting the key): print_r() of an error shows the closures in
-     * its trace, and their bound fakes, which are not the SDK's to mask.
-     */
-    public function __debugInfo()
-    {
-        return array();
-    }
-
-    public function pointAt($root)
-    {
-        $ref = new ReflectionClass(ZeroBounce::class);
-        foreach (array(
-            'apiBaseUrl' => '/v2', 'bulkApiBaseUrl' => '/v2', 'bulkApiRootUrl' => '',
-            'emailFinderBulkBaseUrl' => '/email-finder', 'domainSearchBulkBaseUrl' => '/domain-search',
-            'listEvaluatorBaseUrl' => '/v2/listevaluator', 'inboxPlacementBaseUrl' => '/api/ipt',
-        ) as $name => $path) {
-            $prop = $ref->getProperty($name);
-            if (\PHP_VERSION_ID < 80100) {
-                $prop->setAccessible(true);
-            }
-            $prop->setValue($this, $root . $path);
-        }
+        $this->client = ZeroBounce::create();
+        $self = $this;
+        $this->hook(array(
+            'checkedUrl' => function ($url) {
+                return $url;
+            },
+            'applyCurlOptions' => function (array $options) use ($self) {
+                $self->options[] = $options;
+            },
+            'openDownloadFile' => function ($path) use ($self) {
+                return $self->openFile === null ? @fopen($path, 'wb') : call_user_func($self->openFile, $path);
+            },
+        ));
     }
 }
 
-/** The Warmup client with its https URLs sent to a plain-http loopback root instead. */
-class LoopbackWarmup extends ZeroBounceWarmup
+/** The Warmup client with its https URLs sent to a plain-http loopback root instead (after the https check). */
+class LoopbackWarmup extends ClientDouble
 {
     /** @var array<int, array<int, mixed>> */
     public $options = array();
@@ -86,116 +57,79 @@ class LoopbackWarmup extends ZeroBounceWarmup
 
     public function __construct($key = 'guard-key')
     {
-        parent::__construct($key, 'https://warmup.test');
-    }
-
-    /**
-     * Without what this fake records or answers with (request URLs, an
-     * answer quoting the key): print_r() of an error shows the closures in
-     * its trace, and their bound fakes, which are not the SDK's to mask.
-     */
-    public function __debugInfo()
-    {
-        return array();
-    }
-
-    protected function executeHttp($method, $url, array $headers = array(), $body = null, $timeout = 120)
-    {
-        if ($this->loopback !== null) {
-            $url = $this->loopback . substr($url, strlen('https://warmup.test'));
-        }
-        return parent::executeHttp($method, $url, $headers, $body, $timeout);
-    }
-
-    protected function applyCurlOptions($curl, array $options)
-    {
-        $this->options[] = $options;
-        parent::applyCurlOptions($curl, $options);
+        $this->client = new ZeroBounceWarmup($key, 'https://warmup.test');
+        $self = $this;
+        $this->hook(array(
+            'rewriteUrl' => function ($url) use ($self) {
+                return $self->loopback === null ? $url : $self->loopback . substr($url, strlen('https://warmup.test'));
+            },
+            'applyCurlOptions' => function (array $options) use ($self) {
+                $self->options[] = $options;
+            },
+        ));
     }
 }
 
 /** Answers every request with one canned response, streamed downloads included. */
-class CannedFileClient extends ZeroBounce
+class CannedFileClient extends ClientDouble
 {
     /** @var array{status: int, headers: string[], body: string} */
     public $answer;
 
+    /** @var callable|null replaces opening the download file */
+    public $openFile = null;
+
     public function __construct($status, $contentType, $body)
     {
-        parent::__construct();
+        $this->client = ZeroBounce::create();
         $this->answer = array(
             'status' => $status,
             'headers' => array('HTTP/1.1 ' . $status . ' X', 'Content-Type: ' . $contentType),
             'body' => $body,
         );
-    }
-
-    protected function executeHttp($method, $url, array $headers = array(), $body = null, $timeout = 120)
-    {
-        return $this->answer;
-    }
-
-    /**
-     * Without what this fake records or answers with (request URLs, an
-     * answer quoting the key): print_r() of an error shows the closures in
-     * its trace, and their bound fakes, which are not the SDK's to mask.
-     */
-    public function __debugInfo()
-    {
-        return array();
-    }
-
-    /** @var callable|null replaces opening the download file */
-    public $openFile = null;
-
-    protected function openDownloadFile($path)
-    {
-        return $this->openFile === null ? parent::openDownloadFile($path) : call_user_func($this->openFile, $path);
-    }
-
-    protected function streamHttpToHandle($url, $handle)
-    {
-        $body = $this->answer['body'];
-        $written = @fwrite($handle, $body) === strlen($body) && @fflush($handle);
-        return array(
-            'status' => $this->answer['status'],
-            'headers' => $this->answer['headers'],
-            'head' => substr($body, 0, 65536),
-            'error' => '',
-            'writeFailed' => !$written,
-        );
+        $self = $this;
+        $this->hook(array(
+            'executeHttp' => function () use ($self) {
+                return $self->answer;
+            },
+            'openDownloadFile' => function ($path) use ($self) {
+                return $self->openFile === null ? @fopen($path, 'wb') : call_user_func($self->openFile, $path);
+            },
+            'streamHttpToHandle' => function ($url, $handle) use ($self) {
+                $body = $self->answer['body'];
+                $written = @fwrite($handle, $body) === strlen($body) && @fflush($handle);
+                return array(
+                    'status' => $self->answer['status'],
+                    'headers' => $self->answer['headers'],
+                    'head' => substr($body, 0, 65536),
+                    'error' => '',
+                    'writeFailed' => !$written,
+                );
+            },
+        ));
     }
 }
 
 /** Answers every Warmup request with one canned response. */
-class CannedFileWarmup extends ZeroBounceWarmup
+class CannedFileWarmup extends ClientDouble
 {
     /** @var array{status: int, headers: string[], body: string} */
     public $answer;
 
     public function __construct($status, $contentType, $body, $key = 'guard-key')
     {
-        parent::__construct($key);
+        $this->client = new ZeroBounceWarmup($key);
         $this->answer = array(
             'status' => $status,
             'headers' => array('HTTP/1.1 ' . $status . ' X', 'Content-Type: ' . $contentType),
             'body' => $body,
         );
-    }
-
-    /**
-     * Without what this fake records or answers with (request URLs, an
-     * answer quoting the key): print_r() of an error shows the closures in
-     * its trace, and their bound fakes, which are not the SDK's to mask.
-     */
-    public function __debugInfo()
-    {
-        return array();
-    }
-
-    protected function executeHttp($method, $url, array $headers = array(), $body = null, $timeout = 120)
-    {
-        return $this->answer;
+        $self = $this;
+        $this->hook(array(
+            'executeHttp' => function () use ($self) {
+                return $self->answer;
+            },
+        ));
     }
 }
 
@@ -269,34 +203,28 @@ class FullDiskStream
 }
 
 /** Records every request body it is asked to send and answers with a JSON success. */
-class CapturingClient extends ZeroBounce
+class CapturingClient extends ClientDouble
 {
     /** @var string[] */
     public $bodies = array();
 
     public function __construct()
     {
-        parent::__construct();
-    }
-
-    protected function checkedUrl($url)
-    {
-        return $url;
-    }
-
-    protected function executeHttp($method, $url, array $headers = array(), $body = null, $timeout = 120)
-    {
-        $this->bodies[] = (string)$body;
-        return array(
-            'status' => 200,
-            'headers' => array('HTTP/1.1 200 OK', 'Content-Type: application/json'),
-            'body' => '{"success":true,"message":"File Accepted","file_name":"f.csv","file_id":"f1"}',
-        );
-    }
-
-    public function __debugInfo()
-    {
-        return array();
+        $this->client = ZeroBounce::create();
+        $self = $this;
+        $this->hook(array(
+            'checkedUrl' => function ($url) {
+                return $url;
+            },
+            'executeHttp' => function ($method, $url, array $headers, $body) use ($self) {
+                $self->bodies[] = (string)$body;
+                return array(
+                    'status' => 200,
+                    'headers' => array('HTTP/1.1 200 OK', 'Content-Type: application/json'),
+                    'body' => '{"success":true,"message":"File Accepted","file_name":"f.csv","file_id":"f1"}',
+                );
+            },
+        ));
     }
 }
 
@@ -426,7 +354,7 @@ class TransportGuardsTest extends TestCase
      *
      * @return array<string, callable>
      */
-    private function warmupCalls(ZeroBounceWarmup $w)
+    private function warmupCalls($w)
     {
         return array(
             'listSendingAccounts' => function () use ($w) { $w->listSendingAccounts(); },
@@ -598,7 +526,7 @@ return true;
     /**
      * @return array<string, callable>
      */
-    private function downloads(ZeroBounce $c, $path)
+    private function downloads($c, $path)
     {
         $stream = new ZBGetFileOptions();
         $stream->stream = true;
@@ -835,7 +763,7 @@ return true;
      *
      * @return array<string, array{0: callable, 1: string}>
      */
-    private function downloadsOverExistingFiles(ZeroBounce $client, $folder)
+    private function downloadsOverExistingFiles($client, $folder)
     {
         $stream = new ZBGetFileOptions();
         $stream->stream = true;
@@ -1207,7 +1135,8 @@ return true;
                 $clients[$label . ' root'] = $root;
             }
             foreach ($clients as $label => $client) {
-                if (!$client instanceof ZeroBounce) {
+                // The array also holds each loopback client's root URL (a string); skip those.
+                if (is_string($client)) {
                     continue;
                 }
                 $client->initialize($key);
@@ -1247,7 +1176,7 @@ return true;
 
     // -- initialize() ------------------------------------------------------------
 
-    private function state(ZeroBounce $client)
+    private function state($client)
     {
         $state = array();
         foreach ((new ReflectionClass(ZeroBounce::class))->getProperties() as $prop) {

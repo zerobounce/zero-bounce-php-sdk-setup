@@ -7,6 +7,8 @@ require_once __DIR__ . '/../vendor/autoload.php';
 use PHPUnit\Framework\TestCase;
 use ZeroBounce\SDK\ZeroBounce;
 
+require_once __DIR__ . '/Seams.php';
+
 /**
  * Guards the PHP 8.5 $http_response_header deprecation (see PR #30, RFC
  * deprecations).
@@ -52,8 +54,8 @@ final class ZeroBounceHttpHeadersPhp85Test extends TestCase
         $src = (string)file_get_contents(self::zeroBounceSourcePath());
         $execute = self::extractMethodSource(
             $src,
-            'protected function executeHttp($method, $url, array $headers = array(), $body = null, $timeout = 120)',
-            'protected function request($url, $response)'
+            'private function executeHttp($method, $url, array $headers = array(), $body = null, $timeout = 120)',
+            'private function request($url, $response)'
         );
 
         // The stream wrapper is what made the status unreadable; curl reports it.
@@ -66,19 +68,9 @@ final class ZeroBounceHttpHeadersPhp85Test extends TestCase
 
     public function testTheSdkRefusesToSendTheKeyOverPlainHttp(): void
     {
-        $probe = new class extends ZeroBounce {
-            public function __construct()
-            {
-                parent::__construct();
-            }
-
-            public function call(string $url): string
-            {
-                return $this->checkedUrl($url);
-            }
-        };
+        $probe = ZeroBounce::create();
 
         $this->expectException(\ZeroBounce\SDK\ZBMissingParameterException::class);
-        $probe->call('http://api.zerobounce.net/v2/getcredits');
+        call_private($probe, 'checkedUrl', array('http://api.zerobounce.net/v2/getcredits'));
     }
 }

@@ -2,32 +2,75 @@
 
 namespace ZeroBounce\Tests;
 
+use Exception;
 use ZeroBounce\SDK\ZeroBounce;
 use ZeroBounce\SDK\ZBException;
 
-/**
- */
-class MockZeroBounce extends ZeroBounce
-{
-    /** Class used for mocking the requests within the ZeroBounce class, such that tests don't call the API */
+require_once __DIR__ . '/Seams.php';
 
+/**
+ * Mocks the requests of a real ZeroBounce client through the test hooks, so tests
+ * don't call the API. Holds the client (it is final) and records what it was asked.
+ */
+class MockZeroBounce extends ClientDouble
+{
     /**
      * Mock response text. Set this to whatever you want to simulate receiving from the ZeroBounce API.
      * @var string
      */
     public $responseText;
 
-    /**
-     * Last multipart form fields passed to curl() (sendfile).
-     * @var array<string, mixed>|null
-     */
+    /** @var array<string, mixed>|null Last multipart form fields passed to curl() (sendfile). */
     public $lastMultipartFields;
 
-    /**
-     * Last getfile URL passed to getBulkFileHttp().
-     * @var string|null
-     */
+    /** @var string|null Last getfile URL. */
     public $lastGetFileUrl;
+
+    /** @var string|null Last JSON POST URL. */
+    public $lastJsonUrl;
+
+    /** @var string|null Last form POST URL. */
+    public $lastFormPostUrl;
+
+    /** @var string|null Last GET URL. */
+    public $lastRequestUrl;
+
+    /** @var string|null Last multipart POST URL. */
+    public $lastCurlUrl;
+
+    public function __construct()
+    {
+        $this->client = ZeroBounce::create();
+        $self = $this;
+        $this->hook(array(
+            'json' => function ($url, $data, $response) use ($self) {
+                $self->lastJsonUrl = $url;
+                return $self->deserialize($response);
+            },
+            'request' => function ($url, $response) use ($self) {
+                $self->lastRequestUrl = $url;
+                return $self->deserialize($response);
+            },
+            'formPost' => function ($url, $data, $response) use ($self) {
+                $self->lastFormPostUrl = $url;
+                return $self->deserialize($response);
+            },
+            'curl' => function ($url, $fields, $files) use ($self) {
+                $self->lastCurlUrl = $url;
+                $self->lastMultipartFields = $fields;
+                return $self->responseText;
+            },
+            'getBulkFileHttp' => function ($url) use ($self) {
+                $self->lastGetFileUrl = $url;
+                $t = ltrim($self->responseText);
+                $ct = ($t !== '' && $t[0] === '{') ? 'application/json' : 'text/csv';
+                return array(
+                    'body' => $self->responseText,
+                    'headers' => array('HTTP/1.1 200 OK', 'Content-Type: ' . $ct),
+                );
+            },
+        ));
+    }
 
     /**
      * Call this method to get singleton
@@ -44,109 +87,17 @@ class MockZeroBounce extends ZeroBounce
     }
 
     /**
-     * Last JSON POST URL passed to json().
-     * @var string|null
-     */
-    public $lastJsonUrl;
-
-    /**
-     * Last form POST URL passed to formPost().
-     * @var string|null
-     */
-    public $lastFormPostUrl;
-
-    /**
-     * Last GET URL passed to request().
-     * @var string|null
-     */
-    public $lastRequestUrl;
-
-    /**
-     * Overwrites the HTTP JSON POST request made within the ZeroBounce class
-     * @param string $url
-     * @param array $data
-     * @return ZBResponse
-     */
-    protected function json($url, $data, $response)
-    {
-        $this->lastJsonUrl = $url;
-        try {
-            $code = 200;
-            $response->Deserialize($this->responseText);
-            return $code;
-        } catch (Exception $e) {
-            throw new ZBException($e->getMessage());
-        }
-    }
-
-    /**
-     * Overwrites the HTTP request made within the ZeroBounce class
-     * @param string $url
-     * @param ZBResponse $response
+     * @param \ZeroBounce\SDK\ZBResponse $response
      * @return int http statusCode
      * @throws ZBException
      */
-    protected function request($url, $response)
+    public function deserialize($response)
     {
-        $this->lastRequestUrl = $url;
-        try {
-            $code = 200;
-            $response->Deserialize($this->responseText);
-            return $code;
-        } catch (Exception $e) {
-            throw new ZBException($e->getMessage());
-        }
-    }
-
-    /**
-     * @param string $url
-     * @param array $data
-     * @param ZBResponse $response
-     * @return int
-     * @throws ZBException
-     */
-    protected function formPost($url, $data, $response)
-    {
-        $this->lastFormPostUrl = $url;
         try {
             $response->Deserialize($this->responseText);
             return 200;
         } catch (Exception $e) {
             throw new ZBException($e->getMessage());
         }
-    }
-
-    /**
-     * Overwrites the curl request made within the ZeroBounce class
-     * @param string $url
-     * @param array $fields
-     * @param array $files
-     * @return string
-     */
-    /**
-     * @var string|null
-     */
-    public $lastCurlUrl;
-
-    protected function curl($url, $fields, $files)
-    {
-        $this->lastCurlUrl = $url;
-        $this->lastMultipartFields = $fields;
-        return $this->responseText;
-    }
-
-    /**
-     * @param string $url
-     * @return array{body: string, headers: string[]}
-     */
-    protected function getBulkFileHttp($url)
-    {
-        $this->lastGetFileUrl = $url;
-        $t = ltrim($this->responseText);
-        $ct = ($t !== '' && $t[0] === '{') ? 'application/json' : 'text/csv';
-        return array(
-            'body' => $this->responseText,
-            'headers' => array('HTTP/1.1 200 OK', 'Content-Type: ' . $ct),
-        );
     }
 }

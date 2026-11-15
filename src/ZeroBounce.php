@@ -8,7 +8,7 @@ use Exception;
 
 /**
  */
-class ZeroBounce
+final class ZeroBounce
 {
     use ZeroBouncePriority3;
     use ZeroBounceInboxPlacement;
@@ -42,24 +42,24 @@ class ZeroBounce
      */
     public static function create()
     {
-        return new static();
+        return new self();
     }
 
     /**
      * Private constructor so nobody else can instantiate it
      *
      */
-    protected function __construct()
+    private function __construct()
     {
         $this->apiBaseUrl = ZBBaseUrl::API_DEFAULT_URL;
     }
 
     /** @var string */
-    protected $apiBaseUrl;
+    private $apiBaseUrl;
     const BulkApiBaseUrl = "https://bulkapi.zerobounce.net/v2";
 
     /** @var string Overridable per instance; defaults to BulkApiBaseUrl. */
-    protected $bulkApiBaseUrl = self::BulkApiBaseUrl;
+    private $bulkApiBaseUrl = self::BulkApiBaseUrl;
 
     /** The list evaluator and the Inbox Placement Tester are not under the bulk /v2 path. */
     const ListEvaluatorBaseUrl = "https://bulkapi.zerobounce.net/v2/listevaluator";
@@ -70,11 +70,21 @@ class ZeroBounce
     const EmailFinderBulkBaseUrl = "https://bulkapi.zerobounce.net/email-finder";
     const DomainSearchBulkBaseUrl = "https://bulkapi.zerobounce.net/domain-search";
 
+    /**
+     * @internal Test seam: callables by name, replacing the transport. Private, the
+     * class is final, and nothing in the SDK sets it; only test code that binds
+     * a closure to the instance can. A real client has none, so every real
+     * request still runs checkedUrl() and curl.
+     *
+     * @var array<string, callable>
+     */
+    private $seam = array();
+
     /** @var string Overridable per instance; defaults to ListEvaluatorBaseUrl. */
-    protected $listEvaluatorBaseUrl = self::ListEvaluatorBaseUrl;
+    private $listEvaluatorBaseUrl = self::ListEvaluatorBaseUrl;
 
     /** @var string Overridable per instance; defaults to InboxPlacementBaseUrl. */
-    protected $inboxPlacementBaseUrl = self::InboxPlacementBaseUrl;
+    private $inboxPlacementBaseUrl = self::InboxPlacementBaseUrl;
 
     /** @var ZBSecret|null The key, kept out of var_export(), serialize() and dumps. */
     private $apiKey = null;
@@ -194,7 +204,7 @@ class ZeroBounce
      * @return string
      * @throws ZBException
      */
-    protected static function checkedApiKey(
+    private static function checkedApiKey(
         #[\SensitiveParameter]
         $apiKey
     ) {
@@ -224,7 +234,7 @@ class ZeroBounce
      * @return string
      * @throws ZBMissingParameterException
      */
-    protected static function resolvedBaseUrl($baseUrl)
+    private static function resolvedBaseUrl($baseUrl)
     {
         if ($baseUrl === null || $baseUrl === '') {
             return ZBBaseUrl::API_DEFAULT_URL;
@@ -238,7 +248,7 @@ class ZeroBounce
      * @return string
      * @throws ZBMissingParameterException
      */
-    protected static function requireHttpsUrl($url, $name)
+    private static function requireHttpsUrl($url, $name)
     {
         if (stripos((string)$url, 'https://') !== 0) {
             throw new ZBMissingParameterException($name . ' must be an https:// URL');
@@ -304,7 +314,7 @@ class ZeroBounce
      * @return string url-encoded
      * @throws ZBMissingParameterException
      */
-    protected static function pathSegment($value, $name)
+    private static function pathSegment($value, $name)
     {
         if ($value !== null && !is_string($value) && !is_int($value)) {
             throw new ZBMissingParameterException($name . ' must be a string');
@@ -329,7 +339,7 @@ class ZeroBounce
      * @return string "true" or "false"
      * @throws ZBMissingParameterException
      */
-    protected static function wireBool($value, $name)
+    private static function wireBool($value, $name)
     {
         return self::strictBool($value, $name) ? 'true' : 'false';
     }
@@ -356,8 +366,11 @@ class ZeroBounce
      * @return string
      * @throws ZBMissingParameterException
      */
-    protected function checkedUrl($url)
+    private function checkedUrl($url)
     {
+        if (isset($this->seam['checkedUrl'])) {
+            return call_user_func($this->seam['checkedUrl'], $url);
+        }
         self::requireHttpsUrl($url, 'url');
         $host = strtolower((string)parse_url($url, PHP_URL_HOST));
         if (!$this->bulkRegionWarned && $this->region !== null && $host === self::BulkHost) {
@@ -600,7 +613,7 @@ class ZeroBounce
      * @return string
      * @throws ZBMissingParameterException
      */
-    protected static function apiDate($value, $name)
+    private static function apiDate($value, $name)
     {
         if ($value instanceof DateTimeInterface) {
             return $value->format('Y-m-d');
@@ -854,8 +867,11 @@ class ZeroBounce
      * @param array $data
      * @return ZBResponse
      */
-    protected function json($url, $data, $response)
+    private function json($url, $data, $response)
     {
+        if (isset($this->seam['json'])) {
+            return call_user_func($this->seam['json'], $url, $data, $response);
+        }
         $data['api_key'] = $this->apiKey();
         $content = json_encode($data);
         $result = $this->executeHttp(
@@ -878,8 +894,11 @@ class ZeroBounce
      * @return int http statusCode
      * @throws ZBException
      */
-    protected function formPost($url, $data, $response)
+    private function formPost($url, $data, $response)
     {
+        if (isset($this->seam['formPost'])) {
+            return call_user_func($this->seam['formPost'], $url, $data, $response);
+        }
         $data['api_key'] = $this->apiKey();
         $content = http_build_query($data);
         $result = $this->executeHttp(
@@ -906,7 +925,7 @@ class ZeroBounce
      * @return int http statusCode
      * @throws ZBException
      */
-    protected function getOrPostForm($url, array $params, $response, $usePost)
+    private function getOrPostForm($url, array $params, $response, $usePost)
     {
         if (self::strictBool($usePost, 'usePost')) {
             return $this->formPost($url, $params, $response);
@@ -918,7 +937,7 @@ class ZeroBounce
     /**
      * getOrPostForm for the email finder and domain search, whose result is
      * never a bare message: see ZBHttpError::throwIfMessageOnly. A flag rather
-     * than a parameter, so the protected request methods keep the signatures
+     * than a parameter, so the private request methods keep the signatures
      * subclasses override.
      *
      * @param string $url without a query string
@@ -941,7 +960,7 @@ class ZeroBounce
      * @return string
      * @throws ZBException
      */
-    protected static function readUploadFile($filepath)
+    private static function readUploadFile($filepath)
     {
         if (!is_string($filepath) || $filepath === '' || strpos($filepath, "\0") !== false) {
             throw new ZBException('filePath cannot be read');
@@ -963,8 +982,11 @@ class ZeroBounce
      * @param array $files
      * @return string
      */
-    protected function curl($url, $fields, $files)
+    private function curl($url, $fields, $files)
     {
+        if (isset($this->seam['curl'])) {
+            return call_user_func($this->seam['curl'], $url, $fields, $files);
+        }
         $boundary = bin2hex(random_bytes(16));
         $delimiter = '-------------' . $boundary;
         $post_data = $this->build_data_files($boundary, $fields, $files);
@@ -1113,8 +1135,11 @@ class ZeroBounce
      * @return array{body: string, headers: string[]}
      * @throws ZBException
      */
-    protected function getBulkFileHttp($url)
+    private function getBulkFileHttp($url)
     {
+        if (isset($this->seam['getBulkFileHttp'])) {
+            return call_user_func($this->seam['getBulkFileHttp'], $url);
+        }
         $result = $this->executeHttp('GET', $this->checkedUrl($url), array(), null, 120);
         if (isset($result['error']) && (string)$result['error'] !== '') {
             throw new ZBException($this->redactApiKey($result['error']));
@@ -1129,7 +1154,7 @@ class ZeroBounce
      * @param string[] $headers
      * @return int
      */
-    protected static function parseHttpStatusFromHeaders($headers)
+    private static function parseHttpStatusFromHeaders($headers)
     {
         if (!is_array($headers) || !isset($headers[0])) {
             return 200;
@@ -1144,7 +1169,7 @@ class ZeroBounce
      * @param string[] $headers
      * @return string
      */
-    protected static function parseContentTypeFromHeaders($headers)
+    private static function parseContentTypeFromHeaders($headers)
     {
         if (!is_array($headers)) {
             return '';
@@ -1202,7 +1227,7 @@ class ZeroBounce
      * @param string $contentType
      * @return bool
      */
-    protected static function shouldTreatGetFileBodyAsError($body, $contentType)
+    private static function shouldTreatGetFileBodyAsError($body, $contentType)
     {
         if (self::isJsonContentType($contentType)) {
             return true;
@@ -1217,7 +1242,7 @@ class ZeroBounce
      * @param string $contentType
      * @return bool
      */
-    protected static function isJsonContentType($contentType)
+    private static function isJsonContentType($contentType)
     {
         $ct = strtolower(trim((string)$contentType));
         return strpos($ct, 'application/json') !== false || strpos($ct, 'text/json') !== false
@@ -1230,7 +1255,7 @@ class ZeroBounce
      * @param string $body
      * @return string
      */
-    protected static function stripBom($body)
+    private static function stripBom($body)
     {
         $body = (string)$body;
         return strncmp($body, "\xEF\xBB\xBF", 3) === 0 ? (string)substr($body, 3) : $body;
@@ -1243,7 +1268,7 @@ class ZeroBounce
      * @param string $body
      * @return bool
      */
-    protected static function isJsonContainer($body)
+    private static function isJsonContainer($body)
     {
         $t = trim(self::stripBom($body));
         if ($t === '' || ($t[0] !== '{' && $t[0] !== '[')) {
@@ -1256,7 +1281,7 @@ class ZeroBounce
      * @param string $body
      * @return string
      */
-    protected static function formatGetFileErrorMessage($body)
+    private static function formatGetFileErrorMessage($body)
     {
         $body = self::stripBom($body);
         $o = json_decode($body, true);
@@ -1334,8 +1359,11 @@ class ZeroBounce
      * @return array{status: int, headers: string[], body: string}
      * @throws ZBException
      */
-    protected function executeHttp($method, $url, array $headers = array(), $body = null, $timeout = 120)
+    private function executeHttp($method, $url, array $headers = array(), $body = null, $timeout = 120)
     {
+        if (isset($this->seam['executeHttp'])) {
+            return call_user_func($this->seam['executeHttp'], $method, $url, $headers, $body, $timeout);
+        }
         // Every verb goes through curl. The http:// stream wrapper reports its
         // status only through PHP's predefined response-header variable, which
         // the engine exposes to the calling function alone and 8.5 deprecates;
@@ -1389,8 +1417,11 @@ class ZeroBounce
         );
     }
 
-    protected function request($url, $response)
+    private function request($url, $response)
     {
+        if (isset($this->seam['request'])) {
+            return call_user_func($this->seam['request'], $url, $response);
+        }
         try {
             $result = $this->executeHttp('GET', $this->checkedUrl($url), array(), null, 120);
             $json = $this->readJsonBody($result, self::messageOnlyMode($response));
@@ -1422,7 +1453,7 @@ class ZeroBounce
      * @param mixed $value
      * @return bool
      */
-    protected function isProvided($value)
+    private function isProvided($value)
     {
         return $value !== null && (!is_string($value) || trim($value) !== '');
     }
@@ -1436,7 +1467,7 @@ class ZeroBounce
      * @param string $name
      * @throws ZBMissingParameterException
      */
-    protected function requireText($value, $name)
+    private function requireText($value, $name)
     {
         if (!$this->isProvided($value)) {
             throw new ZBMissingParameterException($name . ' is required');
@@ -1454,7 +1485,7 @@ class ZeroBounce
      * @return bool true when a column was given; false for null or ''
      * @throws ZBMissingParameterException
      */
-    protected function requireColumn($value, $name)
+    private function requireColumn($value, $name)
     {
         $this->requireProvided($value, $name . ' is required');
         $this->isProvidedColumn($value, $name);
@@ -1466,7 +1497,7 @@ class ZeroBounce
      * @return bool
      * @throws ZBMissingParameterException
      */
-    protected function isProvidedColumn($value, $name)
+    private function isProvidedColumn($value, $name)
     {
         if ($value === null || $value === '') {
             return false;
@@ -1482,7 +1513,7 @@ class ZeroBounce
      * @param string $message
      * @throws ZBMissingParameterException
      */
-    protected function requireProvided($value, $message)
+    private function requireProvided($value, $message)
     {
         if (!$this->isProvided($value)) {
             throw new ZBMissingParameterException($message);
@@ -1499,7 +1530,7 @@ class ZeroBounce
      * @param bool $batch
      * @throws ZBException
      */
-    protected function checkTimeout($timeout, $batch)
+    private function checkTimeout($timeout, $batch)
     {
         if ($timeout === null || $timeout === '') {
             return;
@@ -1624,7 +1655,7 @@ class ZeroBounce
      * @param string $shape
      * @return mixed what $call returns
      */
-    protected function withJsonShape($shape, callable $call)
+    private function withJsonShape($shape, callable $call)
     {
         $this->jsonShape = $shape;
         try {
@@ -1719,8 +1750,11 @@ class ZeroBounce
      * @return array{status: int, headers: string[], head: string, error: string}
      * @throws ZBException
      */
-    protected function streamHttpToHandle($url, $handle)
+    private function streamHttpToHandle($url, $handle)
     {
+        if (isset($this->seam['streamHttpToHandle'])) {
+            return call_user_func($this->seam['streamHttpToHandle'], $url, $handle);
+        }
         $head = '';
         $headers = array();
         $sniffing = true;
@@ -1916,8 +1950,11 @@ class ZeroBounce
      * @param string $path
      * @return resource|false
      */
-    protected function openDownloadFile($path)
+    private function openDownloadFile($path)
     {
+        if (isset($this->seam['openDownloadFile'])) {
+            return call_user_func($this->seam['openDownloadFile'], $path);
+        }
         return @fopen($path, 'wb');
     }
 
@@ -1932,8 +1969,11 @@ class ZeroBounce
      * @param array<int, mixed> $options
      * @return void
      */
-    protected function applyCurlOptions($curl, array $options)
+    private function applyCurlOptions($curl, array $options)
     {
+        if (isset($this->seam['applyCurlOptions'])) {
+            call_user_func($this->seam['applyCurlOptions'], $options);
+        }
         curl_setopt_array($curl, $options);
     }
 
@@ -1955,7 +1995,7 @@ class ZeroBounce
      * @var int A streamed download that receives nothing for this long is
      *     aborted. There is no overall limit, so large files still finish.
      */
-    protected $downloadStallSeconds = 120;
+    private $downloadStallSeconds = 120;
 
     /** Sniff this much before deciding whether a download is really an error body. */
     const DownloadSniffBytes = 65536;
@@ -1975,7 +2015,7 @@ class ZeroBounce
      * @return ZBGetFileResponse
      * @throws ZBException
      */
-    protected function streamBulkDownload($url, $downloadPath)
+    private function streamBulkDownload($url, $downloadPath)
     {
         $target = self::downloadTarget($downloadPath);
         $partial = $this->partialFileBeside($target);

@@ -43,7 +43,7 @@ trait RequestSweep
     /**
      * @return array<string, callable[]>
      */
-    private function sweepCalls(ZeroBounce $c, $out)
+    private function sweepCalls($c, $out)
     {
         $csv = __DIR__ . '/email_file.csv';
         $done = 'https://example.com/done';

@@ -10,6 +10,8 @@ use ZeroBounce\SDK\ZBUrl;
 use ZeroBounce\SDK\ZeroBounce;
 use ZeroBounce\SDK\ZeroBounceWarmup;
 
+require_once __DIR__ . '/Seams.php';
+
 class SecurityHardeningTest extends TestCase
 {
     public static function badUrls()
@@ -143,21 +145,69 @@ class SecurityHardeningTest extends TestCase
         unset($secret);
     }
 
+    public function testTheClientsAreFinalAndExposeNoSeam()
+    {
+        $seams = array(
+            'executeHttp', 'applyCurlOptions', 'checkedUrl', 'streamHttpToHandle', 'openDownloadFile', 'json', 'request',
+            'formPost', 'curl', 'getBulkFileHttp', 'seam', 'apiBaseUrl', 'bulkApiBaseUrl', 'bulkApiRootUrl',
+            'emailFinderBulkBaseUrl', 'domainSearchBulkBaseUrl', 'listEvaluatorBaseUrl', 'inboxPlacementBaseUrl',
+            'downloadStallSeconds', 'rewriteUrl',
+        );
+        foreach (array(ZeroBounce::class, ZeroBounceWarmup::class) as $class) {
+            $ref = new \ReflectionClass($class);
+            $this->assertTrue($ref->isFinal(), $class . ' is final');
+            foreach ($ref->getMethods() as $method) {
+                if (in_array($method->getName(), $seams, true)) {
+                    $this->assertTrue($method->isPrivate(), $class . '::' . $method->getName() . '() is a reachable seam');
+                }
+                $this->assertFalse($method->isProtected(), $class . '::' . $method->getName() . '() is protected');
+            }
+            foreach ($ref->getProperties() as $property) {
+                $this->assertTrue($property->isPrivate(), $class . '::$' . $property->getName() . ' is not private');
+            }
+        }
+        $this->assertTrue((new \ReflectionMethod(ZeroBounce::class, '__construct'))->isPrivate());
+        $this->assertInstanceOf(ZeroBounce::class, ZeroBounce::create());
+        $this->assertSame(ZeroBounce::class, get_class(ZeroBounce::create()));
+    }
+
+    public function testARealSendStillRefusesAnHttpBaseUrlEvenWithTheTransportHooked()
+    {
+        $sent = array();
+        $client = ZeroBounce::create();
+        $client->initialize('dummykey');
+        set_private($client, 'apiBaseUrl', 'http://api.zerobounce.net/v2');
+        install_seams($client, array(
+            'executeHttp' => function ($method, $url) use (&$sent) {
+                $sent[] = $url;
+                return array('status' => 200, 'headers' => array('HTTP/1.1 200 OK'), 'body' => '{"Credits":"1"}');
+            },
+        ));
+        try {
+            $client->getCredits();
+            $this->fail('an http base URL was used');
+        } catch (\ZeroBounce\SDK\ZBException $e) {
+            $this->assertStringContainsString('https://', $e->getMessage());
+        }
+        $this->assertSame(array(), $sent);
+    }
+
     private function setExpectedException($class)
     {
         $this->expectException($class);
     }
 }
 
-class UrlProbeClient extends ZeroBounce
+/** A real client; probe() runs its private URL check through a bound closure. */
+class UrlProbeClient extends ClientDouble
 {
     public function __construct()
     {
-        parent::__construct();
+        $this->client = ZeroBounce::create();
     }
 
     public function probe($url)
     {
-        return $this->checkedUrl($url);
+        return call_private($this->client, 'checkedUrl', array($url));
     }
 }

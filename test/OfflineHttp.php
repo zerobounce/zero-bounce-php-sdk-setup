@@ -4,6 +4,8 @@ namespace ZeroBounce\Tests;
 
 use ZeroBounce\SDK\ZeroBounce;
 
+require_once __DIR__ . '/Seams.php';
+
 /**
  * In-memory ZeroBounce API. Records the request and answers from the API key prefix.
  */
@@ -352,40 +354,37 @@ class FakeApi
     }
 }
 
-class OfflineClient extends ZeroBounce
+/** A real client whose transport answers from a FakeApi. */
+class OfflineClient extends ClientDouble
 {
     /** @var FakeApi */
     public $fake;
 
     public function __construct(FakeApi $fake)
     {
-        parent::__construct();
+        $this->client = ZeroBounce::create();
         $this->fake = $fake;
-    }
-
-    protected function executeHttp($method, $url, array $headers = array(), $body = null, $timeout = 120)
-    {
-        return $this->fake->handle($method, $url, $headers, $body, $timeout);
-    }
-
-    protected function streamHttpToHandle($url, $handle)
-    {
-        $result = $this->fake->handle('GET', $url, array(), null, 120);
-        $body = (string)$result['body'];
-        fwrite($handle, $body);
-        return array(
-            'status' => (int)$result['status'],
-            'headers' => $result['headers'],
-            'head' => substr($body, 0, 65536),
-            'error' => '',
-        );
+        $fake_ = $fake;
+        $this->hook(array(
+            'executeHttp' => function ($method, $url, array $headers, $body, $timeout) use ($fake_) {
+                return $fake_->handle($method, $url, $headers, $body, $timeout);
+            },
+            'streamHttpToHandle' => function ($url, $handle) use ($fake_) {
+                $result = $fake_->handle('GET', $url, array(), null, 120);
+                $body = (string)$result['body'];
+                fwrite($handle, $body);
+                return array(
+                    'status' => (int)$result['status'],
+                    'headers' => $result['headers'],
+                    'head' => substr($body, 0, 65536),
+                    'error' => '',
+                );
+            },
+        ));
     }
 }
 
-class DirectClient extends ZeroBounce
+/** A real client with no hooks (what DirectClient was: the real transport). */
+class DirectClient extends PlainClient
 {
-    public function __construct()
-    {
-        parent::__construct();
-    }
 }

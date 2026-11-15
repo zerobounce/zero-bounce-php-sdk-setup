@@ -41,22 +41,29 @@ set_error_handler(function ($level, $message, $file, $line) use (&$deprecations)
 });
 
 require dirname(__DIR__) . '/vendor/autoload.php';
+require __DIR__ . '/Seams.php';
 require __DIR__ . '/OfflineHttp.php';
 require __DIR__ . '/RequestSweep.php';
 
-class SmokeWarmup extends ZeroBounceWarmup
+class SmokeWarmup extends \ZeroBounce\Tests\ClientDouble
 {
     /** @var array<int, array<string, mixed>> */
     public $requests = array();
 
-    protected function executeHttp($method, $url, array $headers = array(), $body = null, $timeout = 120)
+    public function __construct($apiKey)
     {
-        $this->requests[] = array('method' => $method, 'url' => $url, 'headers' => $headers, 'body' => $body);
-        return array(
-            'status' => 200,
-            'headers' => array('HTTP/1.1 200 OK', 'Content-Type: application/json'),
-            'body' => '{"seed_count":3}',
-        );
+        $this->client = new ZeroBounceWarmup($apiKey);
+        $self = $this;
+        $this->hook(array(
+            'executeHttp' => function ($method, $url, array $headers, $body) use ($self) {
+                $self->requests[] = array('method' => $method, 'url' => $url, 'headers' => $headers, 'body' => $body);
+                return array(
+                    'status' => 200,
+                    'headers' => array('HTTP/1.1 200 OK', 'Content-Type: application/json'),
+                    'body' => '{"seed_count":3}',
+                );
+            },
+        ));
     }
 }
 
@@ -327,11 +334,15 @@ scenario('the key in traces, var_export and serialize', function () {
     $api = new FakeApi();
     $client = client($api, 'export-client-key');
     $warmup = new SmokeWarmup('export-warmup-key');
-    check(strpos(var_export($client, true), 'export-client-key') === false, 'var_export hides the key');
-    check(strpos(serialize($client), 'export-client-key') === false, 'serialize leaves the key out');
-    check(strpos(var_export($warmup, true), 'export-warmup-key') === false, 'warmup var_export hides the key');
-    check(strpos(serialize($warmup), 'export-warmup-key') === false, 'warmup serialize leaves the key out');
-    $copy = unserialize(serialize($client));
+    // Hook-free clients: the hooks of a double are closures, which serialize() refuses.
+    $plain = \ZeroBounce\SDK\ZeroBounce::create();
+    $plain->initialize('export-client-key');
+    $plainWarmup = new ZeroBounceWarmup('export-warmup-key');
+    check(strpos(var_export($plain, true), 'export-client-key') === false, 'var_export hides the key');
+    check(strpos(serialize($plain), 'export-client-key') === false, 'serialize leaves the key out');
+    check(strpos(var_export($plainWarmup, true), 'export-warmup-key') === false, 'warmup var_export hides the key');
+    check(strpos(serialize($plainWarmup), 'export-warmup-key') === false, 'warmup serialize leaves the key out');
+    $copy = unserialize(serialize($plain));
     check(rejected(function () use ($copy) { $copy->getCredits(); }) instanceof \ZeroBounce\SDK\ZBMissingApiKeyException, 'an unserialized client has no key');
     check($api->count() === 0, 'an unserialized client sends nothing');
     $client->getCredits();
@@ -351,75 +362,79 @@ class TraceSecrets
     public static $root = '';
 }
 
-class TraceCannedClient extends \ZeroBounce\SDK\ZeroBounce
+class TraceCannedClient extends \ZeroBounce\Tests\ClientDouble
 {
     /** @var array{status: int, headers: string[], body: string} */
     private $answer;
 
     public function __construct($status, $body)
     {
-        parent::__construct();
+        $this->client = \ZeroBounce\SDK\ZeroBounce::create();
         $this->answer = array('status' => $status, 'headers' => array('HTTP/1.1 ' . $status . ' X', 'Content-Type: text/plain'), 'body' => $body);
+        $self = $this;
+        $this->hook(array(
+            'executeHttp' => function () use ($self) {
+                return $self->answer();
+            },
+            'streamHttpToHandle' => function ($url, $handle) use ($self) {
+                $answer = $self->answer();
+                fwrite($handle, $answer['body']);
+                return array('status' => $answer['status'], 'headers' => $answer['headers'], 'head' => $answer['body'], 'error' => '');
+            },
+        ));
     }
 
-    public function __debugInfo()
-    {
-        return array();
-    }
-
-    protected function executeHttp($method, $url, array $headers = array(), $body = null, $timeout = 120)
+    public function answer()
     {
         return $this->answer;
-    }
-
-    protected function streamHttpToHandle($url, $handle)
-    {
-        fwrite($handle, $this->answer['body']);
-        return array('status' => $this->answer['status'], 'headers' => $this->answer['headers'], 'head' => $this->answer['body'], 'error' => '');
     }
 }
 
 /** Real curl requests to TraceSecrets::$root over plain http. */
-class TraceLoopbackClient extends \ZeroBounce\SDK\ZeroBounce
+class TraceLoopbackClient extends \ZeroBounce\Tests\ClientDouble
 {
     public function __construct()
     {
-        parent::__construct();
-    }
-
-    protected function checkedUrl($url)
-    {
-        foreach (array('https://api.zerobounce.net', 'https://bulkapi.zerobounce.net') as $host) {
-            if (strpos($url, $host) === 0) {
-                return TraceSecrets::$root . substr($url, strlen($host));
-            }
-        }
-        return $url;
+        $this->client = \ZeroBounce\SDK\ZeroBounce::create();
+        $this->hook(array(
+            'checkedUrl' => function ($url) {
+                foreach (array('https://api.zerobounce.net', 'https://bulkapi.zerobounce.net') as $host) {
+                    if (strpos($url, $host) === 0) {
+                        return TraceSecrets::$root . substr($url, strlen($host));
+                    }
+                }
+                return $url;
+            },
+        ));
     }
 }
 
-class TraceWarmup extends ZeroBounceWarmup
+class TraceWarmup extends \ZeroBounce\Tests\ClientDouble
 {
     /** @var array{status: int, headers: string[], body: string}|null null: real curl to TraceSecrets::$root */
     private $answer;
 
     public function __construct($answer)
     {
-        parent::__construct(TraceSecrets::KEY, 'https://warmup.test');
+        $this->client = new ZeroBounceWarmup(TraceSecrets::KEY, 'https://warmup.test');
         $this->answer = $answer;
-    }
-
-    public function __debugInfo()
-    {
-        return array();
-    }
-
-    protected function executeHttp($method, $url, array $headers = array(), $body = null, $timeout = 120)
-    {
-        if ($this->answer !== null) {
-            return $this->answer;
+        $self = $this;
+        $hooks = array(
+            'rewriteUrl' => function ($url) {
+                return TraceSecrets::$root . substr($url, strlen('https://warmup.test'));
+            },
+        );
+        if ($answer !== null) {
+            $hooks['executeHttp'] = function () use ($self) {
+                return $self->answer();
+            };
         }
-        return parent::executeHttp($method, TraceSecrets::$root . substr($url, strlen('https://warmup.test')), $headers, $body, $timeout);
+        $this->hook($hooks);
+    }
+
+    public function answer()
+    {
+        return $this->answer;
     }
 }
 
@@ -427,7 +442,7 @@ class TraceSweep
 {
     use RequestSweep;
 
-    public function core(\ZeroBounce\SDK\ZeroBounce $c, $out)
+    public function core($c, $out)
     {
         $calls = $this->sweepCalls($c, $out);
         $missing = array_diff($this->requestMethodNames(), array_keys($calls));
@@ -437,7 +452,7 @@ class TraceSweep
         return $calls;
     }
 
-    public function warmup(ZeroBounceWarmup $w)
+    public function warmup($w)
     {
         $calls = array(
             'listSendingAccounts' => function () use ($w) { $w->listSendingAccounts(); },

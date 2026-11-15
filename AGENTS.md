@@ -65,7 +65,7 @@ Keys come from the environment only. Never write one into a file, a commit, a lo
 - **`getCredits` can return `Credits` `-1` for a bad key.** That is a normal response. Throw for an `error` string, an HTML page, or a non-JSON body.
 - **`executeHttp` does not follow redirects and only talks https.** `CURLOPT_FOLLOWLOCATION` is false and `CURLOPT_MAXREDIRS` is 0; a 3xx is an error. Do not reintroduce the `http://` stream wrapper: it reports its status only through PHP's predefined response-header variable, which the engine shows to the function that called `file_get_contents` and to no one else, so the status came back 0 and an error looked like a result. 8.5 deprecates reading it at all.
 - **Errors never carry the key.** `redactApiKey` masks it in every message, and `ZBApiException::getStatusCode()` carries the HTTP status so callers can tell a Cloudflare 403 from an API 400/404.
-- **Tests override `executeHttp`.** It is `protected`. Subclass `ZeroBounce` in the test. Do not call the live API from `composer test`. Do not commit `vendor/`, `.env`, or `.phpunit.cache`. `composer.lock` is committed.
+- **Tests hook the transport, they do not subclass.** `ZeroBounce` and `ZeroBounceWarmup` are `final`; every seam is private. Tests install hooks into the private `$seam` array with `test/Seams.php` (`install_seams`, `ClientDouble`). Do not call the live API from `composer test`. Do not commit `vendor/`, `.env`, or `.phpunit.cache`. `composer.lock` is committed.
 - Match the surrounding style. The library still runs on PHP 7.0: no scalar property types, `fn()`, or `str_contains` in `src/`. Do not use an implicitly nullable parameter (`array $x = null`); 8.4 deprecates it and `?array` needs 7.1.
 
 ## Changelog

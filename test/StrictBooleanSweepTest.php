@@ -11,38 +11,47 @@ use ZeroBounce\SDK\ZBValidateOptions;
 use ZeroBounce\SDK\ZeroBounce;
 use ZeroBounce\SDK\ZeroBounceWarmup;
 
+require_once __DIR__ . '/Seams.php';
+
 /** Records every request and answers each with one JSON success. */
-class BoolRecordingClient extends ZeroBounce
+class BoolRecordingClient extends ClientDouble
 {
     /** @var array<int, array{url: string, body: string}> */
     public $sent = array();
 
     public function __construct()
     {
-        parent::__construct();
-    }
-
-    protected function executeHttp($method, $url, array $headers = array(), $body = null, $timeout = 120)
-    {
-        $this->sent[] = array('url' => $url, 'body' => (string)$body);
-        return array(
-            'status' => 200,
-            'headers' => array('HTTP/1.1 200 OK', 'Content-Type: application/json'),
-            'body' => '{"success":true,"email_batch":[],"errors":[]}',
-        );
+        $this->client = ZeroBounce::create();
+        $self = $this;
+        $this->hook(array(
+            'executeHttp' => function ($method, $url, array $headers, $body) use ($self) {
+                $self->sent[] = array('url' => $url, 'body' => (string)$body);
+                return array(
+                    'status' => 200,
+                    'headers' => array('HTTP/1.1 200 OK', 'Content-Type: application/json'),
+                    'body' => '{"success":true,"email_batch":[],"errors":[]}',
+                );
+            },
+        ));
     }
 }
 
 /** The Warmup client, recording every request. */
-class BoolRecordingWarmup extends ZeroBounceWarmup
+class BoolRecordingWarmup extends ClientDouble
 {
     /** @var array<int, array{url: string, body: string}> */
     public $sent = array();
 
-    protected function executeHttp($method, $url, array $headers = array(), $body = null, $timeout = 120)
+    public function __construct($apiKey = null, $baseUrl = null)
     {
-        $this->sent[] = array('url' => $url, 'body' => (string)$body);
-        return array('status' => 200, 'headers' => array('Content-Type: application/json'), 'body' => '{"ok":true}');
+        $this->client = new ZeroBounceWarmup($apiKey, $baseUrl);
+        $self = $this;
+        $this->hook(array(
+            'executeHttp' => function ($method, $url, array $headers, $body) use ($self) {
+                $self->sent[] = array('url' => $url, 'body' => (string)$body);
+                return array('status' => 200, 'headers' => array('Content-Type: application/json'), 'body' => '{"ok":true}');
+            },
+        ));
     }
 }
 
@@ -274,7 +283,7 @@ class StrictBooleanSweepTest extends TestCase
             }
         }
         $target = strpos($name, 'Warmup::') === 0 ? $warmup : $client;
-        return $method->invokeArgs($target, $args);
+        return $method->invokeArgs(real_client($target), $args);
     }
 
     /**

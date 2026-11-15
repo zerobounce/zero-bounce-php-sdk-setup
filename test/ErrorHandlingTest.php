@@ -10,22 +10,24 @@ use ZeroBounce\SDK\ZeroBounce;
 use ZeroBounce\SDK\ZeroBounceWarmup;
 
 require_once __DIR__ . '/RequestSweep.php';
+require_once __DIR__ . '/Seams.php';
 
 /** Answers every request with one canned body and records what was sent. */
-class ErrorsCannedClient extends ZeroBounce
+class ErrorsCannedClient extends ClientDouble
 {
     public $body = '{}';
     public $sent = array();
 
     public function __construct()
     {
-        parent::__construct();
-    }
-
-    protected function executeHttp($method, $url, array $headers = array(), $body = null, $timeout = 120)
-    {
-        $this->sent[] = array('method' => $method, 'url' => $url, 'body' => (string)$body);
-        return array('status' => 200, 'headers' => array('HTTP/1.1 200 OK', 'Content-Type: application/json'), 'body' => $this->body);
+        $this->client = ZeroBounce::create();
+        $self = $this;
+        $this->hook(array(
+            'executeHttp' => function ($method, $url, array $headers, $body) use ($self) {
+                $self->sent[] = array('method' => $method, 'url' => $url, 'body' => (string)$body);
+                return array('status' => 200, 'headers' => array('HTTP/1.1 200 OK', 'Content-Type: application/json'), 'body' => $self->body);
+            },
+        ));
     }
 }
 
@@ -194,7 +196,7 @@ class ErrorHandlingTest extends TestCase
     }
 
     /** @return array<string, callable> */
-    private function badArgumentCalls(ZeroBounce $c)
+    private function badArgumentCalls($c)
     {
         $csv = __DIR__ . '/email_file.csv';
         $calls = array();

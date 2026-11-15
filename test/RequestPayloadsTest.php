@@ -8,41 +8,48 @@ use ZeroBounce\SDK\ZBValidateOptions;
 use ZeroBounce\SDK\ZeroBounce;
 use ZeroBounce\SDK\ZeroBounceWarmup;
 
+require_once __DIR__ . '/Seams.php';
+
 /** Records every request and answers each with a 200 {"success": true}. */
-class PayloadRecordingClient extends ZeroBounce
+class PayloadRecordingClient extends ClientDouble
 {
     /** @var array<int, array<string, mixed>> */
     public $sent = array();
 
     public function __construct()
     {
-        parent::__construct();
-    }
-
-    protected function executeHttp($method, $url, array $headers = array(), $body = null, $timeout = 120)
-    {
-        $this->sent[] = RequestPayloadsTest::shape($method, $url, $headers, $body);
-        return array('status' => 200, 'headers' => array('HTTP/1.1 200 OK', 'Content-Type: application/json'), 'body' => '{"success":true}');
-    }
-
-    protected function streamHttpToHandle($url, $handle)
-    {
-        $this->sent[] = RequestPayloadsTest::shape('GET', $url, array(), null);
-        fwrite($handle, "email\na@example.com\n");
-        return array('status' => 200, 'headers' => array('HTTP/1.1 200 OK', 'Content-Type: text/csv'), 'head' => "email\na@example.com\n", 'error' => '');
+        $this->client = ZeroBounce::create();
+        $self = $this;
+        $this->hook(array(
+            'executeHttp' => function ($method, $url, array $headers, $body) use ($self) {
+                $self->sent[] = RequestPayloadsTest::shape($method, $url, $headers, $body);
+                return array('status' => 200, 'headers' => array('HTTP/1.1 200 OK', 'Content-Type: application/json'), 'body' => '{"success":true}');
+            },
+            'streamHttpToHandle' => function ($url, $handle) use ($self) {
+                $self->sent[] = RequestPayloadsTest::shape('GET', $url, array(), null);
+                fwrite($handle, "email\na@example.com\n");
+                return array('status' => 200, 'headers' => array('HTTP/1.1 200 OK', 'Content-Type: text/csv'), 'head' => "email\na@example.com\n", 'error' => '');
+            },
+        ));
     }
 }
 
 /** The Warmup client, recording like PayloadRecordingClient. */
-class PayloadRecordingWarmup extends ZeroBounceWarmup
+class PayloadRecordingWarmup extends ClientDouble
 {
     /** @var array<int, array<string, mixed>> */
     public $sent = array();
 
-    protected function executeHttp($method, $url, array $headers = array(), $body = null, $timeout = 120)
+    public function __construct($apiKey = null, $baseUrl = null)
     {
-        $this->sent[] = RequestPayloadsTest::shape($method, $url, $headers, $body);
-        return array('status' => 200, 'headers' => array('HTTP/1.1 200 OK', 'Content-Type: application/json'), 'body' => '{"success":true}');
+        $this->client = new ZeroBounceWarmup($apiKey, $baseUrl);
+        $self = $this;
+        $this->hook(array(
+            'executeHttp' => function ($method, $url, array $headers, $body) use ($self) {
+                $self->sent[] = RequestPayloadsTest::shape($method, $url, $headers, $body);
+                return array('status' => 200, 'headers' => array('HTTP/1.1 200 OK', 'Content-Type: application/json'), 'body' => '{"success":true}');
+            },
+        ));
     }
 }
 

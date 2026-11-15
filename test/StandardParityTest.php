@@ -22,10 +22,10 @@ require_once __DIR__ . '/RequestSweep.php';
 
 /**
  * Answers every request with one canned response and records the URLs.
- * streamHttpToHandle is NOT overridden, so the streamed download runs the
+ * streamHttpToHandle is NOT hooked, so the streamed download runs the
  * real curl code (pointed only at loopback addresses).
  */
-class CannedClient extends ZeroBounce
+class CannedClient extends ClientDouble
 {
     /** @var string[] */
     public $urls = array();
@@ -35,117 +35,113 @@ class CannedClient extends ZeroBounce
 
     public function __construct($body = '{}', $status = 200, $contentType = 'application/json')
     {
-        parent::__construct();
+        $this->client = ZeroBounce::create();
         $this->answer = array(
             'status' => $status,
             'headers' => array('HTTP/1.1 ' . $status . ' X', 'Content-Type: ' . $contentType),
             'body' => $body,
         );
-    }
-
-    protected function executeHttp($method, $url, array $headers = array(), $body = null, $timeout = 120)
-    {
-        $this->urls[] = $url;
-        return $this->answer;
+        $self = $this;
+        $this->hook(array(
+            'executeHttp' => function ($method, $url) use ($self) {
+                $self->urls[] = $url;
+                return $self->answer;
+            },
+        ));
     }
 
     public function setUrls($scheme, $host)
     {
-        $ref = new ReflectionClass(ZeroBounce::class);
-        foreach (array(
-            'apiBaseUrl' => '/v2', 'bulkApiBaseUrl' => '/v2', 'bulkApiRootUrl' => '',
-            'emailFinderBulkBaseUrl' => '/email-finder', 'domainSearchBulkBaseUrl' => '/domain-search',
-            'listEvaluatorBaseUrl' => '/v2/listevaluator', 'inboxPlacementBaseUrl' => '/api/ipt',
-        ) as $name => $path) {
-            $prop = $ref->getProperty($name);
-            if (\PHP_VERSION_ID < 80100) {
-                $prop->setAccessible(true);
-            }
-            $prop->setValue($this, $scheme . '://' . $host . $path);
-        }
+        $this->pointAt($scheme . '://' . $host);
     }
 }
 
-/** Reaches a plain-http loopback test server, which the SDK otherwise refuses. */
-class LoopbackStreamClient extends ZeroBounce
+/** Reaches a plain-http loopback test server, which the SDK otherwise refuses (the hook replaces checkedUrl). */
+class LoopbackStreamClient extends ClientDouble
 {
     public function __construct($stallSeconds)
     {
-        parent::__construct();
-        $this->downloadStallSeconds = $stallSeconds;
-    }
-
-    protected function checkedUrl($url)
-    {
-        return $url;
+        $this->client = ZeroBounce::create();
+        set_private($this->client, 'downloadStallSeconds', $stallSeconds);
+        $this->hook(array(
+            'checkedUrl' => function ($url) {
+                return $url;
+            },
+        ));
     }
 
     public function useBulkHost($root)
     {
-        $ref = new ReflectionClass(ZeroBounce::class);
-        $prop = $ref->getProperty('bulkApiBaseUrl');
-        if (\PHP_VERSION_ID < 80100) {
-            $prop->setAccessible(true);
-        }
-        $prop->setValue($this, $root . '/v2');
+        set_private($this->client, 'bulkApiBaseUrl', $root . '/v2');
     }
 }
 
 /** Records the curl options of real requests, sent only to a closed loopback port. */
-class CurlOptionsClient extends ZeroBounce
+class CurlOptionsClient extends ClientDouble
 {
     /** @var array<int, array<int, mixed>> */
     public $options = array();
 
     public function __construct()
     {
-        parent::__construct();
-    }
-
-    protected function applyCurlOptions($curl, array $options)
-    {
-        $this->options[] = $options;
-        parent::applyCurlOptions($curl, $options);
+        $this->client = ZeroBounce::create();
+        $self = $this;
+        $this->hook(array(
+            'applyCurlOptions' => function (array $options) use ($self) {
+                $self->options[] = $options;
+            },
+        ));
     }
 
     public function plainRequest($url)
     {
-        return $this->executeHttp('GET', $url);
+        return call_private($this->client, 'executeHttp', array('GET', $url));
     }
 
     public function streamedRequest($url)
     {
         $handle = fopen('php://memory', 'w+');
         try {
-            return $this->streamHttpToHandle($url, $handle);
+            return call_private($this->client, 'streamHttpToHandle', array($url, $handle));
         } finally {
             fclose($handle);
         }
     }
 }
 
-class CurlOptionsWarmup extends ZeroBounceWarmup
+class CurlOptionsWarmup extends ClientDouble
 {
     /** @var array<int, array<int, mixed>> */
     public $options = array();
 
-    protected function applyCurlOptions($curl, array $options)
+    public function __construct($apiKey = null, $baseUrl = null)
     {
-        $this->options[] = $options;
-        parent::applyCurlOptions($curl, $options);
+        $this->client = new ZeroBounceWarmup($apiKey, $baseUrl);
+        $self = $this;
+        $this->hook(array(
+            'applyCurlOptions' => function (array $options) use ($self) {
+                $self->options[] = $options;
+            },
+        ));
     }
 }
 
 /** Answers every Warmup request with an empty list and records the headers. */
-class CannedWarmup extends ZeroBounceWarmup
+class CannedWarmup extends ClientDouble
 {
     /** @var string[] */
     public $headers = array();
 
-    protected function executeHttp($method, $url, array $headers = array(), $body = null, $timeout = 120)
+    public function __construct($apiKey = null, $baseUrl = null)
     {
-        $this->headers = array_merge($this->headers, $headers);
-        return array('status' => 200, 'headers' => array('Content-Type: application/json'), 'body' => '[]');
+        $this->client = new ZeroBounceWarmup($apiKey, $baseUrl);
+        $self = $this;
+        $this->hook(array(
+            'executeHttp' => function ($method, $url, array $headers) use ($self) {
+                $self->headers = array_merge($self->headers, $headers);
+                return array('status' => 200, 'headers' => array('Content-Type: application/json'), 'body' => '[]');
+            },
+        ));
     }
 }
 
@@ -627,7 +623,11 @@ while (time() < $until && ($c = @stream_socket_accept($server, 1)) !== false || 
         $client = new CannedClient('{"Credits":"5"}');
         $client->initialize('export-client-key');
         $warmup = new CannedWarmup('export-warmup-key');
-        foreach (array('export-client-key' => $client, 'export-warmup-key' => $warmup) as $key => $object) {
+        // Hook-free clients: the hooks of a double are closures, which serialize() refuses.
+        $plain = ZeroBounce::create();
+        $plain->initialize('export-client-key');
+        $plainWarmup = new ZeroBounceWarmup('export-warmup-key');
+        foreach (array('export-client-key' => $plain, 'export-warmup-key' => $plainWarmup) as $key => $object) {
             $this->assertStringNotContainsString($key, var_export($object, true));
             $this->assertStringNotContainsString($key, serialize($object));
             $this->assertStringNotContainsString($key, print_r((array)$object, true));
@@ -638,12 +638,10 @@ while (time() < $until && ($c = @stream_socket_accept($server, 1)) !== false || 
 
         // A copy made by unserialize() has no key: it refuses to send anything
         // until it is initialized again.
-        $copy = unserialize(serialize($client));
+        $copy = unserialize(serialize($plain));
         $this->assertInstanceOf(ZBMissingApiKeyException::class, $this->thrown(function () use ($copy) { $copy->getCredits(); }));
-        $this->assertSame(array(), $copy->urls);
-        $warmupCopy = unserialize(serialize($warmup));
+        $warmupCopy = unserialize(serialize($plainWarmup));
         $this->assertInstanceOf(ZBMissingApiKeyException::class, $this->thrown(function () use ($warmupCopy) { $warmupCopy->listSendingAccounts(); }));
-        $this->assertSame(array(), $warmupCopy->headers);
         // The originals keep their keys.
         $this->assertSame('5', (string)$client->getCredits()->credits);
         $warmup->listSendingAccounts();

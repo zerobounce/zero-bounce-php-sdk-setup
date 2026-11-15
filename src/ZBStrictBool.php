@@ -15,7 +15,7 @@ trait ZBStrictBool
      * @param mixed $value
      * @return bool
      */
-    protected static function isRealDate($value)
+    private static function isRealDate($value)
     {
         if (!is_string($value) || !preg_match('/\A\d{4}-\d{2}-\d{2}\z/', $value)) {
             return false;
@@ -34,7 +34,7 @@ trait ZBStrictBool
      * @return bool
      * @throws ZBMissingParameterException
      */
-    protected static function strictBool($value, $name)
+    private static function strictBool($value, $name)
     {
         if (is_bool($value)) {
             return $value;

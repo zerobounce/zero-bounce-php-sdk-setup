@@ -15,13 +15,13 @@ trait ZeroBouncePriority3
     // this package supports PHP 7.0.
 
     /** @var string Overridable per instance; defaults to BulkApiRootUrl. */
-    protected $bulkApiRootUrl = self::BulkApiRootUrl;
+    private $bulkApiRootUrl = self::BulkApiRootUrl;
 
     /** @var string Overridable per instance; defaults to EmailFinderBulkBaseUrl. */
-    protected $emailFinderBulkBaseUrl = self::EmailFinderBulkBaseUrl;
+    private $emailFinderBulkBaseUrl = self::EmailFinderBulkBaseUrl;
 
     /** @var string Overridable per instance; defaults to DomainSearchBulkBaseUrl. */
-    protected $domainSearchBulkBaseUrl = self::DomainSearchBulkBaseUrl;
+    private $domainSearchBulkBaseUrl = self::DomainSearchBulkBaseUrl;
 
     /**
      * Point every bulkapi host at $root. initialize() calls this with the
