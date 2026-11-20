@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `ZeroBounceInterface` and `ZeroBounceWarmupInterface`: every public API method of `ZeroBounce` and `ZeroBounceWarmup`, which now implement them. Both classes became `final` in 4.0.0 and could no longer be mocked; type-hint the interface where your code takes a client and mock it in tests (`$this->createMock(ZeroBounceInterface::class)`). The classes stay `final`. Setup (`create()`, `Instance()`, `initialize()`) is not on the interface. The interfaces gain methods in minor releases as the API grows, so they are meant to be type-hinted and mocked, not implemented by your own classes.
+
 ## [4.0.0] - 2026-11-15
 
 ### Changed
@@ -433,6 +439,7 @@ This release has breaking changes. Read the **Breaking** entries under Changed b
 
 - Initial release: `getCredits`, `getApiUsage`, `validate`, and the bulk file methods.
 
+[Unreleased]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v4.0.0...HEAD
 [4.0.0]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v3.0.0...v4.0.0
 [3.0.1]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v3.0.0...v3.0.1
 [3.0.0]: https://github.com/zerobounce/zero-bounce-php-sdk-setup/compare/v2.2.0...v3.0.0
