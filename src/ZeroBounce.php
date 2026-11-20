@@ -19,7 +19,7 @@ final class ZeroBounce implements ZeroBounceInterface
      * against it (composer.json carries no "version"); CHANGELOG.md's newest release heading
      * must match it.
      */
-    const VERSION = "4.0.0";
+    const VERSION = "4.1.0";
 
     /**
      * Call this method to get singleton
