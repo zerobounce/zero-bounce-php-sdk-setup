@@ -107,6 +107,35 @@ ZeroBounce::Instance()->initialize("<YOUR_API_KEY>", "https://api-us.zerobounce.
 ZeroBounce::Instance()->initialize("<YOUR_API_KEY>", "https://api-eu.zerobounce.net/v2");
 ```
 
+### Testing code that uses the SDK
+
+`ZeroBounce` and `ZeroBounceWarmup` are `final`, so they cannot be mocked. Type-hint `ZeroBounceInterface` (or `ZeroBounceWarmupInterface`) where your code takes a client, pass the real client in, and mock the interface in your tests:
+
+```php
+use ZeroBounce\SDK\ZeroBounce;
+use ZeroBounce\SDK\ZeroBounceInterface;
+
+class EmailValidator
+{
+    private $zeroBounce;
+
+    public function __construct(ZeroBounceInterface $zeroBounce)
+    {
+        $this->zeroBounce = $zeroBounce;
+    }
+}
+
+$client = ZeroBounce::create();
+$client->initialize("<YOUR_API_KEY>");
+$validator = new EmailValidator($client);
+
+// in a PHPUnit test
+$zeroBounce = $this->createMock(ZeroBounceInterface::class);
+$validator = new EmailValidator($zeroBounce);
+```
+
+Code that calls `ZeroBounce::Instance()` directly cannot be swapped this way; take the client as a constructor argument instead. The interfaces gain a method whenever the SDK adds an API call (in minor releases), so type-hint and mock them rather than implementing them in your own classes.
+
 ### _Method documentation_
 
 - Verify an email address:

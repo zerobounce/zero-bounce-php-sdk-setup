@@ -18,6 +18,7 @@ Guidance for AI coding agents working in this repository.
 - `test/ZeroBounceTest.php`: PHPUnit cases with `MockZeroBounce`, which replaces `request`, `json`, `formPost`, `curl`, and `getBulkFileHttp`.
 - `test/OfflineApiTest.php`: offline suite. `test/OfflineHttp.php` records every request and answers without the network.
 - `test/OfflineWarmupTest.php`: the same for the Warmup client.
+- `src/ZeroBounceInterface.php`, `src/ZeroBounceWarmupInterface.php`: the public API of each client, for callers to type-hint and mock. A new public method goes on the interface too; `test/ClientInterfaceTest.php` fails otherwise.
 - `live/live_api.php`: the opt-in live suite. `phpunit.xml` only includes `test/`, so `composer test` and CI never run it.
 - `src/ZeroBounce.php`: `ZeroBounce::VERSION`, the only version field (`composer.json` has no `"version"`; Packagist reads the tag). There is no User-Agent.
 

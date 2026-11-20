@@ -8,7 +8,7 @@ use Exception;
 
 /**
  */
-final class ZeroBounce
+final class ZeroBounce implements ZeroBounceInterface
 {
     use ZeroBouncePriority3;
     use ZeroBounceInboxPlacement;

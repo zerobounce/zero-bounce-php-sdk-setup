@@ -10,7 +10,7 @@ namespace ZeroBounce\SDK;
  * parameter. Use ZeroBounceWarmup with a Warmup API key; ZeroBounce stays for
  * the validation API key.
  */
-final class ZeroBounceWarmup
+final class ZeroBounceWarmup implements ZeroBounceWarmupInterface
 {
     use ZBStrictBool;
 
