@@ -1,5 +1,5 @@
 # ZeroBounce PHP SDK – test image (PHP 8.4, as in the SDK CI matrix, + Composer)
-FROM php:8.4-cli-alpine@sha256:b9014f1cc1983827459faed83b315a40ead9860bdadefc042b31f1540ef8c746
+FROM php:8.4-cli-alpine@sha256:d64c04fbee7a93c48226fe40380b5e121856d90739dadb7c74574f9995338700
 
 RUN apk add --no-cache git unzip
 
